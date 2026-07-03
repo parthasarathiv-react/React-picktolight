@@ -98,7 +98,6 @@ export default function MainLayout() {
                 </div>
             </aside>
 
-            {/* Main Content Area */}
             <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
                 <header className="h-16 border-b border-ot-border bg-ot-surface-top/50 flex items-center justify-between px-6">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
