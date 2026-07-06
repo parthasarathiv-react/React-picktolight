@@ -1,20 +1,50 @@
 import React, { useRef, useState } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, Edges, Html } from '@react-three/drei';
 import { Archive, Box as BoxIcon } from 'lucide-react';
 import { CUPBOARDS_CONFIG, getDrawerAssignment, getLedColor } from 'lib/dataStore';
+import { Card } from 'components/ui/card';
 
 const FRAME = '#203250';
 const FRAME_DARK = '#03132e';
 const BORDER = '#5fa6ff';
 const WALL = '#010a25';
 
+function ResponsiveCamera() {
+    const { camera, size } = useThree();
+    React.useEffect(() => {
+        if (size.width < 600) {
+            camera.fov = 75;
+        } else if (size.width < 1024) {
+            camera.fov = 55;
+        } else {
+            camera.fov = 44;
+        }
+        camera.updateProjectionMatrix();
+    }, [size, camera]);
+    return null;
+}
+
 function ShelfCell({ cupboardId, row, col, ledsPerDrawer, position, size }) {
     const [hovered, setHovered] = useState(false);
     const assignment = getDrawerAssignment(cupboardId, row, col);
-    const colorMeta = assignment ? getLedColor(assignment.ledColor) : null;
-    const activeCount = assignment ? Math.min(assignment.activeLeds, ledsPerDrawer) : 0;
     const cellId = `${row}${String.fromCharCode(64 + col)}`;
+
+    const activeLedsColors = [];
+    if (assignment) {
+        if (assignment.queue) {
+            assignment.queue.forEach(q => {
+                for (let i = 0; i < q.count; i++) {
+                    activeLedsColors.push(q.color);
+                }
+            });
+        } else {
+            const actCount = Math.min(assignment.activeLeds || 0, ledsPerDrawer);
+            for (let i = 0; i < actCount; i++) {
+                activeLedsColors.push(assignment.ledColor);
+            }
+        }
+    }
 
     return (
         <group position={position}>
@@ -32,10 +62,12 @@ function ShelfCell({ cupboardId, row, col, ledsPerDrawer, position, size }) {
             </Html>
 
             {Array.from({ length: ledsPerDrawer }).map((_, ledIndex) => {
-                const isActive = ledIndex < activeCount;
+                const colorValue = activeLedsColors[ledIndex];
+                const activeColorMeta = colorValue ? getLedColor(colorValue) : null;
+                const isActive = !!activeColorMeta;
                 const ledGap = size[0] / (ledsPerDrawer + 1);
                 const x = -size[0] / 2 + ledGap * (ledIndex + 1);
-                const ledColor = isActive ? colorMeta.hex : '#0e2e54';
+                const ledColor = isActive ? activeColorMeta.hex : '#0e2e54';
 
                 return (
                     <mesh key={ledIndex} position={[x, size[1] * 0.22, size[2] / 2 + 0.04]}>
@@ -180,19 +212,20 @@ export default function Cupboard3D({ cupboards, controllerName, floorName, selec
 
     return (
         <div className="w-full h-full overflow-hidden bg-gradient-to-b from-[#010a25] to-[#01112c] relative">
-            <div className="absolute top-3 left-3 z-10 flex items-center gap-2 rounded-lg border border-ot-border bg-ot-bg-top/80 backdrop-blur px-3 py-2 shadow-lg">
+            <Card className="absolute top-3 left-3 z-10 flex items-center gap-2 rounded-lg border border-ot-border bg-ot-bg-top/80 backdrop-blur px-3 py-2 shadow-lg">
                 <Archive className="w-4 h-4 text-ot-action" />
                 <div>
                     <div className="text-sm font-bold text-white leading-tight">{floorLabel} · {controllerLabel} · {currentCupboardName}</div>
                     <div className="text-[11px] text-muted-foreground leading-tight">{currentWall} · {visibleCupboards.length} cupboards · {totalShelves} shelves</div>
                 </div>
-            </div>
-            <div className="absolute bottom-3 right-3 z-10 rounded-lg border border-ot-border bg-ot-bg-top/80 backdrop-blur px-3 py-2 text-[11px] text-muted-foreground flex items-center gap-2">
+            </Card>
+            <Card className="absolute bottom-3 right-3 z-10 rounded-lg border border-ot-border bg-ot-bg-top/80 backdrop-blur px-3 py-2 text-[11px] text-muted-foreground flex items-center gap-2">
                 <BoxIcon className="w-3.5 h-3.5 text-ot-action" />
                 Drag to rotate, scroll to zoom
-            </div>
+            </Card>
 
             <Canvas camera={{ position: [0, 3.2, 9.5], fov: 44 }}>
+                <ResponsiveCamera />
                 <ambientLight intensity={0.55} />
                 <pointLight position={[3, 5, 6]} intensity={0.8} />
                 <directionalLight position={[-5, 5, 5]} intensity={0.45} />

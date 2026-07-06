@@ -76,8 +76,8 @@ export default function Users() {
                                     </td>
                                     <td className="px-6 py-4 text-muted-foreground">{user.last}</td>
                                     <td className="px-6 py-4 text-right">
-                                        <button className="text-ot-action hover:text-ot-action-hover mr-4 transition-colors"><PenSquare className="w-4 h-4" /></button>
-                                        <button className="text-red-400 hover:text-red-300 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                                        <Button variant="ghost" className="text-ot-action hover:text-ot-action-hover mr-4 transition-colors"><PenSquare className="w-4 h-4" /></Button>
+                                        <Button variant="ghost" className="text-red-400 hover:text-red-300 transition-colors"><Trash2 className="w-4 h-4" /></Button>
                                     </td>
                                 </tr>
                             ))}

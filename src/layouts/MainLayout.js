@@ -3,6 +3,7 @@ import { Outlet, NavLink } from 'react-router-dom';
 import { Activity, Settings, Users, Box, LogOut, PackageSearch, PanelLeftClose, PanelLeft, Barcode } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { useNavigate } from 'react-router-dom';
+import { Button } from 'components/ui/button';
 
 const navItems = [
     { icon: Activity, label: 'Monitoring', path: '/monitoring' },
@@ -32,13 +33,13 @@ export default function MainLayout() {
                     )}>
                         <span className="font-bold text-lg tracking-wider text-white">RasterPharmacy<span className="text-ot-action">.</span></span>
                     </div>
-                    <button
+                    <Button variant="ghost"
                         onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                         className="text-muted-foreground hover:text-white p-2 rounded-md hover:bg-ot-surface-elev-bottom transition-colors shrink-0 flex items-center justify-center"
                         title={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
                     >
                         {isSidebarOpen ? <PanelLeftClose className="w-5 h-5" /> : <PanelLeft className="w-5 h-5" />}
-                    </button>
+                    </Button>
                 </div>
 
                 <nav className="flex-1 overflow-y-auto py-4 px-2 space-y-1">
@@ -79,7 +80,7 @@ export default function MainLayout() {
                 </nav>
 
                 <div className="p-3 border-t border-ot-border hidden md:block">
-                    <button
+                    <Button variant="ghost"
                         onClick={() => navigate('/login')}
                         className={cn(
                             "flex items-center rounded-[var(--radius)] text-sm font-medium text-muted-foreground hover:text-white hover:bg-ot-surface-elev-bottom transition-colors overflow-hidden whitespace-nowrap mx-auto",
@@ -94,11 +95,11 @@ export default function MainLayout() {
                         )}>
                             Sign Out
                         </span>
-                    </button>
+                    </Button>
                 </div>
             </aside>
 
-            <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+            <main className="flex-1 flex flex-col min-w-0 overflow-hidden"> 
                 <header className="h-16 border-b border-ot-border bg-ot-surface-top/50 flex items-center justify-between px-6">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
