@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
+import { toast } from 'sonner';
 import { Card, CardContent } from 'components/ui/card';
 import { Button } from 'components/ui/button';
 import { Input } from 'components/ui/input';
+import ConfirmDialog from 'components/ui/confirm-dialog';
 import { Plus, PenSquare, Trash2 } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from 'components/ui/table';
@@ -10,6 +12,8 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from 'c
 export default function FloorsTab({ floorsData, syncFloors }) {
     const [showFloorForm, setShowFloorForm] = useState(false);
     const [editingFloor, setEditingFloor] = useState(null);
+    const [confirmOpen, setConfirmOpen] = useState(false);
+    const [pendingDeleteId, setPendingDeleteId] = useState(null);
 
     const handleAddFloor = () => {
         setEditingFloor(null);
@@ -38,6 +42,7 @@ export default function FloorsTab({ floorsData, syncFloors }) {
                 f.id === editingFloor.id ? { ...f, name, description, status } : f
             );
             syncFloors(updated);
+            toast.success('Floor updated', { description: `"${name}" has been saved.` });
         } else {
             const newFloor = {
                 id: Date.now(),
@@ -46,15 +51,22 @@ export default function FloorsTab({ floorsData, syncFloors }) {
                 status
             };
             syncFloors([...floorsData, newFloor]);
+            toast.success('Floor added', { description: `"${name}" has been created.` });
         }
         setShowFloorForm(false);
         setEditingFloor(null);
     };
 
     const handleDeleteFloor = (id) => {
-        if (window.confirm("Are you sure you want to delete this floor?")) {
-            syncFloors(floorsData.filter(f => f.id !== id));
-        }
+        setPendingDeleteId(id);
+        setConfirmOpen(true);
+    };
+
+    const confirmDelete = () => {
+        const floor = floorsData.find(f => f.id === pendingDeleteId);
+        syncFloors(floorsData.filter(f => f.id !== pendingDeleteId));
+        toast.error('Floor deleted', { description: floor ? `"${floor.name}" has been removed.` : undefined });
+        setPendingDeleteId(null);
     };
 
     return (
@@ -142,6 +154,15 @@ export default function FloorsTab({ floorsData, syncFloors }) {
                     </TableBody>
                 </Table>
             </div>
+
+            <ConfirmDialog
+                open={confirmOpen}
+                onOpenChange={setConfirmOpen}
+                title="Delete Floor"
+                description="Are you sure you want to delete this floor? This action cannot be undone."
+                confirmLabel="Delete Floor"
+                onConfirm={confirmDelete}
+            />
         </div>
     );
 }

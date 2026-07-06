@@ -1,13 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, lazy, Suspense, startTransition } from 'react';
 import { Card, CardContent } from 'components/ui/card';
-import Cupboard3D from 'components/visualization/Cupboard3D';
 import Cupboard2D from 'components/visualization/Cupboard2D';
-import { Layers, Box, MonitorPlay, ChevronRight, PanelRightClose, PanelRightOpen, MoveHorizontal, MoveVertical, LayoutGrid, List } from 'lucide-react';
+import { Layers, Box, MonitorPlay, ChevronRight, PanelRightClose, PanelRightOpen, LayoutGrid, List } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { FLOORS_CONFIG, CONTROLLERS_CONFIG, WALLS_CONFIG, CUPBOARDS_CONFIG, getCupboardAssignments } from 'lib/dataStore';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from 'components/ui/collapsible';
 import { Tabs, TabsList, TabsTrigger } from 'components/ui/tabs';
 import { Button } from 'components/ui/button';
+
+// Cupboard3D is lazy-loaded — Three.js (~600 KB) is only fetched when user
+// clicks "3D View", keeping the initial bundle small and TBT low.
+const Cupboard3D = lazy(() => import('components/visualization/Cupboard3D'));
+
+// Shown inside the canvas area while Three.js chunk is being fetched
+function Canvas3DLoader() {
+    return (
+        <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
+            <span className="w-8 h-8 border-2 border-ot-border border-t-ot-action rounded-full animate-spin" />
+            <span className="text-sm">Loading 3D scene…</span>
+        </div>
+    );
+}
 
 export default function Monitoring() {
     const [viewMode, setViewMode] = useState('2d'); // '2d' | '3d'
@@ -129,58 +142,48 @@ export default function Monitoring() {
     const selectedFloorName = selectedController.floor || 'No floor';
     const selectedCupboard = cupboards[activeCupboardIdx] || null;
 
-    const eanCountFor = (cbId) => getCupboardAssignments(cbId).length;
+    const eanCountFor = useCallback((cbId) => getCupboardAssignments(cbId).length, []);
 
     const handleToggleFloor = (floorName, isOpen) => {
-        setExpandedFloors((prev) => {
-            const next = new Set(prev);
-            if (isOpen) {
-                next.add(floorName);
-            } else {
-                next.delete(floorName);
-            }
-            return next;
+        startTransition(() => {
+            setExpandedFloors((prev) => {
+                const next = new Set(prev);
+                if (isOpen) { next.add(floorName); } else { next.delete(floorName); }
+                return next;
+            });
         });
     };
 
     const handleToggleController = (controllerName, isOpen) => {
-        setSelectedControllerName(controllerName);
-
-        // Find first wall of this controller to select it
-        const ctrl = hierarchy.flatMap(f => f.controllers).find(c => c.name === controllerName);
-        const fwName = ctrl?.walls?.[0]?.name || '';
-        setSelectedWallName(fwName);
-        setActiveCupboardIdx(0);
-
-        setExpandedControllers((prev) => {
-            const next = new Set(prev);
+        startTransition(() => {
+            setSelectedControllerName(controllerName);
+            const ctrl = hierarchy.flatMap(f => f.controllers).find(c => c.name === controllerName);
+            const fwName = ctrl?.walls?.[0]?.name || '';
+            setSelectedWallName(fwName);
+            setActiveCupboardIdx(0);
+            setExpandedControllers((prev) => {
+                const next = new Set(prev);
+                if (isOpen) { next.add(controllerName); } else { next.delete(controllerName); }
+                return next;
+            });
             if (isOpen) {
-                next.add(controllerName);
-            } else {
-                next.delete(controllerName);
+                const floorOfController = hierarchy.find((floor) => floor.controllers.some((ctrl) => ctrl.name === controllerName));
+                if (floorOfController) {
+                    setExpandedFloors((prev) => new Set(prev).add(floorOfController.name));
+                }
             }
-            return next;
         });
-
-        if (isOpen) {
-            const floorOfController = hierarchy.find((floor) => floor.controllers.some((ctrl) => ctrl.name === controllerName));
-            if (floorOfController) {
-                setExpandedFloors((prev) => new Set(prev).add(floorOfController.name));
-            }
-        }
     };
 
     const handleToggleWall = (wallName, isOpen) => {
-        setSelectedWallName(wallName);
-        setActiveCupboardIdx(0);
-        setExpandedWalls((prev) => {
-            const next = new Set(prev);
-            if (isOpen) {
-                next.add(wallName);
-            } else {
-                next.delete(wallName);
-            }
-            return next;
+        startTransition(() => {
+            setSelectedWallName(wallName);
+            setActiveCupboardIdx(0);
+            setExpandedWalls((prev) => {
+                const next = new Set(prev);
+                if (isOpen) { next.add(wallName); } else { next.delete(wallName); }
+                return next;
+            });
         });
     };
 
@@ -189,7 +192,7 @@ export default function Monitoring() {
     };
 
     return (
-        <div className="flex flex-col h-[calc(100vh-8rem)] animate-in fade-in">
+        <div className="flex flex-col h-[calc(100vh-8rem)]">
             {/* ── Top bar ────────────────────────────────────────────────── */}
             <div className="flex justify-between items-center mb-6">
                 <div>
@@ -243,14 +246,16 @@ export default function Monitoring() {
                 {/* Canvas */}
                 <Card className="flex-1 overflow-hidden bg-ot-surface-bottom relative p-0 flex flex-col border-ot-border">
                     {viewMode === '3d' ? (
-                        <Cupboard3D
-                            cupboards={cupboards}
-                            controllerName={selectedController.name}
-                            floorName={selectedFloorName}
-                            selectedCupboard={selectedCupboard}
-                            activeCupboardIdx={activeCupboardIdx}
-                            onSelectCupboard={setActiveCupboardIdx}
-                        />
+                        <Suspense fallback={<Canvas3DLoader />}>
+                            <Cupboard3D
+                                cupboards={cupboards}
+                                controllerName={selectedController.name}
+                                floorName={selectedFloorName}
+                                selectedCupboard={selectedCupboard}
+                                activeCupboardIdx={activeCupboardIdx}
+                                onSelectCupboard={setActiveCupboardIdx}
+                            />
+                        </Suspense>
                     ) : (
                         cupboards.length > 0 ? (
                             <Cupboard2D

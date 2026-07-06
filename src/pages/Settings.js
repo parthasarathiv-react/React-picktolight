@@ -13,7 +13,6 @@ import FloorsTab from 'components/settings/FloorsTab';
 import ControllersTab from 'components/settings/ControllersTab';
 import WallsTab from 'components/settings/WallsTab';
 import CupboardsTab from 'components/settings/CupboardsTab';
-import { Button } from 'components/ui/button';
 
 export default function Settings() {
     const [activeTab, setActiveTab] = useState('floors');
@@ -75,7 +74,7 @@ export default function Settings() {
                         {tabs.map((tab) => {
                             const Icon = tab.icon;
                             return (
-                                <Button variant="ghost"
+                                <button
                                     key={tab.id}
                                     onClick={() => setActiveTab(tab.id)}
                                     className={cn(
@@ -87,7 +86,7 @@ export default function Settings() {
                                 >
                                     <Icon className={cn("w-4 h-4", activeTab === tab.id ? "text-white" : "")} />
                                     {tab.label}
-                                </Button>
+                                </button>
                             );
                         })}
                     </div>
@@ -107,12 +106,12 @@ export default function Settings() {
                         <WallsTab wallsData={wallsData} syncWalls={syncWalls} floorsData={floorsData} controllersData={controllersData} />
                     )}
                     {activeTab === 'cupboards' && (
-                        <CupboardsTab 
-                            cupboardsData={cupboardsData} 
-                            syncCupboards={syncCupboards} 
-                            floorsData={floorsData} 
-                            controllersData={controllersData} 
-                            wallsData={wallsData} 
+                        <CupboardsTab
+                            cupboardsData={cupboardsData}
+                            syncCupboards={syncCupboards}
+                            floorsData={floorsData}
+                            controllersData={controllersData}
+                            wallsData={wallsData}
                         />
                     )}
                 </div>

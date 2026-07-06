@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
+import { toast } from 'sonner';
 import { Card, CardContent } from 'components/ui/card';
 import { Button } from 'components/ui/button';
 import { Input } from 'components/ui/input';
+import ConfirmDialog from 'components/ui/confirm-dialog';
 import { Plus, PenSquare, Trash2 } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from 'components/ui/table';
@@ -10,6 +12,8 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from 'c
 export default function ControllersTab({ controllersData, syncControllers, floorsData }) {
     const [showControllerForm, setShowControllerForm] = useState(false);
     const [editingController, setEditingController] = useState(null);
+    const [confirmOpen, setConfirmOpen] = useState(false);
+    const [pendingDeleteId, setPendingDeleteId] = useState(null);
 
     const handleAddController = () => {
         setEditingController(null);
@@ -40,6 +44,7 @@ export default function ControllersTab({ controllersData, syncControllers, floor
                 c.id === editingController.id ? { ...c, name, ip, port, floor, status } : c
             );
             syncControllers(updated);
+            toast.success('Controller updated', { description: `"${name}" has been saved.` });
         } else {
             const newCtrl = {
                 id: Date.now(),
@@ -50,15 +55,22 @@ export default function ControllersTab({ controllersData, syncControllers, floor
                 status
             };
             syncControllers([...controllersData, newCtrl]);
+            toast.success('Controller added', { description: `"${name}" has been created.` });
         }
         setShowControllerForm(false);
         setEditingController(null);
     };
 
     const handleDeleteController = (id) => {
-        if (window.confirm("Are you sure you want to delete this controller?")) {
-            syncControllers(controllersData.filter(c => c.id !== id));
-        }
+        setPendingDeleteId(id);
+        setConfirmOpen(true);
+    };
+
+    const confirmDelete = () => {
+        const ctrl = controllersData.find(c => c.id === pendingDeleteId);
+        syncControllers(controllersData.filter(c => c.id !== pendingDeleteId));
+        toast.error('Controller deleted', { description: ctrl ? `"${ctrl.name}" has been removed.` : undefined });
+        setPendingDeleteId(null);
     };
 
     return (
@@ -167,6 +179,15 @@ export default function ControllersTab({ controllersData, syncControllers, floor
                     </TableBody>
                 </Table>
             </div>
+
+            <ConfirmDialog
+                open={confirmOpen}
+                onOpenChange={setConfirmOpen}
+                title="Delete Controller"
+                description="Are you sure you want to delete this controller? This action cannot be undone."
+                confirmLabel="Delete Controller"
+                onConfirm={confirmDelete}
+            />
         </div>
     );
 }

@@ -89,9 +89,9 @@ export default function WallsTab({ wallsData, syncWalls, floorsData, controllers
                                 </div>
                                 <div className="space-y-2">
                                     <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">Floor Assignment</label>
-                                    <Select 
-                                        name="floor" 
-                                        value={selectedFloorForWall} 
+                                    <Select
+                                        name="floor"
+                                        value={selectedFloorForWall}
                                         onValueChange={(val) => setSelectedFloorForWall(val)}
                                     >
                                         <SelectTrigger>

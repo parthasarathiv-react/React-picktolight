@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
+import { toast } from 'sonner';
 import { Card, CardContent } from 'components/ui/card';
 import { Button } from 'components/ui/button';
 import { Input } from 'components/ui/input';
+import ConfirmDialog from 'components/ui/confirm-dialog';
 import { Plus, PenSquare, Trash2 } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from 'components/ui/table';
@@ -11,6 +13,8 @@ export default function CupboardsTab({ cupboardsData, syncCupboards, floorsData,
     const [showCupboardForm, setShowCupboardForm] = useState(false);
     const [editingCupboard, setEditingCupboard] = useState(null);
     const [selectedFloorForCupboard, setSelectedFloorForCupboard] = useState('');
+    const [confirmOpen, setConfirmOpen] = useState(false);
+    const [pendingDeleteId, setPendingDeleteId] = useState(null);
 
     const handleAddCupboard = () => {
         setEditingCupboard(null);
@@ -48,6 +52,7 @@ export default function CupboardsTab({ cupboardsData, syncCupboards, floorsData,
                     : c
             );
             syncCupboards(updated);
+            toast.success('Cupboard updated', { description: `"${name}" has been saved.` });
         } else {
             const newCb = {
                 id: Date.now(),
@@ -61,15 +66,22 @@ export default function CupboardsTab({ cupboardsData, syncCupboards, floorsData,
                 status
             };
             syncCupboards([...cupboardsData, newCb]);
+            toast.success('Cupboard added', { description: `"${name}" has been created.` });
         }
         setShowCupboardForm(false);
         setEditingCupboard(null);
     };
 
     const handleDeleteCupboard = (id) => {
-        if (window.confirm("Are you sure you want to delete this cupboard?")) {
-            syncCupboards(cupboardsData.filter(c => c.id !== id));
-        }
+        setPendingDeleteId(id);
+        setConfirmOpen(true);
+    };
+
+    const confirmDelete = () => {
+        const cb = cupboardsData.find(c => c.id === pendingDeleteId);
+        syncCupboards(cupboardsData.filter(c => c.id !== pendingDeleteId));
+        toast.error('Cupboard deleted', { description: cb ? `"${cb.name}" has been removed.` : undefined });
+        setPendingDeleteId(null);
     };
 
     return (
@@ -229,6 +241,15 @@ export default function CupboardsTab({ cupboardsData, syncCupboards, floorsData,
                     </TableBody>
                 </Table>
             </div>
+
+            <ConfirmDialog
+                open={confirmOpen}
+                onOpenChange={setConfirmOpen}
+                title="Delete Cupboard"
+                description="Are you sure you want to delete this cupboard? This action cannot be undone."
+                confirmLabel="Delete Cupboard"
+                onConfirm={confirmDelete}
+            />
         </div>
     );
 }

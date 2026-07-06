@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Bai+Jamjuree:wght@300;400;500;600;700&display=swap");
+/* Google Fonts loaded via <link> in index.html (non-blocking) */
 
 @tailwind base;
 @tailwind components;
@@ -42,12 +42,24 @@
   body {
     @apply bg-background text-foreground;
     background-color: #010a25;
+    font-family: "Bai Jamjuree", sans-serif;
+    min-height: 100vh;
+    position: relative;
+    isolation: isolate;
+  }
+
+  /* Gradient lives on its own stacking context — painted once, never repainted on scroll */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
     background-image:
       radial-gradient(ellipse 70% 55% at 50% 45%, rgba(14, 60, 120, 0.55) 0%, rgba(2, 30, 59, 0.25) 50%, transparent 100%),
       linear-gradient(to bottom, #010a25, #021e3b, #01112c);
-    background-attachment: fixed;
-    font-family: "Bai Jamjuree", sans-serif;
-    min-height: 100vh;
+    background-repeat: no-repeat;
+    background-size: cover;
+    pointer-events: none;
   }
 
   * {

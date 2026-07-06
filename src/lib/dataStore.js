@@ -93,19 +93,31 @@ export const EAN_ASSIGNMENTS = [
     { cupboardId: 9, row: 2, col: 4, ean: '9876543210987', label: 'Loratadine 10mg', queue: [{ user: 'User 2', color: 'red', count: 3 }, { user: 'User 3', color: 'yellow', count: 3 }] },
 ];
 
+// ─── O(1) lookup maps (built once at module load) ────────────────────────────
+const _drawerMap = new Map();
+EAN_ASSIGNMENTS.forEach((a) => {
+    _drawerMap.set(`${a.cupboardId}:${a.row}:${a.col}`, a);
+});
+
+const _cupboardMap = new Map();
+EAN_ASSIGNMENTS.forEach((a) => {
+    if (!_cupboardMap.has(a.cupboardId)) _cupboardMap.set(a.cupboardId, []);
+    _cupboardMap.get(a.cupboardId).push(a);
+});
+
+const _ledColorMap = new Map(LED_COLORS.map((c) => [c.value, c]));
+
 // ─── Helper: get assignment for a specific drawer ────────────────────────────
 export function getDrawerAssignment(cupboardId, row, col) {
-    return EAN_ASSIGNMENTS.find(
-        (a) => a.cupboardId === cupboardId && a.row === row && a.col === col
-    ) || null;
+    return _drawerMap.get(`${cupboardId}:${row}:${col}`) || null;
 }
 
 // ─── Helper: get all assignments for a cupboard ───────────────────────────────
 export function getCupboardAssignments(cupboardId) {
-    return EAN_ASSIGNMENTS.filter((a) => a.cupboardId === cupboardId);
+    return _cupboardMap.get(cupboardId) || [];
 }
 
 // ─── Helper: get LED color object by value ────────────────────────────────────
 export function getLedColor(value) {
-    return LED_COLORS.find((c) => c.value === value) || LED_COLORS[0];
+    return _ledColorMap.get(value) || LED_COLORS[0];
 }
