@@ -1,6 +1,5 @@
 import React, { Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { Toaster } from 'sonner';
 import MainLayout from 'layouts/MainLayout';
 
 // Code-split all pages — each becomes its own JS chunk loaded on demand
@@ -44,19 +43,6 @@ function PageLoader() {
 function App() {
     return (
         <Router>
-            <Toaster
-                position="top-right"
-                richColors
-                closeButton
-                expand={false}
-                gap={10}
-                toastOptions={{
-                    duration: 4000,
-                    style: {
-                        fontFamily: '"Bai Jamjuree", sans-serif',
-                    },
-                }}
-            />
             <Suspense fallback={<PageLoader />}>
                 <Routes>
                     <Route path="/login" element={<Login />} />

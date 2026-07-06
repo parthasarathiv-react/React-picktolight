@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useMemo, useCallback, startTransition } from 'react';
+import React, { useEffect, useRef, useMemo, useCallback } from 'react';
 import { cn } from 'lib/utils';
 import { Archive, Grid3X3, Package } from 'lucide-react';
 import { getDrawerAssignment, getLedColor } from 'lib/dataStore';
@@ -100,73 +100,66 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
     }, [id, computedShelves, computedColumns]);
 
     return (
-        // content-visibility:auto tells the browser to skip layout+paint for
-        // off-screen cupboard bays entirely — only visible bays are rendered.
-        // contain-intrinsic-size gives the browser a size hint so scroll is smooth.
-        <div
+        <Button variant="ghost"
+            type="button"
             ref={bayRef}
-            style={{ contentVisibility: 'auto', containIntrinsicSize: '0 320px' }}
+            onClick={onSelect}
+            className={cn(
+                "w-fit max-w-full flex-none text-left transition-opacity",
+                isActive ? "opacity-100" : "opacity-85 hover:opacity-100"
+            )}
         >
-            <Button variant="ghost"
-                type="button"
-                onClick={onSelect}
-                className={cn(
-                    "w-fit max-w-full flex-none text-left transition-opacity",
-                    isActive ? "opacity-100" : "opacity-85 hover:opacity-100"
-                )}
-            >
-                <Card className={cn(
-                    "max-w-full bg-ot-surface-top border shadow-2xl flex flex-col overflow-hidden rounded-none",
-                    isActive ? "border-ot-action/70" : "border-ot-border"
-                )}>
-                    <div className="px-3 py-2 border-b border-ot-border/70 bg-ot-surface-elev-bottom flex items-center justify-between gap-2 shrink-0">
-                        <div className="min-w-0">
-                            <div className="text-sm font-bold text-white truncate">{name}</div>
-                            <div className="text-[10px] uppercase tracking-wide text-muted-foreground truncate">{wall || 'No wall'}</div>
-                        </div>
-                        <div className="text-right text-[10px] text-muted-foreground shrink-0">
-                            <div className="font-semibold text-ot-action">{computedShelves} shelves</div>
-                            <div>{computedColumns} sections</div>
-                        </div>
+            <Card className={cn(
+                "max-w-full bg-ot-surface-top border shadow-2xl flex flex-col overflow-hidden rounded-none",
+                isActive ? "border-ot-action/70" : "border-ot-border"
+            )}>
+                <div className="px-3 py-2 border-b border-ot-border/70 bg-ot-surface-elev-bottom flex items-center justify-between gap-2 shrink-0">
+                    <div className="min-w-0">
+                        <div className="text-sm font-bold text-white truncate">{name}</div>
+                        <div className="text-[10px] uppercase tracking-wide text-muted-foreground truncate">{wall || 'No wall'}</div>
                     </div>
+                    <div className="text-right text-[10px] text-muted-foreground shrink-0">
+                        <div className="font-semibold text-ot-action">{computedShelves} shelves</div>
+                        <div>{computedColumns} sections</div>
+                    </div>
+                </div>
 
-                    <div
-                        className="grid gap-px bg-ot-border/40"
-                        style={{ gridTemplateRows: `repeat(${computedShelves}, ${SHELF_SECTION_HEIGHT})` }}
-                    >
-                        {Array.from({ length: computedShelves }).map((_, rowIndex) => (
-                            <div
-                                key={rowIndex}
-                                className="grid gap-px min-h-0 min-w-0"
-                                style={{ gridTemplateColumns: `repeat(${computedColumns}, ${SHELF_SECTION_WIDTH})` }}
-                            >
-                                {Array.from({ length: computedColumns }).map((_, colIndex) => (
-                                    <DrawerCell
-                                        key={colIndex}
-                                        cupboardId={id}
-                                        row={rowIndex + 1}
-                                        col={colIndex + 1}
-                                        ledsPerDrawer={computedLeds}
-                                        dense={isDense}
-                                    />
-                                ))}
-                            </div>
-                        ))}
-                    </div>
+                <div
+                    className="grid gap-px bg-ot-border/40"
+                    style={{ gridTemplateRows: `repeat(${computedShelves}, ${SHELF_SECTION_HEIGHT})` }}
+                >
+                    {Array.from({ length: computedShelves }).map((_, rowIndex) => (
+                        <div
+                            key={rowIndex}
+                            className="grid gap-px min-h-0 min-w-0"
+                            style={{ gridTemplateColumns: `repeat(${computedColumns}, ${SHELF_SECTION_WIDTH})` }}
+                        >
+                            {Array.from({ length: computedColumns }).map((_, colIndex) => (
+                                <DrawerCell
+                                    key={colIndex}
+                                    cupboardId={id}
+                                    row={rowIndex + 1}
+                                    col={colIndex + 1}
+                                    ledsPerDrawer={computedLeds}
+                                    dense={isDense}
+                                />
+                            ))}
+                        </div>
+                    ))}
+                </div>
 
-                    <div className="px-3 py-2 border-t border-ot-border/70 bg-ot-bg-top/70 flex items-center justify-between text-[10px] text-muted-foreground shrink-0">
-                        <span className="flex items-center gap-1">
-                            <Grid3X3 className="w-3 h-3" />
-                            {computedShelves} x {computedColumns}
-                        </span>
-                        <span className="flex items-center gap-1">
-                            <Package className="w-3 h-3" />
-                            {assignmentsCount} assigned
-                        </span>
-                    </div>
-                </Card>
-            </Button>
-        </div>
+                <div className="px-3 py-2 border-t border-ot-border/70 bg-ot-bg-top/70 flex items-center justify-between text-[10px] text-muted-foreground shrink-0">
+                    <span className="flex items-center gap-1">
+                        <Grid3X3 className="w-3 h-3" />
+                        {computedShelves} x {computedColumns}
+                    </span>
+                    <span className="flex items-center gap-1">
+                        <Package className="w-3 h-3" />
+                        {assignmentsCount} assigned
+                    </span>
+                </div>
+            </Card>
+        </Button>
     );
 });
 
@@ -182,20 +175,8 @@ export default function Cupboard2D({ cupboards = [], controllerName, floorName, 
         scrollTop: 0,
         moved: false,
     });
-
-    // Stable select callbacks — one per index, never recreated unless cupboard count changes.
-    // This prevents CupboardBay (React.memo) from re-rendering due to a new arrow function reference.
-    const selectCallbacks = useMemo(
-        () => cupboards.map((_, i) => () => startTransition(() => onSelectCupboard?.(i))),
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        [cupboards.length, onSelectCupboard]
-    );
-
     const wallNames = [...new Set(cupboards.map((cupboard) => cupboard.wall || 'No Wall'))].join(', ');
-    const totalShelves = useMemo(
-        () => cupboards.reduce((sum, cupboard) => sum + getShelfCount(cupboard), 0),
-        [cupboards]
-    );
+    const totalShelves = cupboards.reduce((sum, cupboard) => sum + getShelfCount(cupboard), 0);
     const currentCupboard = selectedCupboard || cupboards[activeCupboardIdx] || null;
     const currentWall = currentCupboard?.wall || wallNames || 'No Wall';
     const currentCupboardName = currentCupboard?.name || 'No cupboard selected';
@@ -211,10 +192,12 @@ export default function Cupboard2D({ cupboards = [], controllerName, floorName, 
         });
     }, [activeCupboardIdx]);
 
-    const handlePointerDown = useCallback((event) => {
+    const handlePointerDown = (event) => {
         if (event.button !== 0) return;
+
         const container = scrollRef.current;
         if (!container) return;
+
         dragStateRef.current = {
             isDown: true,
             startX: event.clientX,
@@ -224,40 +207,44 @@ export default function Cupboard2D({ cupboards = [], controllerName, floorName, 
             moved: false,
         };
         container.setPointerCapture?.(event.pointerId);
-    }, []);
+    };
 
-    const handlePointerMove = useCallback((event) => {
+    const handlePointerMove = (event) => {
         const container = scrollRef.current;
         const dragState = dragStateRef.current;
         if (!container || !dragState.isDown) return;
+
         const deltaX = event.clientX - dragState.startX;
         const deltaY = event.clientY - dragState.startY;
+
         if (!dragState.moved && (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3)) {
             dragState.moved = true;
         }
+
         if (dragState.moved) {
             container.scrollLeft = dragState.scrollLeft - deltaX;
             container.scrollTop = dragState.scrollTop - deltaY;
         }
-    }, []);
+    };
 
-    const stopDragging = useCallback((event) => {
+    const stopDragging = (event) => {
         const container = scrollRef.current;
         if (container?.hasPointerCapture?.(event.pointerId)) {
             container.releasePointerCapture(event.pointerId);
         }
         dragStateRef.current.isDown = false;
-    }, []);
+    };
 
-    const handleClickCapture = useCallback((event) => {
+    const handleClickCapture = (event) => {
         if (!dragStateRef.current.moved) return;
+
         event.preventDefault();
         event.stopPropagation();
         dragStateRef.current.moved = false;
-    }, []);
+    };
 
     return (
-        <div className="w-full h-full bg-ot-bg-mid p-3 sm:p-4">
+        <div className="w-full h-full bg-ot-bg-mid  p-3 sm:p-4">
             <div className="h-full min-h-0 flex flex-col">
                 <Card className="mb-3 flex items-center justify-between gap-3 p-3 bg-ot-surface-top border-ot-border rounded-lg shadow-sm">
                     <div className="min-w-0">
@@ -279,6 +266,7 @@ export default function Cupboard2D({ cupboards = [], controllerName, floorName, 
                         "flex-1 min-h-0 flex p-2 items-start gap-4 overflow-x-auto overflow-y-auto overscroll-contain cursor-grab active:cursor-grabbing select-none touch-none",
                         layoutMode === 'horizontal' ? "flex-nowrap" : "flex-wrap content-start"
                     )}
+                    style={{ contain: 'strict', willChange: 'transform' }}
                     onPointerDown={handlePointerDown}
                     onPointerMove={handlePointerMove}
                     onPointerUp={stopDragging}
@@ -288,10 +276,12 @@ export default function Cupboard2D({ cupboards = [], controllerName, floorName, 
                     {cupboards.map((cupboard, index) => (
                         <CupboardBay
                             key={cupboard.id}
-                            bayRef={(el) => { cupboardRefs.current[index] = el; }}
+                            bayRef={(element) => {
+                                cupboardRefs.current[index] = element;
+                            }}
                             cupboard={cupboard}
                             isActive={index === activeCupboardIdx}
-                            onSelect={selectCallbacks[index]}
+                            onSelect={() => onSelectCupboard?.(index)}
                         />
                     ))}
                 </div>

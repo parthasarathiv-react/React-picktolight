@@ -1,4 +1,4 @@
-import React, { useState, useCallback, lazy, Suspense, startTransition } from 'react';
+import React, { useState, useCallback, lazy, Suspense } from 'react';
 import { Card, CardContent } from 'components/ui/card';
 import Cupboard2D from 'components/visualization/Cupboard2D';
 import { Layers, Box, MonitorPlay, ChevronRight, PanelRightClose, PanelRightOpen, LayoutGrid, List } from 'lucide-react';
@@ -145,45 +145,55 @@ export default function Monitoring() {
     const eanCountFor = useCallback((cbId) => getCupboardAssignments(cbId).length, []);
 
     const handleToggleFloor = (floorName, isOpen) => {
-        startTransition(() => {
-            setExpandedFloors((prev) => {
-                const next = new Set(prev);
-                if (isOpen) { next.add(floorName); } else { next.delete(floorName); }
-                return next;
-            });
+        setExpandedFloors((prev) => {
+            const next = new Set(prev);
+            if (isOpen) {
+                next.add(floorName);
+            } else {
+                next.delete(floorName);
+            }
+            return next;
         });
     };
 
     const handleToggleController = (controllerName, isOpen) => {
-        startTransition(() => {
-            setSelectedControllerName(controllerName);
-            const ctrl = hierarchy.flatMap(f => f.controllers).find(c => c.name === controllerName);
-            const fwName = ctrl?.walls?.[0]?.name || '';
-            setSelectedWallName(fwName);
-            setActiveCupboardIdx(0);
-            setExpandedControllers((prev) => {
-                const next = new Set(prev);
-                if (isOpen) { next.add(controllerName); } else { next.delete(controllerName); }
-                return next;
-            });
+        setSelectedControllerName(controllerName);
+
+        // Find first wall of this controller to select it
+        const ctrl = hierarchy.flatMap(f => f.controllers).find(c => c.name === controllerName);
+        const fwName = ctrl?.walls?.[0]?.name || '';
+        setSelectedWallName(fwName);
+        setActiveCupboardIdx(0);
+
+        setExpandedControllers((prev) => {
+            const next = new Set(prev);
             if (isOpen) {
-                const floorOfController = hierarchy.find((floor) => floor.controllers.some((ctrl) => ctrl.name === controllerName));
-                if (floorOfController) {
-                    setExpandedFloors((prev) => new Set(prev).add(floorOfController.name));
-                }
+                next.add(controllerName);
+            } else {
+                next.delete(controllerName);
             }
+            return next;
         });
+
+        if (isOpen) {
+            const floorOfController = hierarchy.find((floor) => floor.controllers.some((ctrl) => ctrl.name === controllerName));
+            if (floorOfController) {
+                setExpandedFloors((prev) => new Set(prev).add(floorOfController.name));
+            }
+        }
     };
 
     const handleToggleWall = (wallName, isOpen) => {
-        startTransition(() => {
-            setSelectedWallName(wallName);
-            setActiveCupboardIdx(0);
-            setExpandedWalls((prev) => {
-                const next = new Set(prev);
-                if (isOpen) { next.add(wallName); } else { next.delete(wallName); }
-                return next;
-            });
+        setSelectedWallName(wallName);
+        setActiveCupboardIdx(0);
+        setExpandedWalls((prev) => {
+            const next = new Set(prev);
+            if (isOpen) {
+                next.add(wallName);
+            } else {
+                next.delete(wallName);
+            }
+            return next;
         });
     };
 
@@ -192,7 +202,7 @@ export default function Monitoring() {
     };
 
     return (
-        <div className="flex flex-col h-[calc(100vh-8rem)]">
+        <div className="flex flex-col h-[calc(100vh-8rem)] animate-in fade-in">
             {/* ── Top bar ────────────────────────────────────────────────── */}
             <div className="flex justify-between items-center mb-6">
                 <div>
