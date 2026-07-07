@@ -48,9 +48,10 @@ function App() {
                     <Route path="/login" element={<Login />} />
 
                     <Route path="/" element={<MainLayout />}>
-                        <Route path="monitoring" element={<Monitoring />} />
-                        <Route path="settings" element={<Settings />} />
-                        <Route path="users" element={<Users />} />
+                        <Route index element={<Navigate to="/monitoring" replace />} />
+                        <Route path="/monitoring" element={<Monitoring />} />
+                        <Route path="/settings" element={<Settings />} />
+                        <Route path="/users" element={<Users />} />
                     </Route>
 
                     <Route path="*" element={<Navigate to="/login" replace />} />
