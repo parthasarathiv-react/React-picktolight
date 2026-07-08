@@ -46,9 +46,10 @@ function App() {
             <Suspense fallback={<PageLoader />}>
                 <Routes>
                     <Route path="/login" element={<Login />} />
-
+                    {/* Redirect root to login */}
+                    <Route path="/" element={<Navigate to="/login" replace />} />
                     <Route path="/" element={<MainLayout />}>
-                        <Route index element={<Navigate to="/monitoring" replace />} />
+                        {/* <Route index element={<Navigate to="/monitoring" replace />} /> */}
                         <Route path="/monitoring" element={<Monitoring />} />
                         <Route path="/settings" element={<Settings />} />
                         <Route path="/users" element={<Users />} />

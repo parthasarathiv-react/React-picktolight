@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from 'components/ui/card';
 import { Input } from 'components/ui/input';
 import { Button } from 'components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from 'components/ui/dialog';
 import { useNavigate } from 'react-router-dom';
-import { Activity, Eye, EyeOff, LogIn, X } from 'lucide-react';
+import { Activity, Eye, EyeOff, LogIn, X, MapPin } from 'lucide-react';
 
 export default function Login() {
     const navigate = useNavigate();
@@ -12,15 +13,28 @@ export default function Login() {
     const [error, setError] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [showCredentials, setShowCredentials] = useState(true);
+    const [showLocationDialog, setShowLocationDialog] = useState(false);
+
+    const locations = [
+        { id: 'loc1', name: 'Warehouse A - Zone 1' },
+        { id: 'loc2', name: 'Warehouse A - Zone 2' },
+        { id: 'loc3', name: 'Warehouse B - Main' },
+    ];
 
     const handleLogin = (e) => {
         e.preventDefault();
         setError('');
         if (username === 'admin' && password === 'admin@123') {
-            navigate('/monitoring');
+            setShowLocationDialog(true);
         } else {
             setError('Invalid username or password');
         }
+    };
+
+    const handleLocationSelect = (location) => {
+        localStorage.setItem('selectedLocation', JSON.stringify(location));
+        setShowLocationDialog(false);
+        navigate('/monitoring');
     };
 
     return (
@@ -134,7 +148,7 @@ export default function Login() {
             {/* Test Credentials Display */}
             {showCredentials && (
                 <div className="fixed right-4 md:right-8 top-1/2 -translate-y-1/2 p-6 rounded-xl border border-ot-border bg-ot-surface-elev-top shadow-2xl z-50">
-                    <Button variant="ghost" 
+                    <Button variant="ghost"
                         onClick={() => setShowCredentials(false)}
                         className="absolute top-3 right-3 text-muted-foreground hover:text-white transition-colors"
                         aria-label="Close"
@@ -148,6 +162,33 @@ export default function Login() {
                     </div>
                 </div>
             )}
+
+            {/* Location Selection Overlay */}
+            <Dialog open={showLocationDialog} onOpenChange={setShowLocationDialog}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Select Location</DialogTitle>
+                        <DialogDescription>
+                            Please choose your working location to continue
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="flex flex-col space-y-3 py-4">
+                        {locations.map((loc) => (
+                            <Button 
+                                key={loc.id} 
+                                variant="outline" 
+                                className="group relative w-full justify-start h-14 text-left border-ot-border bg-ot-surface/50 hover:bg-ot-action/10 hover:text-white hover:border-ot-action transition-all overflow-hidden"
+                                onClick={() => handleLocationSelect(loc)}
+                            >
+                                <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-ot-action/10 to-transparent transition-transform duration-500 group-hover:translate-x-full" />
+                                <MapPin className="w-5 h-5 mr-3 text-ot-action group-hover:text-ot-action-hover transition-colors" />
+                                <span className="font-medium text-gray-200 group-hover:text-white transition-colors">{loc.name}</span>
+                            </Button>
+                        ))}
+                    </div>
+
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, lazy, Suspense } from 'react';
+import React, { useState, useCallback, lazy, Suspense, useMemo } from 'react';
 import { Card, CardContent } from 'components/ui/card';
 import Cupboard2D from 'components/visualization/Cupboard2D';
 import { Layers, Box, MonitorPlay, ChevronRight, PanelRightClose, PanelRightOpen, LayoutGrid, List } from 'lucide-react';
@@ -28,7 +28,7 @@ export default function Monitoring() {
     const [controlsVisible, setControlsVisible] = useState(true);
     const [activeCupboardIdx, setActiveCupboardIdx] = useState(0);
 
-    const hierarchy = React.useMemo(() => {
+    const hierarchy = useMemo(() => {
         const floorsMap = new Map();
         FLOORS_CONFIG.forEach((floor) => {
             floorsMap.set(floor.name, { ...floor, controllers: [] });
