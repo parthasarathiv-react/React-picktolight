@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from 'components/ui/card';
+import { Button } from 'components/ui/button';
 import { Server, Box, Layers, LayoutGrid } from 'lucide-react';
 import { cn } from 'lib/utils';
 import {
@@ -74,19 +75,20 @@ export default function Settings() {
                         {tabs.map((tab) => {
                             const Icon = tab.icon;
                             return (
-                                <button
+                                <Button
                                     key={tab.id}
+                                    variant="ghost"
                                     onClick={() => setActiveTab(tab.id)}
                                     className={cn(
-                                        "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all text-left",
+                                        "flex items-center justify-start gap-3 px-3 py-2.5 w-full rounded-lg text-sm font-medium transition-all",
                                         activeTab === tab.id
-                                            ? "bg-ot-action text-white shadow-md"
+                                            ? "bg-ot-action text-white shadow-md hover:bg-ot-action hover:text-white"
                                             : "text-muted-foreground hover:bg-ot-surface-elev-bottom hover:text-white"
                                     )}
                                 >
                                     <Icon className={cn("w-4 h-4", activeTab === tab.id ? "text-white" : "")} />
                                     {tab.label}
-                                </button>
+                                </Button>
                             );
                         })}
                     </div>
