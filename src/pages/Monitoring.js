@@ -3,7 +3,7 @@ import { Card, CardContent } from 'components/ui/card';
 import Cupboard2D from 'components/visualization/Cupboard2D';
 import { Layers, Box, MonitorPlay, ChevronRight, PanelRightClose, PanelRightOpen, LayoutGrid, List } from 'lucide-react';
 import { cn } from 'lib/utils';
-import { FLOORS_CONFIG, CONTROLLERS_CONFIG, WALLS_CONFIG, CUPBOARDS_CONFIG, getCupboardAssignments } from 'lib/dataStore';
+import { CONTROLLERS_CONFIG, WALLS_CONFIG, CUPBOARDS_CONFIG, getCupboardAssignments } from 'lib/dataStore';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from 'components/ui/collapsible';
 import { Tabs, TabsList, TabsTrigger } from 'components/ui/tabs';
 import { Button } from 'components/ui/button';
@@ -29,23 +29,13 @@ export default function Monitoring() {
     const [activeCupboardIdx, setActiveCupboardIdx] = useState(0);
 
     const hierarchy = useMemo(() => {
-        const floorsMap = new Map();
-        FLOORS_CONFIG.forEach((floor) => {
-            floorsMap.set(floor.name, { ...floor, controllers: [] });
-        });
-
         const controllersMap = new Map();
         CONTROLLERS_CONFIG.forEach((controller) => {
-            const floorName = controller.floor || 'Unassigned Floor';
-            if (!floorsMap.has(floorName)) {
-                floorsMap.set(floorName, { id: `floor-${floorName}`, name: floorName, controllers: [] });
-            }
             const controllerCopy = { ...controller, walls: new Map() };
             controllersMap.set(controller.name, controllerCopy);
-            floorsMap.get(floorName).controllers.push(controllerCopy);
         });
 
-        const unassignedController = { id: 'unassigned-controller', name: 'Unassigned Controller', floor: 'Unassigned Floor', walls: new Map() };
+        const unassignedController = { id: 'unassigned-controller', name: 'Unassigned Controller', walls: new Map() };
 
         WALLS_CONFIG.forEach((wall) => {
             const ctrlName = wall.controller || 'Unassigned Controller';
@@ -53,11 +43,7 @@ export default function Monitoring() {
 
             if (!controllerEntry) {
                 controllerEntry = unassignedController;
-                if (!floorsMap.has(controllerEntry.floor)) {
-                    floorsMap.set(controllerEntry.floor, { id: `floor-${controllerEntry.floor}`, name: controllerEntry.floor, controllers: [controllerEntry] });
-                } else if (!floorsMap.get(controllerEntry.floor).controllers.includes(controllerEntry)) {
-                    floorsMap.get(controllerEntry.floor).controllers.push(controllerEntry);
-                }
+                controllersMap.set(unassignedController.name, unassignedController);
             }
 
             if (!controllerEntry.walls.has(wall.name)) {
@@ -71,11 +57,7 @@ export default function Monitoring() {
 
             if (!controllerEntry) {
                 controllerEntry = unassignedController;
-                if (!floorsMap.has(controllerEntry.floor)) {
-                    floorsMap.set(controllerEntry.floor, { id: `floor-${controllerEntry.floor}`, name: controllerEntry.floor, controllers: [controllerEntry] });
-                } else if (!floorsMap.get(controllerEntry.floor).controllers.includes(controllerEntry)) {
-                    floorsMap.get(controllerEntry.floor).controllers.push(controllerEntry);
-                }
+                controllersMap.set(unassignedController.name, unassignedController);
             }
 
             const wallName = cupboard.wall || 'Unassigned Wall';
@@ -98,29 +80,23 @@ export default function Monitoring() {
         });
 
         // Convert maps to arrays
-        const orderedFloors = Array.from(floorsMap.values()).map(floor => {
+        const orderedControllers = Array.from(controllersMap.values()).map(ctrl => {
             return {
-                ...floor,
-                controllers: floor.controllers.map(ctrl => ({
-                    ...ctrl,
-                    walls: Array.from(ctrl.walls.values()),
-                    // keep flat cupboards array for compatibility with activeCupboardIdx
-                    cupboards: Array.from(ctrl.walls.values()).flatMap(w => w.cupboards)
-                }))
+                ...ctrl,
+                walls: Array.from(ctrl.walls.values()),
+                // keep flat cupboards array for compatibility with activeCupboardIdx
+                cupboards: Array.from(ctrl.walls.values()).flatMap(w => w.cupboards)
             };
         }).sort((a, b) => a.name.localeCompare(b.name));
 
-        return orderedFloors;
-    }, [FLOORS_CONFIG.length, CONTROLLERS_CONFIG.length, CUPBOARDS_CONFIG.length]);
+        return orderedControllers;
+    }, [CONTROLLERS_CONFIG.length, CUPBOARDS_CONFIG.length]);
 
-    const firstController = hierarchy.flatMap((floor) => floor.controllers).find((ctrl) => ctrl) || null;
+    const firstController = hierarchy[0] || null;
     const [selectedControllerName, setSelectedControllerName] = useState(firstController?.name || '');
     const firstWallName = firstController?.walls?.[0]?.name || '';
     const [selectedWallName, setSelectedWallName] = useState(firstWallName);
 
-    const [expandedFloors, setExpandedFloors] = useState(() => {
-        return hierarchy[0]?.name ? new Set([hierarchy[0].name]) : new Set();
-    });
     const [expandedControllers, setExpandedControllers] = useState(() => {
         return firstController?.name ? new Set([firstController.name]) : new Set();
     });
@@ -129,9 +105,7 @@ export default function Monitoring() {
     });
 
     const selectedController =
-        hierarchy
-            .flatMap((floor) => floor.controllers)
-            .find((controller) => controller.name === selectedControllerName) ||
+        hierarchy.find((controller) => controller.name === selectedControllerName) ||
         firstController ||
         { name: 'None', cupboards: [], walls: [] };
 
@@ -139,28 +113,15 @@ export default function Monitoring() {
 
     const cupboards = selectedWall.cupboards || [];
     const totalCupboards = cupboards.length;
-    const selectedFloorName = selectedController.floor || 'No floor';
     const selectedCupboard = cupboards[activeCupboardIdx] || null;
 
     const eanCountFor = useCallback((cbId) => getCupboardAssignments(cbId).length, []);
-
-    const handleToggleFloor = (floorName, isOpen) => {
-        setExpandedFloors((prev) => {
-            const next = new Set(prev);
-            if (isOpen) {
-                next.add(floorName);
-            } else {
-                next.delete(floorName);
-            }
-            return next;
-        });
-    };
 
     const handleToggleController = (controllerName, isOpen) => {
         setSelectedControllerName(controllerName);
 
         // Find first wall of this controller to select it
-        const ctrl = hierarchy.flatMap(f => f.controllers).find(c => c.name === controllerName);
+        const ctrl = hierarchy.find(c => c.name === controllerName);
         const fwName = ctrl?.walls?.[0]?.name || '';
         setSelectedWallName(fwName);
         setActiveCupboardIdx(0);
@@ -174,13 +135,6 @@ export default function Monitoring() {
             }
             return next;
         });
-
-        if (isOpen) {
-            const floorOfController = hierarchy.find((floor) => floor.controllers.some((ctrl) => ctrl.name === controllerName));
-            if (floorOfController) {
-                setExpandedFloors((prev) => new Set(prev).add(floorOfController.name));
-            }
-        }
     };
 
     const handleToggleWall = (wallName, isOpen) => {
@@ -260,7 +214,6 @@ export default function Monitoring() {
                             <Cupboard3D
                                 cupboards={cupboards}
                                 controllerName={selectedController.name}
-                                floorName={selectedFloorName}
                                 selectedCupboard={selectedCupboard}
                                 activeCupboardIdx={activeCupboardIdx}
                                 onSelectCupboard={setActiveCupboardIdx}
@@ -271,7 +224,6 @@ export default function Monitoring() {
                             <Cupboard2D
                                 cupboards={cupboards}
                                 controllerName={selectedController.name}
-                                floorName={selectedFloorName}
                                 selectedCupboard={selectedCupboard}
                                 activeCupboardIdx={activeCupboardIdx}
                                 onSelectCupboard={setActiveCupboardIdx}
@@ -297,7 +249,7 @@ export default function Monitoring() {
                     )}>
                         <div className="flex items-center gap-2 whitespace-nowrap">
                             <MonitorPlay className="w-4 h-4 text-ot-action shrink-0" />
-                            <span>Floor Navigator</span>
+                            <span>Hierarchy Navigator</span>
                         </div>
                     </div>
                     <CardContent className={cn(
@@ -305,153 +257,118 @@ export default function Monitoring() {
                         controlsVisible ? "flex-1 opacity-100" : "h-0 opacity-0 pointer-events-none"
                     )}>
                         <div className="divide-y divide-ot-border">
-                            {hierarchy.map((floor) => {
-                                const isFloorExpanded = expandedFloors.has(floor.name);
-                                return (
-                                    <Collapsible
-                                        key={floor.name}
-                                        open={isFloorExpanded}
-                                        onOpenChange={(isOpen) => handleToggleFloor(floor.name, isOpen)}
-                                        className="border-b border-ot-border"
-                                    >
-                                        <CollapsibleTrigger asChild>
-                                            <Button
-                                                variant="ghost"
-                                                className={cn(
-                                                    "w-full h-auto px-4 py-4 text-left flex items-center justify-between gap-3 transition-colors rounded-none",
-                                                    isFloorExpanded ? 'bg-ot-surface-bottom/70 hover:bg-ot-surface-bottom/70' : 'hover:bg-ot-surface-bottom/80'
-                                                )}
-                                            >
-                                                <div className="min-w-0 flex-1">
-                                                    <div className="font-medium text-sm text-white truncate text-left">{floor.name}</div>
-                                                    <p className="text-xs text-muted-foreground mt-1 truncate text-left font-normal">{floor.controllers.length} controllers</p>
-                                                </div>
-                                                <ChevronRight className={cn(
-                                                    'w-4 h-4 text-muted-foreground transition-transform',
-                                                    isFloorExpanded && 'rotate-90 text-ot-action'
-                                                )} />
-                                            </Button>
-                                        </CollapsibleTrigger>
+                            {hierarchy.length > 0 ? (
+                                hierarchy.map((controller) => {
+                                    const isSelectedController = selectedController.name === controller.name;
+                                    const isControllerExpanded = expandedControllers.has(controller.name);
+                                    return (
+                                        <Collapsible
+                                            key={controller.name}
+                                            open={isControllerExpanded}
+                                            onOpenChange={(isOpen) => handleToggleController(controller.name, isOpen)}
+                                            className="border-b border-ot-border"
+                                        >
+                                            <CollapsibleTrigger asChild>
+                                                <Button
+                                                    variant="ghost"
+                                                    className={cn(
+                                                        "w-full h-auto px-4 py-4 text-left flex items-center justify-between gap-3 transition-colors rounded-none",
+                                                        isControllerExpanded ? 'bg-ot-surface-bottom/70 hover:bg-ot-surface-bottom/70' : 'hover:bg-ot-surface-bottom/80',
+                                                        isSelectedController ? 'bg-ot-action/10 border-l-2 border-l-ot-action text-ot-action hover:bg-ot-action/15 hover:text-ot-action' : ''
+                                                    )}
+                                                >
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className={cn(
+                                                            'font-medium text-sm truncate text-left',
+                                                            isSelectedController ? 'text-ot-action' : 'text-white'
+                                                        )}>{controller.name}</div>
+                                                        <p className="text-xs text-muted-foreground mt-1 truncate text-left font-normal">{controller.cupboards.length} cupboards</p>
+                                                    </div>
+                                                    <ChevronRight className={cn(
+                                                        'w-4 h-4 transition-transform shrink-0',
+                                                        isControllerExpanded && 'rotate-90 text-ot-action',
+                                                        !isControllerExpanded && !isSelectedController && 'text-muted-foreground'
+                                                    )} />
+                                                </Button>
+                                            </CollapsibleTrigger>
 
-                                        <CollapsibleContent>
-                                            <div className="space-y-1 border-l border-ot-border pl-4 pb-3">
-                                                {floor.controllers.length > 0 ? (
-                                                    floor.controllers.map((controller) => {
-                                                        const isSelectedController = selectedController.name === controller.name;
-                                                        const isControllerExpanded = expandedControllers.has(controller.name);
-                                                        return (
-                                                            <Collapsible
-                                                                key={controller.name}
-                                                                open={isControllerExpanded}
-                                                                onOpenChange={(isOpen) => handleToggleController(controller.name, isOpen)}
-                                                            >
-                                                                <CollapsibleTrigger asChild>
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        className={cn(
-                                                                            "w-full h-auto px-3 py-3 text-left rounded-md flex items-center justify-between gap-3 transition-all",
-                                                                            isSelectedController
-                                                                                ? 'bg-ot-action/10 border border-ot-action/40 text-ot-action hover:bg-ot-action/15 hover:text-ot-action'
-                                                                                : 'bg-ot-surface-top border border-transparent hover:border-ot-action/30 hover:text-white'
-                                                                        )}
-                                                                    >
-                                                                        <div className="min-w-0 flex-1">
-                                                                            <div className={cn(
-                                                                                'font-medium text-sm truncate text-left',
-                                                                                isSelectedController ? 'text-ot-action' : 'text-white'
-                                                                            )}>{controller.name}</div>
-                                                                            <p className="text-[11px] text-muted-foreground mt-1 truncate text-left font-normal">{controller.cupboards.length} cupboards</p>
-                                                                        </div>
-                                                                        <ChevronRight className={cn(
-                                                                            'w-4 h-4 transition-transform shrink-0',
-                                                                            isControllerExpanded && 'rotate-90 text-ot-action',
-                                                                            !isControllerExpanded && !isSelectedController && 'text-muted-foreground'
-                                                                        )} />
-                                                                    </Button>
-                                                                </CollapsibleTrigger>
-
-                                                                <CollapsibleContent>
-                                                                    {controller.walls.length > 0 && (
-                                                                        <div className="mt-2 space-y-2 border-l border-ot-border pl-3">
-                                                                            {controller.walls.map(wall => {
-                                                                                const isWallExpanded = expandedWalls.has(wall.name);
-                                                                                const isSelectedWall = controller.name === selectedControllerName && wall.name === selectedWallName;
+                                            <CollapsibleContent>
+                                                {controller.walls.length > 0 && (
+                                                    <div className="mt-2 mb-2 space-y-2 pl-4 pr-3">
+                                                        {controller.walls.map(wall => {
+                                                            const isWallExpanded = expandedWalls.has(wall.name);
+                                                            const isSelectedWall = controller.name === selectedControllerName && wall.name === selectedWallName;
+                                                            return (
+                                                                <Collapsible
+                                                                    key={wall.id}
+                                                                    open={isWallExpanded}
+                                                                    onOpenChange={(isOpen) => handleToggleWall(wall.name, isOpen)}
+                                                                    className="space-y-1"
+                                                                >
+                                                                    <CollapsibleTrigger asChild>
+                                                                        <Button
+                                                                            variant="ghost"
+                                                                            className={cn(
+                                                                                "w-full h-auto flex items-center justify-between text-xs font-semibold px-3 py-1.5 rounded-md transition-colors",
+                                                                                isSelectedWall
+                                                                                    ? 'bg-ot-action/20 text-ot-action hover:bg-ot-action/25 hover:text-ot-action'
+                                                                                    : 'bg-ot-surface-top/50 text-white/70 hover:bg-ot-surface-top hover:text-white'
+                                                                            )}
+                                                                        >
+                                                                            <span className="truncate flex-1 text-left">{wall.name}</span>
+                                                                            <ChevronRight className={cn('w-3 h-3 transition-transform shrink-0', isWallExpanded ? (isSelectedWall ? 'rotate-90 text-ot-action' : 'rotate-90 text-white') : 'text-muted-foreground')} />
+                                                                        </Button>
+                                                                    </CollapsibleTrigger>
+                                                                    <CollapsibleContent>
+                                                                        <div className="space-y-1 pl-2 border-l border-ot-border/50">
+                                                                            {wall.cupboards.map((cupboard, cbIdxInWall) => {
+                                                                                const isActiveCupboard = controller.name === selectedControllerName && wall.name === selectedWallName && cbIdxInWall === activeCupboardIdx;
+                                                                                const eanCount = eanCountFor(cupboard.id);
                                                                                 return (
-                                                                                    <Collapsible
-                                                                                        key={wall.id}
-                                                                                        open={isWallExpanded}
-                                                                                        onOpenChange={(isOpen) => handleToggleWall(wall.name, isOpen)}
-                                                                                        className="space-y-1"
-                                                                                    >
-                                                                                        <CollapsibleTrigger asChild>
-                                                                                            <Button
-                                                                                                variant="ghost"
-                                                                                                className={cn(
-                                                                                                    "w-full h-auto flex items-center justify-between text-xs font-semibold px-3 py-1.5 rounded-md transition-colors",
-                                                                                                    isSelectedWall
-                                                                                                        ? 'bg-ot-action/20 text-ot-action hover:bg-ot-action/25 hover:text-ot-action'
-                                                                                                        : 'bg-ot-surface-top/50 text-white/70 hover:bg-ot-surface-top hover:text-white'
-                                                                                                )}
-                                                                                            >
-                                                                                                <span className="truncate flex-1 text-left">{wall.name}</span>
-                                                                                                <ChevronRight className={cn('w-3 h-3 transition-transform shrink-0', isWallExpanded ? (isSelectedWall ? 'rotate-90 text-ot-action' : 'rotate-90 text-white') : 'text-muted-foreground')} />
-                                                                                            </Button>
-                                                                                        </CollapsibleTrigger>
-                                                                                        <CollapsibleContent>
-                                                                                            <div className="space-y-1 pl-2 border-l border-ot-border/50">
-                                                                                                {wall.cupboards.map((cupboard, cbIdxInWall) => {
-                                                                                                    const isActiveCupboard = controller.name === selectedControllerName && wall.name === selectedWallName && cbIdxInWall === activeCupboardIdx;
-                                                                                                    const eanCount = eanCountFor(cupboard.id);
-                                                                                                    return (
-                                                                                                        <div key={cupboard.id} className="space-y-1">
-                                                                                                            <Button
-                                                                                                                variant="ghost"
-                                                                                                                onClick={() => {
-                                                                                                                    if (controller.name !== selectedControllerName) {
-                                                                                                                        handleToggleController(controller.name, true);
-                                                                                                                    }
-                                                                                                                    if (wall.name !== selectedWallName) {
-                                                                                                                        handleToggleWall(wall.name, true);
-                                                                                                                    }
-                                                                                                                    handleSelectCupboard(cbIdxInWall);
-                                                                                                                }}
-                                                                                                                className={cn(
-                                                                                                                    "w-full h-auto px-3 py-2 rounded-md text-xs flex items-center justify-between transition-all",
-                                                                                                                    isActiveCupboard
-                                                                                                                        ? 'bg-ot-action/15 border border-ot-action/50 text-ot-action hover:bg-ot-action/20 hover:text-ot-action'
-                                                                                                                        : 'bg-ot-surface-bottom border border-ot-border text-muted-foreground hover:text-white hover:border-ot-action/30'
-                                                                                                                )}
-                                                                                                            >
-                                                                                                                <span className="truncate flex-1 text-left font-normal">{cupboard.name}</span>
-                                                                                                                <span className={cn(
-                                                                                                                    'px-2 py-0.5 rounded text-[10px] font-mono shrink-0 font-medium',
-                                                                                                                    eanCount > 0 ? 'bg-ot-action/20 text-ot-action' : 'bg-ot-surface-top text-muted-foreground'
-                                                                                                                )}>
-                                                                                                                    {eanCount} EAN{eanCount !== 1 ? 's' : ''}
-                                                                                                                </span>
-                                                                                                            </Button>
-                                                                                                        </div>
-                                                                                                    );
-                                                                                                })}
-                                                                                            </div>
-                                                                                        </CollapsibleContent>
-                                                                                    </Collapsible>
+                                                                                    <div key={cupboard.id} className="space-y-1">
+                                                                                        <Button
+                                                                                            variant="ghost"
+                                                                                            onClick={() => {
+                                                                                                if (controller.name !== selectedControllerName) {
+                                                                                                    handleToggleController(controller.name, true);
+                                                                                                }
+                                                                                                if (wall.name !== selectedWallName) {
+                                                                                                    handleToggleWall(wall.name, true);
+                                                                                                }
+                                                                                                handleSelectCupboard(cbIdxInWall);
+                                                                                            }}
+                                                                                            className={cn(
+                                                                                                "w-full h-auto px-3 py-2 rounded-md text-xs flex items-center justify-between transition-all",
+                                                                                                isActiveCupboard
+                                                                                                    ? 'bg-ot-action/15 border border-ot-action/50 text-ot-action hover:bg-ot-action/20 hover:text-ot-action'
+                                                                                                    : 'bg-ot-surface-bottom border border-ot-border text-muted-foreground hover:text-white hover:border-ot-action/30'
+                                                                                            )}
+                                                                                        >
+                                                                                            <span className="truncate flex-1 text-left font-normal">{cupboard.name}</span>
+                                                                                            <span className={cn(
+                                                                                                'px-2 py-0.5 rounded text-[10px] font-mono shrink-0 font-medium',
+                                                                                                eanCount > 0 ? 'bg-ot-action/20 text-ot-action' : 'bg-ot-surface-top text-muted-foreground'
+                                                                                            )}>
+                                                                                                {eanCount} EAN{eanCount !== 1 ? 's' : ''}
+                                                                                            </span>
+                                                                                        </Button>
+                                                                                    </div>
                                                                                 );
                                                                             })}
                                                                         </div>
-                                                                    )}
-                                                                </CollapsibleContent>
-                                                            </Collapsible>
-                                                        );
-                                                    })
-                                                ) : (
-                                                    <div className="px-3 py-2 text-xs text-muted-foreground">No controllers available.</div>
+                                                                    </CollapsibleContent>
+                                                                </Collapsible>
+                                                            );
+                                                        })}
+                                                    </div>
                                                 )}
-                                            </div>
-                                        </CollapsibleContent>
-                                    </Collapsible>
-                                );
-                            })}
+                                            </CollapsibleContent>
+                                        </Collapsible>
+                                    );
+                                })
+                            ) : (
+                                <div className="px-4 py-4 text-sm text-muted-foreground">No controllers available.</div>
+                            )}
                         </div>
                     </CardContent>
                 </Card>

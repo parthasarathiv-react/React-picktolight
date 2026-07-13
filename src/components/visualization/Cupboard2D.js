@@ -164,7 +164,7 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
 });
 
 
-export default function Cupboard2D({ cupboards = [], controllerName, floorName, selectedCupboard, activeCupboardIdx = 0, onSelectCupboard, layoutMode = 'horizontal' }) {
+export default function Cupboard2D({ cupboards = [], controllerName, selectedCupboard, activeCupboardIdx = 0, onSelectCupboard, layoutMode = 'horizontal' }) {
     const scrollRef = useRef(null);
     const cupboardRefs = useRef([]);
     const dragStateRef = useRef({
@@ -180,7 +180,6 @@ export default function Cupboard2D({ cupboards = [], controllerName, floorName, 
     const currentCupboard = selectedCupboard || cupboards[activeCupboardIdx] || null;
     const currentWall = currentCupboard?.wall || wallNames || 'No Wall';
     const currentCupboardName = currentCupboard?.name || 'No cupboard selected';
-    const floorLabel = floorName || 'No floor';
     const controllerLabel = controllerName || 'No controller';
 
     useEffect(() => {
@@ -250,7 +249,7 @@ export default function Cupboard2D({ cupboards = [], controllerName, floorName, 
                     <div className="min-w-0">
                         <h3 className="text-white font-bold flex items-center gap-2 truncate">
                             <Archive className="w-4 h-4 text-ot-action shrink-0" />
-                            {floorLabel} · {controllerLabel} · {currentCupboardName}
+                            {controllerLabel} · {currentCupboardName}
                         </h3>
                         <p className="text-xs text-muted-foreground truncate">{currentWall} · {cupboards.length} cupboards · {totalShelves} shelves</p>
                     </div>

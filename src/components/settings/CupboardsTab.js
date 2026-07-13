@@ -7,21 +7,17 @@ import { cn } from 'lib/utils';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from 'components/ui/table';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from 'components/ui/select';
 
-export default function CupboardsTab({ cupboardsData, syncCupboards, floorsData, controllersData, wallsData }) {
+export default function CupboardsTab({ cupboardsData, syncCupboards, controllersData, wallsData }) {
     const [showCupboardForm, setShowCupboardForm] = useState(false);
     const [editingCupboard, setEditingCupboard] = useState(null);
-    const [selectedFloorForCupboard, setSelectedFloorForCupboard] = useState('');
 
     const handleAddCupboard = () => {
         setEditingCupboard(null);
-        setSelectedFloorForCupboard(floorsData[0]?.name || '');
         setShowCupboardForm(true);
     };
 
     const handleEditCupboard = (cb) => {
         setEditingCupboard(cb);
-        const ctrl = controllersData.find(c => c.name === cb.controller);
-        setSelectedFloorForCupboard(ctrl ? ctrl.floor : (floorsData[0]?.name || ''));
         setShowCupboardForm(true);
     };
 
@@ -91,23 +87,7 @@ export default function CupboardsTab({ cupboardsData, syncCupboards, floorsData,
                     <form onSubmit={handleCupboardSubmit}>
                         <CardContent className="pt-6">
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                <div className="space-y-2">
-                                    <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">Floor</label>
-                                    <Select 
-                                        name="floor" 
-                                        value={selectedFloorForCupboard}
-                                        onValueChange={(val) => setSelectedFloorForCupboard(val)}
-                                    >
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select floor" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {floorsData.map((f) => (
-                                                <SelectItem key={f.id} value={f.name}>{f.name}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
+
                                 <div className="space-y-2">
                                     <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">Controller</label>
                                     <Select name="controller" defaultValue={editingCupboard ? editingCupboard.controller : ''}>
@@ -115,7 +95,7 @@ export default function CupboardsTab({ cupboardsData, syncCupboards, floorsData,
                                             <SelectValue placeholder="Select controller" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {controllersData.filter(c => c.floor === selectedFloorForCupboard).map((ctrl) => (
+                                            {controllersData.map((ctrl) => (
                                                 <SelectItem key={ctrl.id} value={ctrl.name}>{ctrl.name}</SelectItem>
                                             ))}
                                         </SelectContent>
@@ -128,7 +108,7 @@ export default function CupboardsTab({ cupboardsData, syncCupboards, floorsData,
                                             <SelectValue placeholder="Select wall" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {wallsData.filter(w => w.floor === selectedFloorForCupboard).map((wall) => (
+                                            {wallsData.map((wall) => (
                                                 <SelectItem key={wall.id} value={wall.name}>{wall.name}</SelectItem>
                                             ))}
                                         </SelectContent>
@@ -180,7 +160,7 @@ export default function CupboardsTab({ cupboardsData, syncCupboards, floorsData,
                         <TableRow>
                             <TableHead>Wall</TableHead>
                             <TableHead>Cupboard</TableHead>
-                            <TableHead>Floor & Controller</TableHead>
+                            <TableHead>Controller</TableHead>
                             <TableHead>Shelves Layout</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead className="text-right">Actions</TableHead>
@@ -188,8 +168,6 @@ export default function CupboardsTab({ cupboardsData, syncCupboards, floorsData,
                     </TableHeader>
                     <TableBody>
                         {cupboardsData.map((cb) => {
-                            const ctrl = controllersData.find(c => c.name === cb.controller);
-                            const floorName = ctrl ? ctrl.floor : 'Unknown';
                             return (
                                 <TableRow key={cb.id}>
                                     <TableCell className="font-medium text-white">
@@ -203,7 +181,6 @@ export default function CupboardsTab({ cupboardsData, syncCupboards, floorsData,
                                     </TableCell>
                                     <TableCell className="font-medium text-white">{cb.name}</TableCell>
                                     <TableCell className="text-muted-foreground text-xs">
-                                        <div className="font-semibold text-white/80">{floorName}</div>
                                         <div>{cb.controller}</div>
                                     </TableCell>
                                     <TableCell className="text-muted-foreground font-mono text-xs">

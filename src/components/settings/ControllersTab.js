@@ -7,7 +7,7 @@ import { cn } from 'lib/utils';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from 'components/ui/table';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from 'components/ui/select';
 
-export default function ControllersTab({ controllersData, syncControllers, floorsData }) {
+export default function ControllersTab({ controllersData, syncControllers }) {
     const [showControllerForm, setShowControllerForm] = useState(false);
     const [editingController, setEditingController] = useState(null);
 
@@ -32,12 +32,11 @@ export default function ControllersTab({ controllersData, syncControllers, floor
         const name = data.get('name');
         const ip = data.get('ip');
         const port = data.get('port');
-        const floor = data.get('floor');
         const status = data.get('status') === 'ACTIVE' ? 'Online' : 'Offline';
 
         if (editingController) {
             const updated = controllersData.map(c =>
-                c.id === editingController.id ? { ...c, name, ip, port, floor, status } : c
+                c.id === editingController.id ? { ...c, name, ip, port, status } : c
             );
             syncControllers(updated);
         } else {
@@ -46,7 +45,6 @@ export default function ControllersTab({ controllersData, syncControllers, floor
                 name,
                 ip,
                 port,
-                floor,
                 status
             };
             syncControllers([...controllersData, newCtrl]);
@@ -92,19 +90,7 @@ export default function ControllersTab({ controllersData, syncControllers, floor
                                     <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">Port</label>
                                     <Input name="port" defaultValue={editingController ? editingController.port : '8080'} placeholder="8080" className="bg-ot-surface-bottom" required />
                                 </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">Floor Assignment</label>
-                                    <Select name="floor" defaultValue={editingController ? editingController.floor : floorsData[0]?.name || ''}>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select floor" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {floorsData.map((f) => (
-                                                <SelectItem key={f.id} value={f.name}>{f.name}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
+
                                 <div className="space-y-2">
                                     <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">Status</label>
                                     <Select name="status" defaultValue={editingController && editingController.status === 'Offline' ? 'INACTIVE' : 'ACTIVE'}>
@@ -136,7 +122,6 @@ export default function ControllersTab({ controllersData, syncControllers, floor
                             <TableHead>Name</TableHead>
                             <TableHead>IP Address</TableHead>
                             <TableHead>Port</TableHead>
-                            <TableHead>Floor Assignment</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
@@ -147,7 +132,6 @@ export default function ControllersTab({ controllersData, syncControllers, floor
                                 <TableCell className="font-medium text-white">{ctrl.name}</TableCell>
                                 <TableCell className="text-muted-foreground font-mono">{ctrl.ip}</TableCell>
                                 <TableCell className="text-muted-foreground">{ctrl.port}</TableCell>
-                                <TableCell className="text-muted-foreground">{ctrl.floor}</TableCell>
                                 <TableCell>
                                     <span className={cn(
                                         "px-2 py-1 text-xs rounded-full border",

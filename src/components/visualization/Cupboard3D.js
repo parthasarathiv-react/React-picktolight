@@ -200,14 +200,13 @@ function WallScene({ cupboards, activeCupboardIdx, onSelectCupboard }) {
     );
 }
 
-export default function Cupboard3D({ cupboards, controllerName, floorName, selectedCupboard, activeCupboardIdx = 0, onSelectCupboard }) {
+export default function Cupboard3D({ cupboards, controllerName, selectedCupboard, activeCupboardIdx = 0, onSelectCupboard }) {
     const visibleCupboards = (cupboards?.length ? cupboards : CUPBOARDS_CONFIG).filter((cb) => cb.status !== 'Inactive');
     const wallNames = [...new Set(visibleCupboards.map((cupboard) => cupboard.wall || 'No Wall'))].join(', ');
     const totalShelves = visibleCupboards.reduce((sum, cupboard) => sum + (cupboard.shelves || cupboard.rows || 0), 0);
     const currentCupboard = selectedCupboard || visibleCupboards[activeCupboardIdx] || null;
     const currentWall = currentCupboard?.wall || wallNames || 'No Wall';
     const currentCupboardName = currentCupboard?.name || 'No cupboard selected';
-    const floorLabel = floorName || 'No floor';
     const controllerLabel = controllerName || 'No controller';
 
     return (
@@ -215,7 +214,7 @@ export default function Cupboard3D({ cupboards, controllerName, floorName, selec
             <Card className="absolute top-3 left-3 z-10 flex items-center gap-2 rounded-lg border border-ot-border bg-ot-bg-top/80 backdrop-blur px-3 py-2 shadow-lg">
                 <Archive className="w-4 h-4 text-ot-action" />
                 <div>
-                    <div className="text-sm font-bold text-white leading-tight">{floorLabel} · {controllerLabel} · {currentCupboardName}</div>
+                    <div className="text-sm font-bold text-white leading-tight">{controllerLabel} · {currentCupboardName}</div>
                     <div className="text-[11px] text-muted-foreground leading-tight">{currentWall} · {visibleCupboards.length} cupboards · {totalShelves} shelves</div>
                 </div>
             </Card>
