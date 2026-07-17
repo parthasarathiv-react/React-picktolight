@@ -1,211 +1,114 @@
 import React, { useState } from 'react';
-import { Card, CardContent } from 'components/ui/card';
-import { Button } from 'components/ui/button';
-import { Input } from 'components/ui/input';
-import { Plus, PenSquare, Trash2 } from 'lucide-react';
+import { LayoutGrid, ArrowRight, Grid3X3, Filter } from 'lucide-react';
 import { cn } from 'lib/utils';
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from 'components/ui/table';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from 'components/ui/select';
+import CupboardLayoutDesigner from './CupboardLayoutDesigner';
 
-export default function CupboardsTab({ cupboardsData, syncCupboards, controllersData, wallsData }) {
-    const [showCupboardForm, setShowCupboardForm] = useState(false);
-    const [editingCupboard, setEditingCupboard] = useState(null);
+export default function CupboardsTab({ cupboardsData, syncCupboards, wallsData, selectedWall, onSelectWall, controllersData }) {
+    const [filterController, setFilterController] = useState('all');
 
-    const handleAddCupboard = () => {
-        setEditingCupboard(null);
-        setShowCupboardForm(true);
-    };
+    // If a wall is selected, show the layout designer for cupboards
+    if (selectedWall) {
+        return (
+            <CupboardLayoutDesigner
+                wall={selectedWall}
+                onBack={() => onSelectWall(null)}
+                cupboardsData={cupboardsData}
+                syncCupboards={syncCupboards}
+            />
+        );
+    }
 
-    const handleEditCupboard = (cb) => {
-        setEditingCupboard(cb);
-        setShowCupboardForm(true);
-    };
+    const filteredWalls = wallsData.filter(wall => {
+        if (filterController !== 'all' && wall.controller !== filterController) return false;
+        return true;
+    });
 
-    const handleCancelCupboardForm = () => {
-        setShowCupboardForm(false);
-        setEditingCupboard(null);
-    };
-
-    const handleCupboardSubmit = (e) => {
-        e.preventDefault();
-        const data = new FormData(e.currentTarget);
-        const name = data.get('name');
-        const shelves = Number(data.get('shelves') || 5);
-        const columns = Number(data.get('columns') || 4);
-        const ledsPerDrawer = Number(data.get('ledsPerDrawer') || 6);
-        const controller = data.get('controller');
-        const wall = data.get('wall');
-        const status = data.get('status') === 'ACTIVE' ? 'Active' : 'Inactive';
-
-        if (editingCupboard) {
-            const updated = cupboardsData.map(c =>
-                c.id === editingCupboard.id
-                    ? { ...c, name, shelves, rows: shelves, columns, ledsPerDrawer, controller, wall, status }
-                    : c
-            );
-            syncCupboards(updated);
-        } else {
-            const newCb = {
-                id: Date.now(),
-                name,
-                shelves,
-                rows: shelves,
-                columns,
-                ledsPerDrawer,
-                controller,
-                wall,
-                status
-            };
-            syncCupboards([...cupboardsData, newCb]);
-        }
-        setShowCupboardForm(false);
-        setEditingCupboard(null);
-    };
-
-    const handleDeleteCupboard = (id) => {
-        if (window.confirm("Are you sure you want to delete this cupboard?")) {
-            syncCupboards(cupboardsData.filter(c => c.id !== id));
-        }
-    };
-
+    // Otherwise, show list of walls to choose from
     return (
-        <div className="flex flex-col h-full space-y-6 animate-in fade-in">
-            <div className="flex justify-between items-center shrink-0">
+        <div className="flex flex-col h-full space-y-6 animate-in fade-in p-6">
+            <div className="flex items-center justify-between">
                 <div>
-                    <h3 className="text-xl font-semibold text-white">Cupboards & Shelves</h3>
-                    <p className="text-sm text-muted-foreground">Manage cupboards and their shelves (selfs) assignments with LEDs.</p>
+                    <h3 className="text-xl font-semibold text-white">Cupboards Designer</h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                        Select a wall to add and arrange cupboards inside it.
+                    </p>
                 </div>
-                {!showCupboardForm && (
-                    <Button onClick={handleAddCupboard} className="gap-2 bg-ot-action text-white hover:bg-ot-action-hover">
-                        <Plus className="w-4 h-4" /> Add Cupboard
-                    </Button>
-                )}
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 bg-ot-surface-top border border-ot-border rounded-md px-3 py-1.5">
+                        <Filter className="w-4 h-4 text-muted-foreground" />
+                        <select
+                            value={filterController}
+                            onChange={(e) => setFilterController(e.target.value)}
+                            className="bg-transparent text-sm text-white focus:outline-none min-w-[150px]"
+                        >
+                            <option value="all" className="bg-ot-surface-elev-bottom text-white">All Controllers</option>
+                            {controllersData && controllersData.map(c => (
+                                <option key={c.id || c.name} value={c.name} className="bg-ot-surface-elev-bottom text-white">
+                                    {c.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
             </div>
 
-            {showCupboardForm && (
-                <Card className="border-ot-border/50 bg-ot-bg-top/30 animate-in fade-in slide-in-from-top-4 shrink-0">
-                    <form onSubmit={handleCupboardSubmit}>
-                        <CardContent className="pt-6">
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {filteredWalls.map((wall) => {
+                    const wallCupboards = cupboardsData.filter(c => c.wall === wall.name);
+                    return (
+                        <button
+                            key={wall.id}
+                            onClick={() => onSelectWall(wall)}
+                            className={cn(
+                                'group relative flex flex-col p-4 rounded-xl border transition-all duration-200 text-left',
+                                'border-ot-border bg-ot-surface-elev-bottom/40',
+                                'hover:border-ot-action/70 hover:bg-ot-action/5 hover:shadow-lg hover:shadow-ot-action/10',
+                                'active:scale-[0.99]'
+                            )}
+                        >
+                            <div className="flex items-start justify-between gap-4 w-full">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-ot-surface-top border border-ot-border flex items-center justify-center shrink-0">
+                                        <LayoutGrid className="w-5 h-5 text-ot-action" />
+                                    </div>
+                                    <div>
+                                        <div className="font-semibold text-white group-hover:text-ot-action transition-colors text-sm">
+                                            {wall.name}
+                                        </div>
+                                        <div className="text-xs text-muted-foreground font-mono mt-0.5">
+                                            {wall.controller}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-ot-surface-top border border-ot-border group-hover:bg-ot-action group-hover:border-ot-action transition-all duration-200 shrink-0">
+                                    <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-white transition-colors duration-200" />
+                                </div>
+                            </div>
+                            
+                            <div className="mt-4 pt-4 border-t border-ot-border/50 flex items-center justify-between text-xs text-muted-foreground w-full">
+                                <span className="flex items-center gap-1.5">
+                                    <Grid3X3 className="w-3.5 h-3.5" />
+                                    {wallCupboards.length} Cupboards
+                                </span>
+                            </div>
 
-                                <div className="space-y-2">
-                                    <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">Controller</label>
-                                    <Select name="controller" defaultValue={editingCupboard ? editingCupboard.controller : ''}>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select controller" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {controllersData.map((ctrl) => (
-                                                <SelectItem key={ctrl.id} value={ctrl.name}>{ctrl.name}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">Wall</label>
-                                    <Select name="wall" defaultValue={editingCupboard ? editingCupboard.wall : ''} required>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select wall" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {wallsData.map((wall) => (
-                                                <SelectItem key={wall.id} value={wall.name}>{wall.name}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">Cupboard Name</label>
-                                    <Input name="name" defaultValue={editingCupboard ? editingCupboard.name : ''} placeholder="e.g. Cupboard A1" className="bg-ot-surface-bottom" required />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">Shelves (selfs) Count</label>
-                                    <Input type="number" min={1} max={15} name="shelves" defaultValue={editingCupboard ? (editingCupboard.shelves || editingCupboard.rows) : 5} className="bg-ot-surface-bottom" required />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">Columns / Sections</label>
-                                    <Input type="number" min={1} max={10} name="columns" defaultValue={editingCupboard ? editingCupboard.columns : 4} className="bg-ot-surface-bottom" required />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">LEDs per Shelf (Self)</label>
-                                    <Input type="number" min={1} max={24} name="ledsPerDrawer" defaultValue={editingCupboard ? editingCupboard.ledsPerDrawer : 6} className="bg-ot-surface-bottom" required />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">Status</label>
-                                    <Select name="status" defaultValue={editingCupboard && editingCupboard.status === 'Inactive' ? 'INACTIVE' : 'ACTIVE'}>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select status" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="ACTIVE">ACTIVE</SelectItem>
-                                            <SelectItem value="INACTIVE">INACTIVE</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            </div>
-                            <div className="flex justify-end gap-3 mt-6">
-                                <Button type="button" onClick={handleCancelCupboardForm} variant="outline" className="border-ot-border hover:bg-ot-surface-elev-bottom text-white">CANCEL</Button>
-                                <Button type="submit" className="bg-ot-action text-white hover:bg-ot-action-hover">
-                                    {editingCupboard ? 'SAVE CHANGES' : 'ADD WALL / CUPBOARD'}
-                                </Button>
-                            </div>
-                        </CardContent>
-                    </form>
-                </Card>
+                            {/* Subtle active glow strip */}
+                            <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-xl bg-ot-action opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+                        </button>
+                    );
+                })}
+            </div>
+
+            {filteredWalls.length === 0 && (
+                <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center py-16">
+                    <div className="w-14 h-14 rounded-2xl bg-ot-surface-elev-bottom border border-ot-border flex items-center justify-center">
+                        <LayoutGrid className="w-6 h-6 text-muted-foreground" />
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                        No walls found. Add walls in the Walls tab first.
+                    </div>
+                </div>
             )}
-
-            <div className="border border-ot-border rounded-lg bg-ot-bg-mid flex-1 min-h-0 flex flex-col">
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Wall</TableHead>
-                            <TableHead>Cupboard</TableHead>
-                            <TableHead>Controller</TableHead>
-                            <TableHead>Shelves Layout</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead className="text-right">Actions</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {cupboardsData.map((cb) => {
-                            return (
-                                <TableRow key={cb.id}>
-                                    <TableCell className="font-medium text-white">
-                                        {cb.wall ? (
-                                            <span className="px-2 py-0.5 text-xs font-semibold rounded bg-ot-action/15 text-ot-action border border-ot-action/25">
-                                                {cb.wall}
-                                            </span>
-                                        ) : (
-                                            <span className="text-muted-foreground/35 italic">Floating</span>
-                                        )}
-                                    </TableCell>
-                                    <TableCell className="font-medium text-white">{cb.name}</TableCell>
-                                    <TableCell className="text-muted-foreground text-xs">
-                                        <div>{cb.controller}</div>
-                                    </TableCell>
-                                    <TableCell className="text-muted-foreground font-mono text-xs">
-                                        {cb.shelves || cb.rows || 5} × {cb.columns} ({cb.ledsPerDrawer} LEDs)
-                                    </TableCell>
-                                    <TableCell>
-                                        <span className={cn(
-                                            "px-2 py-1 text-xs rounded-full border",
-                                            cb.status === 'Active'
-                                                ? "bg-green-500/10 text-green-400 border-green-500/20"
-                                                : "bg-red-500/10 text-red-400 border-red-500/20"
-                                        )}>
-                                            {cb.status}
-                                        </span>
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                        <Button variant="ghost" onClick={() => handleEditCupboard(cb)} className="text-ot-action hover:text-ot-action-hover mr-3 transition-colors"><PenSquare className="w-4 h-4" /></Button>
-                                        <Button variant="ghost" onClick={() => handleDeleteCupboard(cb.id)} className="text-red-400 hover:text-red-300 transition-colors"><Trash2 className="w-4 h-4" /></Button>
-                                    </TableCell>
-                                </TableRow>
-                            );
-                        })}
-                    </TableBody>
-                </Table>
-            </div>
         </div>
     );
 }

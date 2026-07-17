@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from 'components/ui/card';
 import { Button } from 'components/ui/button';
-import { Server, Box, LayoutGrid } from 'lucide-react';
+import { Server, Box, LayoutGrid, Layers, Archive } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { useOutletContext } from 'react-router-dom';
 import {
@@ -14,6 +14,8 @@ import ControllersTab from 'components/settings/ControllersTab';
 import WallsTab from 'components/settings/WallsTab';
 import WallLayoutDesigner from 'components/settings/WallLayoutDesigner';
 import CupboardsTab from 'components/settings/CupboardsTab';
+import ShelvesTab from 'components/settings/ShelvesTab';
+import BinsTab from 'components/settings/BinsTab';
 
 export default function Settings() {
     const { setSidebarOpen } = useOutletContext() || {};
@@ -25,6 +27,9 @@ export default function Settings() {
 
     // Wall layout designer: which controller was selected
     const [selectedController, setSelectedController] = useState(null);
+    // Cupboard/Shelf layout designer: which wall was selected
+    const [selectedWallForCupboards, setSelectedWallForCupboards] = useState(null);
+    const [selectedCupboardForShelves, setSelectedCupboardForShelves] = useState(null);
 
     // ── Sync helpers ─────────────────────────────────────────────────────────
     const syncControllers = (newData) => {
@@ -55,7 +60,9 @@ export default function Settings() {
     const tabs = [
         { id: 'controllers', label: 'Controllers', icon: Server },
         { id: 'walls', label: 'Walls', icon: LayoutGrid },
-        { id: 'cupboards', label: 'Cupboards & Shelves', icon: Box },
+        { id: 'cupboards', label: 'Cupboards', icon: Box },
+        { id: 'shelves', label: 'Shelves', icon: Layers },
+        { id: 'bins', label: 'Bins', icon: Archive },
     ];
 
     // ── Handle entering / exiting wall layout designer ────────────────────────
@@ -67,8 +74,19 @@ export default function Settings() {
         setSelectedController(null);
     };
 
+    const handleSelectWallForCupboards = (wall) => {
+        setSelectedWallForCupboards(wall);
+    }
+
+    const handleSelectCupboardForShelves = (cupboard) => {
+        setSelectedCupboardForShelves(cupboard);
+    }
+
     // When walls tab + controller selected → full-width designer (no sidebar)
-    const isInDesignerMode = activeTab === 'walls' && selectedController !== null;
+    const isWallDesignerMode = activeTab === 'walls' && selectedController !== null;
+    const isCupboardDesignerMode = activeTab === 'cupboards' && selectedWallForCupboards !== null;
+    const isShelfDesignerMode = activeTab === 'shelves' && selectedCupboardForShelves !== null;
+    const isInDesignerMode = isWallDesignerMode || isCupboardDesignerMode || isShelfDesignerMode;
 
     // Close main nav sidebar when entering designer, restore on exit
     useEffect(() => {
@@ -97,6 +115,8 @@ export default function Settings() {
                                         onClick={() => {
                                             setActiveTab(tab.id);
                                             setSelectedController(null);
+                                            setSelectedWallForCupboards(null);
+                                            setSelectedCupboardForShelves(null);
                                         }}
                                         className={cn(
                                             'flex items-center justify-start gap-3 px-3 py-2.5 w-full rounded-lg text-sm font-medium transition-all',
@@ -136,7 +156,7 @@ export default function Settings() {
                     )}
 
                     {/* Walls tab — full designer (no sidebar) */}
-                    {isInDesignerMode && (
+                    {isWallDesignerMode && (
                         <WallLayoutDesigner
                             controller={selectedController}
                             onBack={handleBackFromDesigner}
@@ -150,6 +170,30 @@ export default function Settings() {
                             syncCupboards={syncCupboards}
                             controllersData={controllersData}
                             wallsData={wallsData}
+                            selectedWall={selectedWallForCupboards}
+                            onSelectWall={handleSelectWallForCupboards}
+                        />
+                    )}
+
+                    {/* Shelves tab */}
+                    {activeTab === 'shelves' && (
+                        <ShelvesTab
+                            cupboardsData={cupboardsData}
+                            syncCupboards={syncCupboards}
+                            selectedCupboard={selectedCupboardForShelves}
+                            onSelectCupboard={handleSelectCupboardForShelves}
+                            wallsData={wallsData}
+                            controllersData={controllersData}
+                        />
+                    )}
+
+                    {/* Bins tab */}
+                    {activeTab === 'bins' && (
+                        <BinsTab
+                            cupboardsData={cupboardsData}
+                            syncCupboards={syncCupboards}
+                            wallsData={wallsData}
+                            controllersData={controllersData}
                         />
                     )}
                 </div>

@@ -90,7 +90,11 @@ export default function Monitoring() {
         }).sort((a, b) => a.name.localeCompare(b.name));
 
         return orderedControllers;
-    }, [CONTROLLERS_CONFIG.length, CUPBOARDS_CONFIG.length]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [
+        JSON.stringify(CONTROLLERS_CONFIG.map(c => ({id: c.id, name: c.name}))),
+        JSON.stringify(CUPBOARDS_CONFIG.map(c => ({id: c.id, shelves: c.shelves, columns: c.columns, wall: c.wall, leds: c.ledsPerDrawer})))
+    ]);
 
     const firstController = hierarchy[0] || null;
     const [selectedControllerName, setSelectedControllerName] = useState(firstController?.name || '');

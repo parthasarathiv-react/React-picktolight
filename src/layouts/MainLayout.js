@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { Outlet, NavLink, useOutletContext } from 'react-router-dom';
-import { Activity, Settings, Users, Box, LogOut, PackageSearch, PanelLeftClose, PanelLeft, Barcode, MapPin } from 'lucide-react';
+import { Activity, Settings, Users, Box, LogOut, PackageSearch, PanelLeftClose, PanelLeft, Barcode, MapPin, RefreshCw } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { useNavigate } from 'react-router-dom';
 import { Button } from 'components/ui/button';
 import LocationSelectionDialog from 'components/LocationSelectionDialog';
+import { API_URL } from 'config/api';
 
 const navItems = [
     { icon: Activity, label: 'Monitoring', path: '/monitoring' },
@@ -16,6 +17,26 @@ export default function MainLayout() {
     const navigate = useNavigate();
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [showLocationDialog, setShowLocationDialog] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
+
+    const handleSync = async () => {
+        setIsSyncing(true);
+        try {
+            const token = localStorage.getItem('token');
+            const headers = {
+                'Authorization': `Bearer ${token}`
+            };
+
+            await fetch(`${API_URL}/pharmacy/locations_active`, { headers });
+            await fetch(`${API_URL}/pharmacy/racks_active`, { headers });
+            await fetch(`${API_URL}/pharmacy/bins_active`, { headers });
+        } catch (e) {
+            console.error("Failed to sync locations data", e);
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
     const [selectedLocation, setSelectedLocation] = useState(() => {
         try {
             const saved = localStorage.getItem('selectedLocation');
@@ -34,7 +55,7 @@ export default function MainLayout() {
     const handleLocationSelect = (location) => {
         localStorage.setItem('selectedLocation', JSON.stringify(location));
         setShowLocationDialog(false);
-        window.location.reload(); 
+        window.location.reload();
     };
 
     return (
@@ -165,6 +186,16 @@ export default function MainLayout() {
                         System Online - All Controllers Active
                     </div>
                     <div className="flex items-center gap-4">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleSync}
+                            disabled={isSyncing}
+                            className="gap-2 border-ot-border bg-ot-surface-elev-bottom text-muted-foreground hover:text-white"
+                        >
+                            <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                            {isSyncing ? 'Syncing...' : 'Sync Data'}
+                        </Button>
                         <div className="flex items-center gap-2">
                             <div className="w-8 h-8 rounded-full bg-ot-surface-elev-bottom border border-ot-border flex items-center justify-center">
                                 <Box className="w-4 h-4 text-ot-action" />
@@ -184,7 +215,7 @@ export default function MainLayout() {
                 </div>
             </main>
 
-            <LocationSelectionDialog 
+            <LocationSelectionDialog
                 open={showLocationDialog}
                 onOpenChange={setShowLocationDialog}
                 onSelectLocation={handleLocationSelect}

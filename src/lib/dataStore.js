@@ -20,6 +20,41 @@ export const WALLS_CONFIG = [
     { id: 6, name: 'Wall F', controller: 'Controller E', cupboardsCount: 2, status: 'Active' },
 ];
 
+// Initialize layouts from localStorage
+try {
+    const savedLayouts = localStorage.getItem('wallLayouts');
+    if (savedLayouts) {
+        const parsed = JSON.parse(savedLayouts);
+        WALLS_CONFIG.forEach(w => {
+            if (parsed[w.id]) {
+                w.layoutGridX = parsed[w.id].layoutGridX;
+                w.layoutGridY = parsed[w.id].layoutGridY;
+                w.layoutOrientation = parsed[w.id].layoutOrientation;
+            }
+        });
+    }
+} catch (e) {
+    console.error("Failed to load wall layouts from local storage", e);
+}
+
+export function saveWallLayoutsToStorage() {
+    try {
+        const layouts = {};
+        WALLS_CONFIG.forEach(w => {
+            if (w.layoutGridX !== undefined) {
+                layouts[w.id] = {
+                    layoutGridX: w.layoutGridX,
+                    layoutGridY: w.layoutGridY,
+                    layoutOrientation: w.layoutOrientation
+                };
+            }
+        });
+        localStorage.setItem('wallLayouts', JSON.stringify(layouts));
+    } catch (e) {
+        console.error("Failed to save wall layouts to local storage", e);
+    }
+}
+
 // ─── Cupboard definitions (mirrors Settings.js cupboardsData) ────────────────
 export const CUPBOARDS_CONFIG = [
     { id: 1, name: 'Cupboard A1', shelves: 5, rows: 5, columns: 4, ledsPerDrawer: 6, controller: 'Controller A', wall: 'Wall A', status: 'Active' },
@@ -39,6 +74,24 @@ export const CUPBOARDS_CONFIG = [
     { id: 15, name: 'Cupboard F2', shelves: 4, rows: 4, columns: 5, ledsPerDrawer: 6, controller: 'Controller E', wall: 'Wall F', status: 'Active' },
 ];
 
+try {
+    const savedCbLayouts = localStorage.getItem('cupboardLayouts');
+    if (savedCbLayouts) {
+        const parsed = JSON.parse(savedCbLayouts);
+        CUPBOARDS_CONFIG.forEach(c => {
+            if (parsed[c.id]) {
+                if (parsed[c.id].layoutGridX !== undefined) c.layoutGridX = parsed[c.id].layoutGridX;
+                if (parsed[c.id].layoutGridY !== undefined) c.layoutGridY = parsed[c.id].layoutGridY;
+                if (parsed[c.id].shelves !== undefined) c.shelves = parsed[c.id].shelves;
+                if (parsed[c.id].rows !== undefined) c.rows = parsed[c.id].rows;
+                if (parsed[c.id].ledsPerDrawer !== undefined) c.ledsPerDrawer = parsed[c.id].ledsPerDrawer;
+                if (parsed[c.id].shelfLayout !== undefined) c.shelfLayout = parsed[c.id].shelfLayout;
+            }
+        });
+    }
+} catch (e) {
+    console.error("Failed to load cupboard layouts from local storage", e);
+}
 // ─── Hierarchical sample data: controller → wall → cupboards ─────────
 
 // ─── LED colour options ───────────────────────────────────────────────────────

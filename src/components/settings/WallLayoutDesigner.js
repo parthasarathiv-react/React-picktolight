@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
 import { Button } from 'components/ui/button';
 import { ArrowLeft, Save, CheckCircle2, Plus, RotateCcw, X, Grid3X3 } from 'lucide-react';
-import { WALLS_CONFIG } from 'lib/dataStore';
+import { WALLS_CONFIG, saveWallLayoutsToStorage } from 'lib/dataStore';
 import { cn } from 'lib/utils';
 
 const CELL = 56;
@@ -19,6 +19,22 @@ export default function WallLayoutDesigner({ controller, onBack }) {
     const canvasRef = useRef(null);
 
     const controllerWalls = WALLS_CONFIG.filter(w => w.controller === controller.name);
+
+    // ── Load placed walls from configuration ──────────────────────────────────
+    useEffect(() => {
+        const placedWalls = controllerWalls
+            .filter(w => w.layoutGridX !== undefined && w.layoutGridY !== undefined)
+            .map(w => ({
+                ...w,
+                canvasId: `wall-${w.id}`,
+                gridX: w.layoutGridX,
+                gridY: w.layoutGridY,
+                orientation: w.layoutOrientation || 'h',
+            }));
+        setCanvasWalls(placedWalls);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [controller.name]);
+
 
     // ── Responsive COLS: measure container, recalc on resize ─────────────────
     useLayoutEffect(() => {
@@ -55,10 +71,28 @@ export default function WallLayoutDesigner({ controller, onBack }) {
         return { width: wCells * CELL - 4, height: hCells * CELL - 4 };
     };
 
-    // ── Add wall directly (cycles through controllerWalls) ───────────────────
+    // ── Add wall directly (cycles through controllerWalls or creates new) ───
     const addWall = () => {
         if (controllerWalls.length === 0) return;
-        const wall = controllerWalls[canvasWalls.length % controllerWalls.length];
+        // Find first wall that is not already placed
+        const unplaced = controllerWalls.filter(cw => !canvasWalls.find(cw2 => cw2.id === cw.id));
+        
+        let wall;
+        if (unplaced.length > 0) {
+            wall = unplaced[0];
+        } else {
+            // All predefined walls for this controller are placed, generate a new one
+            const templateWall = controllerWalls[0];
+            const newId = Math.max(0, ...WALLS_CONFIG.map(w => w.id), ...canvasWalls.map(w => w.id)) + 1;
+            wall = {
+                ...templateWall,
+                id: newId,
+                name: `Wall ${newId}`,
+            };
+            // Add to the global configuration so it can be saved
+            WALLS_CONFIG.push(wall);
+        }
+
         setCanvasWalls(prev => {
             const col = (prev.length % 4) * 3;
             const row = Math.floor(prev.length / 4) * 2;
@@ -123,6 +157,17 @@ export default function WallLayoutDesigner({ controller, onBack }) {
 
     // ── Save ─────────────────────────────────────────────────────────────────
     const handleSave = () => {
+        // First clear all current controller walls layout fields to handle removals
+        controllerWalls.forEach(w => {
+            const idx = WALLS_CONFIG.findIndex(c => c.id === w.id);
+            if (idx >= 0) {
+                delete WALLS_CONFIG[idx].layoutGridX;
+                delete WALLS_CONFIG[idx].layoutGridY;
+                delete WALLS_CONFIG[idx].layoutOrientation;
+            }
+        });
+
+        // Then apply the newly placed ones
         canvasWalls.forEach(w => {
             const idx = WALLS_CONFIG.findIndex(c => c.id === w.id);
             if (idx >= 0) {
@@ -134,6 +179,7 @@ export default function WallLayoutDesigner({ controller, onBack }) {
                 };
             }
         });
+        saveWallLayoutsToStorage();
         setSaveFlash(true);
         setTimeout(() => setSaveFlash(false), 2000);
     };

@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from 'components/ui/dialog';
 import { Button } from 'components/ui/button';
-import { Activity, MapPin, ChevronDown, ChevronRight, Building2 } from 'lucide-react';
+import { Activity, MapPin, ChevronDown, ChevronRight, Building2, RefreshCw } from 'lucide-react';
 import { API_URL } from 'config/api';
 
 export default function LocationSelectionDialog({ open, onOpenChange, onSelectLocation }) {
     const [groupedLocations, setGroupedLocations] = useState({});
     const [isLoadingLocations, setIsLoadingLocations] = useState(false);
     const [expandedGroups, setExpandedGroups] = useState({});
+    const [isSyncing, setIsSyncing] = useState(false);
 
     useEffect(() => {
         if (open) {
@@ -63,6 +64,27 @@ export default function LocationSelectionDialog({ open, onOpenChange, onSelectLo
         }));
     };
 
+    const handleSync = async () => {
+        setIsSyncing(true);
+        try {
+            const token = localStorage.getItem('token');
+            const headers = {
+                'Authorization': `Bearer ${token}`
+            };
+
+            await Promise.all([
+                fetch(`${API_URL}/pharmacy/locations_active`, { headers })
+
+            ]);
+
+            await fetchLocations();
+        } catch (e) {
+            console.error("Failed to sync locations data", e);
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
     const handleSelect = (loc) => {
         onSelectLocation(loc);
     };
@@ -83,8 +105,12 @@ export default function LocationSelectionDialog({ open, onOpenChange, onSelectLo
                             <p>Loading locations...</p>
                         </div>
                     ) : Object.keys(groupedLocations).length === 0 ? (
-                        <div className="text-center text-muted-foreground py-8">
+                        <div className="text-center text-muted-foreground py-8 flex flex-col items-center justify-center space-y-4">
                             <p>No locations available.</p>
+                            <Button onClick={handleSync} disabled={isSyncing} className="gap-2" variant="outline">
+                                <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                                {isSyncing ? 'Syncing...' : 'Sync Data'}
+                            </Button>
                         </div>
                     ) : (
                         Object.entries(groupedLocations).map(([org, branches]) => (
