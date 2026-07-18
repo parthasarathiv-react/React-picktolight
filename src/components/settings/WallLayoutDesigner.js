@@ -1,41 +1,38 @@
 import React, { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
 import { Button } from 'components/ui/button';
 import { ArrowLeft, Save, CheckCircle2, Plus, RotateCcw, X, Grid3X3 } from 'lucide-react';
-import { WALLS_CONFIG, saveWallLayoutsToStorage } from 'lib/dataStore';
 import { cn } from 'lib/utils';
+import { toast } from 'sonner';
+
+import { apiService } from 'lib/apiService';
+
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from 'components/ui/dialog';
 
 const CELL = 56;
 const MIN_ROWS = 10;
 const ROW_LABEL_W = 24;   // px for A–N labels on the left
 const COL_LABEL_H = 18;   // px for 1–N labels on top
 
-export default function WallLayoutDesigner({ controller, onBack }) {
+export default function WallLayoutDesigner({ controller, onBack, wallsData, syncWalls }) {
     const [canvasWalls, setCanvasWalls] = useState([]);
     const [dragging, setDragging] = useState(null);
+    const [panDragging, setPanDragging] = useState(null);
     const [saveFlash, setSaveFlash] = useState(false);
-    const [gridCols, setGridCols] = useState(16);
+    const [wallToDelete, setWallToDelete] = useState(null);
+    const [minGridCols, setMinGridCols] = useState(16);
 
     const gridContainerRef = useRef(null);  // the scrollable area
     const canvasRef = useRef(null);
 
-    const controllerWalls = WALLS_CONFIG.filter(w => w.controller === controller.name);
-
-    // ── Load placed walls from configuration ──────────────────────────────────
+    // ── Load placed walls from API data ───────────────────────
     useEffect(() => {
-        const placedWalls = controllerWalls
-            .filter(w => w.layoutGridX !== undefined && w.layoutGridY !== undefined)
-            .map(w => ({
-                ...w,
-                canvasId: `wall-${w.id}`,
-                gridX: w.layoutGridX,
-                gridY: w.layoutGridY,
-                orientation: w.layoutOrientation || 'h',
-            }));
-        setCanvasWalls(placedWalls);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [controller.name]);
-
-
+        if (!wallsData) return;
+        const ctrlWalls = wallsData.filter(w => String(w.controller_id) === String(controller.id));
+        setCanvasWalls(ctrlWalls.map(w => ({
+            ...w,
+            canvasId: `wall-${w.id}-${Date.now()}`
+        })));
+    }, [wallsData, controller.id]);
     // ── Responsive COLS: measure container, recalc on resize ─────────────────
     useLayoutEffect(() => {
         const el = gridContainerRef.current;
@@ -43,13 +40,22 @@ export default function WallLayoutDesigner({ controller, onBack }) {
         const measure = () => {
             // available px = container width - row labels - padding (16 each side)
             const avail = el.clientWidth - ROW_LABEL_W - 32;
-            setGridCols(Math.max(8, Math.floor(avail / CELL)));
+            setMinGridCols(Math.max(8, Math.floor(avail / CELL)));
         };
         measure();
         const ro = new ResizeObserver(measure);
         ro.observe(el);
         return () => ro.disconnect();
     }, []);
+
+    // ── Dynamic COLS: grows as walls are placed further right ────────────────
+    const gridCols = Math.max(
+        minGridCols,
+        ...canvasWalls.map(w => {
+            const wCells = w.orientation === 'h' ? Math.max(2, w.cupboardsCount) : 1;
+            return w.gridX + wCells + 2;   // +2 breathing room
+        })
+    );
 
     // ── Dynamic ROWS: grows as walls are placed lower ─────────────────────────
     const gridRows = Math.max(
@@ -71,27 +77,17 @@ export default function WallLayoutDesigner({ controller, onBack }) {
         return { width: wCells * CELL - 4, height: hCells * CELL - 4 };
     };
 
-    // ── Add wall directly (cycles through controllerWalls or creates new) ───
     const addWall = () => {
-        if (controllerWalls.length === 0) return;
-        // Find first wall that is not already placed
-        const unplaced = controllerWalls.filter(cw => !canvasWalls.find(cw2 => cw2.id === cw.id));
-        
-        let wall;
-        if (unplaced.length > 0) {
-            wall = unplaced[0];
-        } else {
-            // All predefined walls for this controller are placed, generate a new one
-            const templateWall = controllerWalls[0];
-            const newId = Math.max(0, ...WALLS_CONFIG.map(w => w.id), ...canvasWalls.map(w => w.id)) + 1;
-            wall = {
-                ...templateWall,
-                id: newId,
-                name: `Wall ${newId}`,
-            };
-            // Add to the global configuration so it can be saved
-            WALLS_CONFIG.push(wall);
-        }
+        const newId = Math.max(0, ...canvasWalls.map(w => w.id || 0)) + 1;
+        const wall = {
+            id: newId,
+            isNew: true,
+            name: `Wall ${newId}`,
+            controller: controller.name,
+            controller_id: controller.id,
+            cupboardsCount: 4,
+            status: 'Active'
+        };
 
         setCanvasWalls(prev => {
             const col = (prev.length % 4) * 3;
@@ -106,8 +102,32 @@ export default function WallLayoutDesigner({ controller, onBack }) {
         });
     };
 
-    const removeWall = (canvasId) =>
-        setCanvasWalls(prev => prev.filter(w => w.canvasId !== canvasId));
+    const requestRemoveWall = (canvasId) => {
+        setWallToDelete(canvasId);
+    };
+
+    const confirmRemoveWall = async () => {
+        if (!wallToDelete) return;
+        const wall = canvasWalls.find(w => w.canvasId === wallToDelete);
+        
+        if (wall && !wall.isNew) {
+            try {
+                await apiService.deleteWall(wall.id);
+                // Immediately remove from global state so it doesn't reappear
+                const updatedData = wallsData.filter(ew => String(ew.id) !== String(wall.id));
+                syncWalls(updatedData);
+                toast.success("Wall deleted successfully");
+            } catch (err) {
+                console.error("Failed to delete wall", err);
+                toast.error(err.message || "Failed to delete wall");
+                setWallToDelete(null);
+                return;
+            }
+        }
+        
+        setCanvasWalls(prev => prev.filter(w => w.canvasId !== wallToDelete));
+        setWallToDelete(null);
+    };
 
     const toggleOrientation = (canvasId) =>
         setCanvasWalls(prev =>
@@ -116,15 +136,40 @@ export default function WallLayoutDesigner({ controller, onBack }) {
                 : w)
         );
 
-    // ── Drag ─────────────────────────────────────────────────────────────────
+    // ── Drag & Pan ───────────────────────────────────────────────────────────
     const startDrag = (e, canvasId) => {
-        if (e.target.closest('button')) return;
+        if (e.target.closest('button') || e.target.closest('input')) return;
         e.preventDefault();
         const wr = e.currentTarget.getBoundingClientRect();
         setDragging({ canvasId, offsetX: e.clientX - wr.left, offsetY: e.clientY - wr.top });
     };
 
+    const startPanDrag = (e) => {
+        if (e.target === canvasRef.current || e.target === gridContainerRef.current) {
+            e.preventDefault();
+            const el = gridContainerRef.current;
+            if (!el) return;
+            setPanDragging({
+                startX: e.clientX,
+                startY: e.clientY,
+                scrollLeft: el.scrollLeft,
+                scrollTop: el.scrollTop
+            });
+        }
+    };
+
     const onMouseMove = useCallback((e) => {
+        if (panDragging) {
+            const el = gridContainerRef.current;
+            if (el) {
+                const dx = e.clientX - panDragging.startX;
+                const dy = e.clientY - panDragging.startY;
+                el.scrollLeft = panDragging.scrollLeft - dx;
+                el.scrollTop = panDragging.scrollTop - dy;
+            }
+            return;
+        }
+
         if (!dragging || !canvasRef.current) return;
         const wall = canvasWalls.find(w => w.canvasId === dragging.canvasId);
         if (!wall) return;
@@ -141,10 +186,13 @@ export default function WallLayoutDesigner({ controller, onBack }) {
         setCanvasWalls(prev =>
             prev.map(w => w.canvasId === dragging.canvasId ? { ...w, gridX, gridY } : w)
         );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dragging, gridCols, canvasWalls]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dragging, panDragging, gridCols, canvasWalls]);
 
-    const onMouseUp = useCallback(() => setDragging(null), []);
+    const onMouseUp = useCallback(() => {
+        setDragging(null);
+        setPanDragging(null);
+    }, []);
 
     useEffect(() => {
         window.addEventListener('mousemove', onMouseMove);
@@ -156,32 +204,109 @@ export default function WallLayoutDesigner({ controller, onBack }) {
     }, [onMouseMove, onMouseUp]);
 
     // ── Save ─────────────────────────────────────────────────────────────────
-    const handleSave = () => {
-        // First clear all current controller walls layout fields to handle removals
-        controllerWalls.forEach(w => {
-            const idx = WALLS_CONFIG.findIndex(c => c.id === w.id);
-            if (idx >= 0) {
-                delete WALLS_CONFIG[idx].layoutGridX;
-                delete WALLS_CONFIG[idx].layoutGridY;
-                delete WALLS_CONFIG[idx].layoutOrientation;
+    const handleSave = async () => {
+        try {
+            let locId = '';
+            const selectedLocationStr = localStorage.getItem('selectedLocation');
+            if (selectedLocationStr) {
+                try {
+                    const loc = JSON.parse(selectedLocationStr);
+                    locId = loc.pick_location_id || '';
+                } catch (e) { }
             }
-        });
 
-        // Then apply the newly placed ones
-        canvasWalls.forEach(w => {
-            const idx = WALLS_CONFIG.findIndex(c => c.id === w.id);
-            if (idx >= 0) {
-                WALLS_CONFIG[idx] = {
-                    ...WALLS_CONFIG[idx],
-                    layoutGridX: w.gridX,
-                    layoutGridY: w.gridY,
-                    layoutOrientation: w.orientation,
+            const currentCtrlWalls = wallsData.filter(w => String(w.controller_id) === String(controller.id));
+            
+            const updatedWalls = [];
+            let createdCount = 0;
+            let updatedCount = 0;
+            
+            // 2. Create or Update walls on canvas
+            for (const cw of canvasWalls) {
+                const payload = {
+                    wall_name: cw.name,
+                    wall_ctl_id: String(controller.id),
+                    wall_loc_id: String(locId),
+                    wall_status: cw.status === 'Active',
+                    wall_gridx: String(cw.gridX),
+                    wall_gridy: String(cw.gridY),
+                    wall_orientation: cw.orientation
                 };
+
+                if (cw.isNew) {
+                    const res = await apiService.createWall([payload]);
+                    if (res && res.data) {
+                        createdCount++;
+                        const newWallData = Array.isArray(res.data) ? res.data[0] : res.data;
+                        updatedWalls.push({
+                            id: newWallData?.wall_id || cw.id,
+                            name: newWallData?.wall_name || cw.name,
+                            controller: controller.name,
+                            controller_id: controller.id,
+                            status: cw.status,
+                            gridX: cw.gridX,
+                            gridY: cw.gridY,
+                            orientation: cw.orientation,
+                            cupboardsCount: 4
+                        });
+                    }
+                } else {
+                    const originalWall = wallsData.find(w => String(w.id) === String(cw.id));
+                    
+                    const hasChanged = !originalWall || (
+                        originalWall.name !== cw.name ||
+                        originalWall.status !== cw.status ||
+                        String(originalWall.gridX) !== String(cw.gridX) ||
+                        String(originalWall.gridY) !== String(cw.gridY) ||
+                        originalWall.orientation !== cw.orientation
+                    );
+
+                    if (hasChanged) {
+                        await apiService.updateWall(cw.id, payload);
+                        updatedCount++;
+                    }
+                }
             }
-        });
-        saveWallLayoutsToStorage();
-        setSaveFlash(true);
-        setTimeout(() => setSaveFlash(false), 2000);
+
+            // Sync globally by re-fetching
+            const res = await apiService.getWalls(locId);
+            if (res && res.success && res.data) {
+                // We don't have access to full controllersData here, but we only really need it for mapping controller name.
+                // It's better to just let Settings.js handle full sync if we can, but since we are just updating syncWalls,
+                // we can map it using the wallsData we already have (to find controller names).
+                const newWalls = res.data.map(w => {
+                    const existing = wallsData.find(ew => String(ew.id) === String(w.wall_id));
+                    return {
+                        id: w.wall_id,
+                        name: w.wall_name,
+                        controller: existing ? existing.controller : controller.name, // fallback
+                        controller_id: w.wall_ctl_id,
+                        status: (w.wall_status === 'True' || w.wall_status === true || w.wall_status === 'Active') ? 'Active' : 'Inactive',
+                        gridX: parseInt(w.wall_gridx, 10) || 0,
+                        gridY: parseInt(w.wall_gridy, 10) || 0,
+                        orientation: w.wall_orientation || 'h',
+                        cupboardsCount: 4
+                    };
+                });
+                syncWalls(newWalls);
+            }
+
+            setSaveFlash(true);
+            setTimeout(() => setSaveFlash(false), 2000);
+            
+            if (createdCount > 0 && updatedCount > 0) {
+                toast.success(`Successfully created ${createdCount} new wall(s) and updated ${updatedCount} wall(s)!`);
+            } else if (createdCount > 0) {
+                toast.success(`Successfully created ${createdCount} new wall(s)!`);
+            } else if (updatedCount > 0) {
+                toast.success(`Successfully updated ${updatedCount} wall(s)!`);
+            } else {
+                toast.success("No changes to save.");
+            }
+        } catch (e) {
+            console.error("Failed to save wall layout", e);
+            toast.error(e.message || "Failed to save wall layout");
+        }
     };
 
     return (
@@ -205,7 +330,6 @@ export default function WallLayoutDesigner({ controller, onBack }) {
                 <div className="flex items-center gap-3">
                     <Button
                         onClick={addWall}
-                        disabled={controllerWalls.length === 0}
                         className="gap-2 h-8 px-4 bg-ot-surface-elev-bottom border border-ot-border text-white hover:bg-ot-surface-top text-sm disabled:opacity-40"
                     >
                         <Plus className="w-4 h-4" /> Add Wall
@@ -235,7 +359,8 @@ export default function WallLayoutDesigner({ controller, onBack }) {
                 <div
                     ref={gridContainerRef}
                     className="flex-1 overflow-auto p-4"
-                    style={{ cursor: dragging ? 'grabbing' : 'default' }}
+                    onMouseDown={startPanDrag}
+                    style={{ cursor: dragging ? 'grabbing' : (panDragging ? 'grabbing' : 'default') }}
                 >
                     {/* Column numbers */}
                     <div className="flex mb-0.5" style={{ paddingLeft: ROW_LABEL_W }}>
@@ -313,7 +438,12 @@ export default function WallLayoutDesigner({ controller, onBack }) {
                                         }}
                                     >
                                         <div className="flex items-center justify-between gap-1 shrink-0">
-                                            <span className="text-[9px] font-bold text-ot-action truncate">{wall.name}</span>
+                                            <input
+                                                value={wall.name}
+                                                onChange={(e) => setCanvasWalls(prev => prev.map(w => w.canvasId === wall.canvasId ? { ...w, name: e.target.value } : w))}
+                                                className="text-[10px] font-bold text-ot-action bg-transparent border border-transparent hover:border-ot-action/30 focus:border-ot-action focus:bg-ot-action/10 rounded outline-none w-full min-w-0 px-0.5 -ml-0.5 transition-all"
+                                                title="Edit wall name"
+                                            />
                                             <div className="flex items-center gap-0.5 shrink-0">
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); toggleOrientation(wall.canvasId); }}
@@ -322,7 +452,7 @@ export default function WallLayoutDesigner({ controller, onBack }) {
                                                     <RotateCcw className="w-2 h-2" />
                                                 </button>
                                                 <button
-                                                    onClick={(e) => { e.stopPropagation(); removeWall(wall.canvasId); }}
+                                                    onClick={(e) => { e.stopPropagation(); requestRemoveWall(wall.canvasId); }}
                                                     title="Remove"
                                                     className="w-3.5 h-3.5 rounded flex items-center justify-center text-muted-foreground hover:text-red-400 hover:bg-red-400/10 transition-colors">
                                                     <X className="w-2 h-2" />
@@ -376,14 +506,19 @@ export default function WallLayoutDesigner({ controller, onBack }) {
                                     className="flex items-start gap-2 p-2 rounded-lg bg-ot-surface-elev-bottom/60 border border-ot-border/50 group">
                                     <div className="w-1.5 h-1.5 rounded-full bg-ot-action mt-1.5 shrink-0" />
                                     <div className="flex-1 min-w-0">
-                                        <div className="text-[11px] font-semibold text-white truncate">{w.name}</div>
-                                        <div className="text-[9px] text-muted-foreground font-mono">
+                                        <input
+                                            value={w.name}
+                                            onChange={(e) => setCanvasWalls(prev => prev.map(cw => cw.canvasId === w.canvasId ? { ...cw, name: e.target.value } : cw))}
+                                            className="text-[11px] font-semibold text-white bg-transparent border border-transparent hover:border-white/20 focus:border-ot-action focus:bg-ot-surface-top rounded outline-none w-full min-w-0 px-1 -ml-1 transition-all"
+                                            title="Edit wall name"
+                                        />
+                                        <div className="text-[9px] text-muted-foreground font-mono mt-0.5 px-1 -ml-1">
                                             {String.fromCharCode(65 + w.gridY)}{w.gridX + 1}
                                             {' · '}{w.orientation === 'h' ? '↔' : '↕'}
                                         </div>
                                     </div>
                                     <button
-                                        onClick={() => removeWall(w.canvasId)}
+                                        onClick={() => requestRemoveWall(w.canvasId)}
                                         className="opacity-0 group-hover:opacity-100 w-3.5 h-3.5 flex items-center justify-center text-muted-foreground hover:text-red-400 transition-all shrink-0 mt-0.5">
                                         <X className="w-2 h-2" />
                                     </button>
@@ -393,6 +528,25 @@ export default function WallLayoutDesigner({ controller, onBack }) {
                     )}
                 </div>
             </div>
+            {/* Delete Confirmation Dialog */}
+            <Dialog open={!!wallToDelete} onOpenChange={(open) => !open && setWallToDelete(null)}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Delete Wall</DialogTitle>
+                        <DialogDescription>
+                            Are you sure you want to delete this wall? This will immediately remove it from the database.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="mt-4">
+                        <Button variant="ghost" onClick={() => setWallToDelete(null)}>
+                            Cancel
+                        </Button>
+                        <Button className="bg-red-500 hover:bg-red-600 text-white" onClick={confirmRemoveWall}>
+                            Delete
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

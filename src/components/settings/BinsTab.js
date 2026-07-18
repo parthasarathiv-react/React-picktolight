@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Layers, ArrowRight, Archive, Filter } from 'lucide-react';
 import { cn } from 'lib/utils';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from 'components/ui/select';
 import BinLayoutDesigner from './BinLayoutDesigner';
 
 export default function BinsTab({ cupboardsData, syncCupboards, wallsData, controllersData }) {
@@ -61,61 +62,70 @@ export default function BinsTab({ cupboardsData, syncCupboards, wallsData, contr
                 </div>
                 
                 <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex items-center gap-2 bg-ot-surface-top border border-ot-border rounded-md px-3 py-1.5">
+                    <div className="flex items-center gap-2">
                         <Filter className="w-4 h-4 text-muted-foreground" />
-                        <select
-                            value={filterController}
-                            onChange={(e) => { setFilterController(e.target.value); setFilterWall('all'); setFilterCupboard('all'); }}
-                            className="bg-transparent text-sm text-white focus:outline-none min-w-[130px]"
-                        >
-                            <option value="all" className="bg-ot-surface-elev-bottom text-white">All Controllers</option>
-                            {controllersData && controllersData.map(c => (
-                                <option key={c.id || c.name} value={c.name} className="bg-ot-surface-elev-bottom text-white">
-                                    {c.name}
-                                </option>
-                            ))}
-                        </select>
+                        <div className="w-[160px]">
+                            <Select value={filterController} onValueChange={(val) => { setFilterController(val); setFilterWall('all'); setFilterCupboard('all'); }}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="All Controllers" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Controllers</SelectItem>
+                                    {controllersData && controllersData.map(c => (
+                                        <SelectItem key={c.id || c.name} value={c.name}>
+                                            {c.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
                     </div>
                     
-                    <div className="flex items-center gap-2 bg-ot-surface-top border border-ot-border rounded-md px-3 py-1.5">
+                    <div className="flex items-center gap-2">
                         <Filter className="w-4 h-4 text-muted-foreground" />
-                        <select
-                            value={filterWall}
-                            onChange={(e) => { setFilterWall(e.target.value); setFilterCupboard('all'); }}
-                            className="bg-transparent text-sm text-white focus:outline-none min-w-[130px]"
-                        >
-                            <option value="all" className="bg-ot-surface-elev-bottom text-white">All Walls</option>
-                            {wallsData && wallsData
-                                .filter(w => filterController === 'all' || w.controller === filterController)
-                                .map(w => (
-                                <option key={w.id || w.name} value={w.name} className="bg-ot-surface-elev-bottom text-white">
-                                    {w.name}
-                                </option>
-                            ))}
-                        </select>
+                        <div className="w-[160px]">
+                            <Select value={filterWall} onValueChange={(val) => { setFilterWall(val); setFilterCupboard('all'); }}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="All Walls" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Walls</SelectItem>
+                                    {wallsData && wallsData
+                                        .filter(w => filterController === 'all' || w.controller === filterController)
+                                        .map(w => (
+                                        <SelectItem key={w.id || w.name} value={w.name}>
+                                            {w.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
                     </div>
 
-                    <div className="flex items-center gap-2 bg-ot-surface-top border border-ot-border rounded-md px-3 py-1.5">
+                    <div className="flex items-center gap-2">
                         <Filter className="w-4 h-4 text-muted-foreground" />
-                        <select
-                            value={filterCupboard}
-                            onChange={(e) => setFilterCupboard(e.target.value)}
-                            className="bg-transparent text-sm text-white focus:outline-none min-w-[130px]"
-                        >
-                            <option value="all" className="bg-ot-surface-elev-bottom text-white">All Cupboards</option>
-                            {cupboardsData && cupboardsData
-                                .filter(c => {
-                                    const wall = wallsData?.find(w => w.name === c.wall);
-                                    if (filterController !== 'all' && (!wall || wall.controller !== filterController)) return false;
-                                    if (filterWall !== 'all' && c.wall !== filterWall) return false;
-                                    return true;
-                                })
-                                .map(c => (
-                                <option key={c.id || c.name} value={c.name} className="bg-ot-surface-elev-bottom text-white">
-                                    {c.name}
-                                </option>
-                            ))}
-                        </select>
+                        <div className="w-[160px]">
+                            <Select value={filterCupboard} onValueChange={setFilterCupboard}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="All Cupboards" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Cupboards</SelectItem>
+                                    {cupboardsData && cupboardsData
+                                        .filter(c => {
+                                            const wall = wallsData?.find(w => w.name === c.wall);
+                                            if (filterController !== 'all' && (!wall || wall.controller !== filterController)) return false;
+                                            if (filterWall !== 'all' && c.wall !== filterWall) return false;
+                                            return true;
+                                        })
+                                        .map(c => (
+                                        <SelectItem key={c.id || c.name} value={c.name}>
+                                            {c.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
                     </div>
                 </div>
             </div>

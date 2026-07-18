@@ -9,7 +9,6 @@ const MIN_BIN_H = 40;
 
 export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsData, syncCupboards }) {
     const [saveFlash, setSaveFlash] = useState(false);
-    const [leds, setLeds] = useState(shelf.ledsPerBin || cupboard.ledsPerDrawer || 6);
     const [genRows, setGenRows] = useState(1);
     const [genCols, setGenCols] = useState(4);
 
@@ -23,6 +22,17 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
 
     const [dragging, setDragging] = useState(null);
     const canvasRef = useRef(null);
+    
+    // Panning state
+    const scrollRef = useRef(null);
+    const scrollDragRef = useRef({
+        isDown: false,
+        startX: 0,
+        startY: 0,
+        scrollLeft: 0,
+        scrollTop: 0,
+        moved: false,
+    });
 
     const addBin = () => {
         // Place bin at next available slot horizontally
@@ -98,10 +108,8 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
         if (!dragging) return;
         const dx = e.clientX - dragging.startMouseX;
         const dy = e.clientY - dragging.startMouseY;
-        // Calculate dynamic minimum width based on LED count
-        const displayedLeds = Math.min(leds, 12);
-        const ledsWidth = 16 + displayedLeds * 8 + Math.max(0, displayedLeds - 1) * 4 + (leds > 12 ? 24 : 0);
-        const currentMinW = Math.max(MIN_BIN_W, 40 + ledsWidth);
+        // Calculate dynamic minimum width
+        const currentMinW = Math.max(MIN_BIN_W, 40);
 
         setBinBlocks(prev => prev.map(b => {
             if (b.id !== dragging.id) return b;
@@ -142,7 +150,7 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                     return b;
             }
         }));
-    }, [dragging, leds]);
+    }, [dragging]);
 
     const onMouseUp = useCallback(() => setDragging(null), []);
 
@@ -167,7 +175,6 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
             const targetShelf = targetCupboard.shelfLayout.find(s => s.id === shelf.id);
             if (targetShelf) {
                 targetShelf.bins = binBlocks;
-                targetShelf.ledsPerBin = leds;
             }
         }
 
@@ -179,7 +186,6 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                 const lsShelf = layouts[cupboard.id].shelfLayout?.find(s => s.id === shelf.id);
                 if (lsShelf) {
                     lsShelf.bins = binBlocks;
-                    lsShelf.ledsPerBin = leds;
                 }
             }
             localStorage.setItem('cupboardLayouts', JSON.stringify(layouts));
@@ -195,6 +201,56 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
     // Calculate canvas size
     const shelfVisualWidth = Math.max(shelf.width || 600, ...binBlocks.map(b => b.x + b.width + 40));
     const shelfVisualHeight = Math.max(shelf.height || 100, ...binBlocks.map(b => b.y + b.height + 40), 200);
+
+    // Panning logic
+    const handlePointerDown = (e) => {
+        if (e.button !== 0) return;
+        const container = scrollRef.current;
+        if (!container) return;
+
+        scrollDragRef.current = {
+            isDown: true,
+            startX: e.clientX,
+            startY: e.clientY,
+            scrollLeft: container.scrollLeft,
+            scrollTop: container.scrollTop,
+            moved: false,
+        };
+        container.setPointerCapture?.(e.pointerId);
+    };
+
+    const handlePointerMove = (e) => {
+        const container = scrollRef.current;
+        const dragState = scrollDragRef.current;
+        if (!container || !dragState.isDown) return;
+
+        const deltaX = e.clientX - dragState.startX;
+        const deltaY = e.clientY - dragState.startY;
+
+        if (!dragState.moved && (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3)) {
+            dragState.moved = true;
+        }
+
+        if (dragState.moved) {
+            container.scrollLeft = dragState.scrollLeft - deltaX;
+            container.scrollTop = dragState.scrollTop - deltaY;
+        }
+    };
+
+    const stopScrolling = (e) => {
+        const container = scrollRef.current;
+        if (container?.hasPointerCapture?.(e.pointerId)) {
+            container.releasePointerCapture(e.pointerId);
+        }
+        scrollDragRef.current.isDown = false;
+    };
+    
+    const handleCanvasClick = (e) => {
+        if (scrollDragRef.current.moved) {
+            e.stopPropagation();
+            scrollDragRef.current.moved = false;
+        }
+    };
 
     return (
         <div className="flex flex-col h-full animate-in fade-in">
@@ -240,7 +296,15 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
             {/* Body */}
             <div className="flex flex-1 min-h-0 overflow-hidden bg-ot-bg-mid">
                 {/* Canvas */}
-                <div className="flex-1 overflow-auto p-6">
+                <div 
+                    className="flex-1 overflow-auto p-6 relative touch-none select-none cursor-grab active:cursor-grabbing"
+                    ref={scrollRef}
+                    onPointerDown={handlePointerDown}
+                    onPointerMove={handlePointerMove}
+                    onPointerUp={stopScrolling}
+                    onPointerCancel={stopScrolling}
+                    onClickCapture={handleCanvasClick}
+                >
                     <div
                         ref={canvasRef}
                         className="relative rounded-xl border-2 border-dashed border-ot-border/50 bg-ot-surface-top/50"
@@ -280,6 +344,7 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                                 >
                                     <div
                                         className="absolute inset-0 cursor-grab active:cursor-grabbing z-10"
+                                        onPointerDown={(e) => e.stopPropagation()}
                                         onMouseDown={(e) => handleMouseDown(e, bin.id, 'move')}
                                     />
 
@@ -299,14 +364,6 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                                                 placeholder="Label"
                                             />
                                         </div>
-                                        
-                                        {/* LED dots preview */}
-                                        <div className="flex items-center gap-1 pointer-events-none w-full justify-center opacity-80">
-                                            {Array.from({ length: Math.min(leds, 12) }).map((_, i) => (
-                                                <div key={i} className="w-1.5 h-1.5 rounded-full bg-orange-400 border border-orange-300/30 shrink-0" />
-                                            ))}
-                                            {leds > 12 && <span className="text-[8px] text-muted-foreground ml-1 shrink-0">+{leds - 12}</span>}
-                                        </div>
                                     </div>
 
                                     {/* Size label */}
@@ -317,6 +374,7 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                                     {/* Remove button */}
                                     <button
                                         onClick={(e) => { e.stopPropagation(); removeBin(bin.id); }}
+                                        onPointerDown={(e) => e.stopPropagation()}
                                         className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500/80 hover:bg-red-500 text-white flex items-center justify-center z-30 opacity-0 hover:opacity-100 transition-opacity shadow-lg"
                                         style={{ pointerEvents: 'auto' }}
                                     >
@@ -325,40 +383,44 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
 
                                     {/* ─── Resize Handles (4 edges + 4 corners) ──────────── */}
                                     {/* North edge */}
-                                    <div onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-n')} className="absolute left-2 right-2 -top-[3px] h-[6px] cursor-n-resize z-30 group">
+                                    <div onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-n')} className="absolute left-2 right-2 -top-[3px] h-[6px] cursor-n-resize z-30 group">
                                         <div className="absolute inset-x-0 top-[2px] h-[2px] bg-orange-500/0 group-hover:bg-orange-500/60 transition-colors rounded-full" />
                                     </div>
                                     {/* South edge */}
-                                    <div onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-s')} className="absolute left-2 right-2 -bottom-[3px] h-[6px] cursor-s-resize z-30 group">
+                                    <div onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-s')} className="absolute left-2 right-2 -bottom-[3px] h-[6px] cursor-s-resize z-30 group">
                                         <div className="absolute inset-x-0 bottom-[2px] h-[2px] bg-orange-500/0 group-hover:bg-orange-500/60 transition-colors rounded-full" />
                                     </div>
                                     {/* West edge */}
-                                    <div onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-w')} className="absolute top-2 bottom-2 -left-[3px] w-[6px] cursor-w-resize z-30 group">
+                                    <div onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-w')} className="absolute top-2 bottom-2 -left-[3px] w-[6px] cursor-w-resize z-30 group">
                                         <div className="absolute inset-y-0 left-[2px] w-[2px] bg-orange-500/0 group-hover:bg-orange-500/60 transition-colors rounded-full" />
                                     </div>
                                     {/* East edge */}
-                                    <div onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-e')} className="absolute top-2 bottom-2 -right-[3px] w-[6px] cursor-e-resize z-30 group">
+                                    <div onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-e')} className="absolute top-2 bottom-2 -right-[3px] w-[6px] cursor-e-resize z-30 group">
                                         <div className="absolute inset-y-0 right-[2px] w-[2px] bg-orange-500/0 group-hover:bg-orange-500/60 transition-colors rounded-full" />
                                     </div>
                                     
                                     {/* Corner handles (visible dots) */}
                                     {/* NW */}
                                     <div
+                                        onPointerDown={(e) => e.stopPropagation()}
                                         onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-nw')}
                                         className="absolute -top-[4px] -left-[4px] w-[8px] h-[8px] rounded-full bg-orange-500/60 hover:bg-orange-500 border border-orange-500 cursor-nw-resize z-40 transition-colors"
                                     />
                                     {/* NE */}
                                     <div
+                                        onPointerDown={(e) => e.stopPropagation()}
                                         onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-ne')}
                                         className="absolute -top-[4px] -right-[4px] w-[8px] h-[8px] rounded-full bg-orange-500/60 hover:bg-orange-500 border border-orange-500 cursor-ne-resize z-40 transition-colors"
                                     />
                                     {/* SW */}
                                     <div
+                                        onPointerDown={(e) => e.stopPropagation()}
                                         onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-sw')}
                                         className="absolute -bottom-[4px] -left-[4px] w-[8px] h-[8px] rounded-full bg-orange-500/60 hover:bg-orange-500 border border-orange-500 cursor-sw-resize z-40 transition-colors"
                                     />
                                     {/* SE */}
                                     <div
+                                        onPointerDown={(e) => e.stopPropagation()}
                                         onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-se')}
                                         className="absolute -bottom-[4px] -right-[4px] w-[8px] h-[8px] rounded-full bg-orange-500/60 hover:bg-orange-500 border border-orange-500 cursor-se-resize z-40 transition-colors"
                                     />
@@ -413,10 +475,6 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                             <Button variant="secondary" onClick={generateGrid} className="w-full h-8 text-xs bg-ot-surface-elev-bottom border border-ot-border text-white hover:bg-ot-surface-top transition-colors">
                                 Generate Bins
                             </Button>
-                        </div>
-                        <div className="pt-2 border-t border-ot-border/50">
-                            <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase mb-2 block">LEDs per Bin</label>
-                            <Input type="number" min={1} max={24} value={leds} onChange={e => setLeds(Number(e.target.value) || 1)} className="h-8 text-xs" />
                         </div>
                     </div>
                 </div>

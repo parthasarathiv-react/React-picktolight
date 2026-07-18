@@ -32,6 +32,17 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
 
     const [dragging, setDragging] = useState(null); // { id, type: 'move'|'resize-n'|'resize-s'|'resize-e'|'resize-w', offsetX, offsetY, startX, startY, startW, startH }
     const canvasRef = useRef(null);
+    
+    // Panning state
+    const scrollRef = useRef(null);
+    const scrollDragRef = useRef({
+        isDown: false,
+        startX: 0,
+        startY: 0,
+        scrollLeft: 0,
+        scrollTop: 0,
+        moved: false,
+    });
 
     const addShelf = () => {
         const maxY = shelfBlocks.reduce((m, s) => Math.max(m, s.y + s.height), 20);
@@ -178,11 +189,62 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
     // Edge handle component
     const ResizeHandle = ({ type, cursor, className, style }) => (
         <div
+            onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => handleMouseDown(e, null, type)}
             className={cn("absolute z-30", className)}
             style={{ cursor, ...style }}
         />
     );
+
+    // Panning logic
+    const handlePointerDown = (e) => {
+        if (e.button !== 0) return;
+        const container = scrollRef.current;
+        if (!container) return;
+
+        scrollDragRef.current = {
+            isDown: true,
+            startX: e.clientX,
+            startY: e.clientY,
+            scrollLeft: container.scrollLeft,
+            scrollTop: container.scrollTop,
+            moved: false,
+        };
+        container.setPointerCapture?.(e.pointerId);
+    };
+
+    const handlePointerMove = (e) => {
+        const container = scrollRef.current;
+        const dragState = scrollDragRef.current;
+        if (!container || !dragState.isDown) return;
+
+        const deltaX = e.clientX - dragState.startX;
+        const deltaY = e.clientY - dragState.startY;
+
+        if (!dragState.moved && (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3)) {
+            dragState.moved = true;
+        }
+
+        if (dragState.moved) {
+            container.scrollLeft = dragState.scrollLeft - deltaX;
+            container.scrollTop = dragState.scrollTop - deltaY;
+        }
+    };
+
+    const stopScrolling = (e) => {
+        const container = scrollRef.current;
+        if (container?.hasPointerCapture?.(e.pointerId)) {
+            container.releasePointerCapture(e.pointerId);
+        }
+        scrollDragRef.current.isDown = false;
+    };
+    
+    const handleCanvasClick = (e) => {
+        if (scrollDragRef.current.moved) {
+            e.stopPropagation();
+            scrollDragRef.current.moved = false;
+        }
+    };
 
     return (
         <div className="flex flex-col h-full animate-in fade-in">
@@ -229,7 +291,15 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
             {/* Body */}
             <div className="flex flex-1 min-h-0 overflow-hidden bg-ot-bg-mid">
                 {/* Canvas */}
-                <div className="flex-1 overflow-auto p-6">
+                <div 
+                    className="flex-1 overflow-auto p-6 relative touch-none select-none cursor-grab active:cursor-grabbing"
+                    ref={scrollRef}
+                    onPointerDown={handlePointerDown}
+                    onPointerMove={handlePointerMove}
+                    onPointerUp={stopScrolling}
+                    onPointerCancel={stopScrolling}
+                    onClickCapture={handleCanvasClick}
+                >
                     <div
                         ref={canvasRef}
                         className="relative rounded-xl border-2 border-dashed border-ot-border/50 bg-ot-surface-top/50"
@@ -267,6 +337,7 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                                     {/* Move handle (drag the shelf body) */}
                                     <div
                                         className="absolute inset-0 cursor-grab active:cursor-grabbing z-10"
+                                        onPointerDown={(e) => e.stopPropagation()}
                                         onMouseDown={(e) => handleMouseDown(e, shelf.id, 'move')}
                                     />
 
@@ -296,6 +367,7 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                                     {/* Remove button */}
                                     <button
                                         onClick={(e) => { e.stopPropagation(); removeShelf(shelf.id); }}
+                                        onPointerDown={(e) => e.stopPropagation()}
                                         className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500/80 hover:bg-red-500 text-white flex items-center justify-center z-30 opacity-0 hover:opacity-100 transition-opacity shadow-lg"
                                         style={{ pointerEvents: 'auto' }}
                                     >

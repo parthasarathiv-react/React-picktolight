@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import MainLayout from 'layouts/MainLayout';
+import { Toaster } from 'sonner';
 
 // Code-split all pages — each becomes its own JS chunk loaded on demand
 const Login = lazy(() => import('pages/Login'));
@@ -55,6 +56,7 @@ function App() {
                     <Route path="*" element={<Navigate to="/login" replace />} />
                 </Routes>
             </Suspense>
+            <Toaster theme="dark" position="top-right" richColors />
         </Router>
     );
 }

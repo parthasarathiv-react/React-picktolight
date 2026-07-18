@@ -2,23 +2,10 @@
 
 
 // ─── Controller Definitions ──────────────────────────────────────────────────
-export const CONTROLLERS_CONFIG = [
-    { id: 1, name: 'Controller A', ip: '192.168.1.101', port: '8080', status: 'Online' },
-    { id: 2, name: 'Controller B', ip: '192.168.1.102', port: '8080', status: 'Online' },
-    { id: 3, name: 'Controller C', ip: '192.168.1.103', port: '8080', status: 'Online' },
-    { id: 4, name: 'Controller D', ip: '192.168.1.104', port: '8080', status: 'Online' },
-    { id: 5, name: 'Controller E', ip: '192.168.1.105', port: '8080', status: 'Online' },
-];
+export const CONTROLLERS_CONFIG = [];
 
 // ─── Wall Definitions ────────────────────────────────────────────────────────
-export const WALLS_CONFIG = [
-    { id: 1, name: 'Wall A', controller: 'Controller A', cupboardsCount: 4, status: 'Active' },
-    { id: 2, name: 'Wall B', controller: 'Controller A', cupboardsCount: 4, status: 'Active' },
-    { id: 3, name: 'Wall C', controller: 'Controller B', cupboardsCount: 1, status: 'Active' },
-    { id: 4, name: 'Wall D', controller: 'Controller C', cupboardsCount: 2, status: 'Active' },
-    { id: 5, name: 'Wall E', controller: 'Controller D', cupboardsCount: 2, status: 'Active' },
-    { id: 6, name: 'Wall F', controller: 'Controller E', cupboardsCount: 2, status: 'Active' },
-];
+export const WALLS_CONFIG = [];
 
 // Initialize layouts from localStorage
 try {
@@ -86,6 +73,7 @@ try {
                 if (parsed[c.id].rows !== undefined) c.rows = parsed[c.id].rows;
                 if (parsed[c.id].ledsPerDrawer !== undefined) c.ledsPerDrawer = parsed[c.id].ledsPerDrawer;
                 if (parsed[c.id].shelfLayout !== undefined) c.shelfLayout = parsed[c.id].shelfLayout;
+                if (parsed[c.id].ledStrips !== undefined) c.ledStrips = parsed[c.id].ledStrips;
             }
         });
     }

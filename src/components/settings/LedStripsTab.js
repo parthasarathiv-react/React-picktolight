@@ -1,44 +1,50 @@
 import React, { useState } from 'react';
-import { LayoutGrid, ArrowRight, Grid3X3, Filter } from 'lucide-react';
+import { Box, ArrowRight, Lightbulb, Filter } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from 'components/ui/select';
-import CupboardLayoutDesigner from './CupboardLayoutDesigner';
+import LedStripLayoutDesigner from './LedStripLayoutDesigner';
 
-export default function CupboardsTab({ cupboardsData, syncCupboards, wallsData, selectedWall, onSelectWall, controllersData }) {
+export default function LedStripsTab({ cupboardsData, syncCupboards, wallsData, controllersData }) {
+    const [selectedCupboard, setSelectedCupboard] = useState(null);
     const [filterController, setFilterController] = useState('all');
+    const [filterWall, setFilterWall] = useState('all');
 
-    // If a wall is selected, show the layout designer for cupboards
-    if (selectedWall) {
+    if (selectedCupboard) {
         return (
-            <CupboardLayoutDesigner
-                wall={selectedWall}
-                onBack={() => onSelectWall(null)}
+            <LedStripLayoutDesigner
+                cupboard={selectedCupboard}
+                onBack={() => setSelectedCupboard(null)}
                 cupboardsData={cupboardsData}
                 syncCupboards={syncCupboards}
             />
         );
     }
 
-    const filteredWalls = wallsData.filter(wall => {
-        if (filterController !== 'all' && wall.controller !== filterController) return false;
+    const filteredCupboards = cupboardsData.filter(cupboard => {
+        const wall = wallsData?.find(w => w.name === cupboard.wall);
+        if (filterController !== 'all') {
+            if (!wall || wall.controller !== filterController) return false;
+        }
+        if (filterWall !== 'all') {
+            if (cupboard.wall !== filterWall) return false;
+        }
         return true;
     });
 
-    // Otherwise, show list of walls to choose from
     return (
         <div className="flex flex-col h-full space-y-6 animate-in fade-in p-6">
             <div className="flex items-center justify-between">
                 <div>
-                    <h3 className="text-xl font-semibold text-white">Cupboards Designer</h3>
+                    <h3 className="text-xl font-semibold text-white">LED Strips Designer</h3>
                     <p className="text-sm text-muted-foreground mt-1">
-                        Select a wall to add and arrange cupboards inside it.
+                        Select a cupboard to place LED strips and link them to bins.
                     </p>
                 </div>
                 <div className="flex items-center gap-3">
                     <div className="flex items-center gap-2">
                         <Filter className="w-4 h-4 text-muted-foreground" />
-                        <div className="w-[200px]">
-                            <Select value={filterController} onValueChange={setFilterController}>
+                        <div className="w-[180px]">
+                            <Select value={filterController} onValueChange={(val) => { setFilterController(val); setFilterWall('all'); }}>
                                 <SelectTrigger>
                                     <SelectValue placeholder="All Controllers" />
                                 </SelectTrigger>
@@ -53,16 +59,37 @@ export default function CupboardsTab({ cupboardsData, syncCupboards, wallsData, 
                             </Select>
                         </div>
                     </div>
+                    
+                    <div className="flex items-center gap-2">
+                        <Filter className="w-4 h-4 text-muted-foreground" />
+                        <div className="w-[180px]">
+                            <Select value={filterWall} onValueChange={setFilterWall}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="All Walls" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Walls</SelectItem>
+                                    {wallsData && wallsData
+                                        .filter(w => filterController === 'all' || w.controller === filterController)
+                                        .map(w => (
+                                        <SelectItem key={w.id || w.name} value={w.name}>
+                                            {w.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {filteredWalls.map((wall) => {
-                    const wallCupboards = cupboardsData.filter(c => c.wall === wall.name);
+                {filteredCupboards.map((cupboard) => {
+                    const stripCount = cupboard.ledStrips ? cupboard.ledStrips.length : 0;
                     return (
                         <button
-                            key={wall.id}
-                            onClick={() => onSelectWall(wall)}
+                            key={cupboard.id}
+                            onClick={() => setSelectedCupboard(cupboard)}
                             className={cn(
                                 'group relative flex flex-col p-4 rounded-xl border transition-all duration-200 text-left',
                                 'border-ot-border bg-ot-surface-elev-bottom/40',
@@ -73,14 +100,14 @@ export default function CupboardsTab({ cupboardsData, syncCupboards, wallsData, 
                             <div className="flex items-start justify-between gap-4 w-full">
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-xl bg-ot-surface-top border border-ot-border flex items-center justify-center shrink-0">
-                                        <LayoutGrid className="w-5 h-5 text-ot-action" />
+                                        <Lightbulb className="w-5 h-5 text-ot-action" />
                                     </div>
                                     <div>
                                         <div className="font-semibold text-white group-hover:text-ot-action transition-colors text-sm">
-                                            {wall.name}
+                                            {cupboard.name}
                                         </div>
                                         <div className="text-xs text-muted-foreground font-mono mt-0.5">
-                                            {wall.controller}
+                                            {cupboard.wall}
                                         </div>
                                     </div>
                                 </div>
@@ -91,8 +118,8 @@ export default function CupboardsTab({ cupboardsData, syncCupboards, wallsData, 
                             
                             <div className="mt-4 pt-4 border-t border-ot-border/50 flex items-center justify-between text-xs text-muted-foreground w-full">
                                 <span className="flex items-center gap-1.5">
-                                    <Grid3X3 className="w-3.5 h-3.5" />
-                                    {wallCupboards.length} Cupboards
+                                    <Lightbulb className="w-3.5 h-3.5" />
+                                    {stripCount} LED Strips
                                 </span>
                             </div>
 
@@ -103,13 +130,13 @@ export default function CupboardsTab({ cupboardsData, syncCupboards, wallsData, 
                 })}
             </div>
 
-            {filteredWalls.length === 0 && (
+            {filteredCupboards.length === 0 && (
                 <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center py-16">
                     <div className="w-14 h-14 rounded-2xl bg-ot-surface-elev-bottom border border-ot-border flex items-center justify-center">
-                        <LayoutGrid className="w-6 h-6 text-muted-foreground" />
+                        <Box className="w-6 h-6 text-muted-foreground" />
                     </div>
                     <div className="text-sm text-muted-foreground">
-                        No walls found. Add walls in the Walls tab first.
+                        No cupboards found. Add cupboards in the Cupboards tab first.
                     </div>
                 </div>
             )}

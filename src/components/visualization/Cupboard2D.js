@@ -162,8 +162,13 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
 
                 {cupboard.shelfLayout && cupboard.shelfLayout.length > 0 ? (
                     (() => {
-                        const canvasWidth = Math.max(600, ...cupboard.shelfLayout.map(s => s.x + s.width + 40));
-                        const canvasHeight = Math.max(500, ...cupboard.shelfLayout.map(s => s.y + s.height + 40));
+                        const maxShelfX = Math.max(0, ...cupboard.shelfLayout.map(s => s.x + s.width));
+                        const maxShelfY = Math.max(0, ...cupboard.shelfLayout.map(s => s.y + s.height));
+                        const maxStripX = cupboard.ledStrips ? Math.max(0, ...cupboard.ledStrips.map(s => s.x + s.width)) : 0;
+                        const maxStripY = cupboard.ledStrips ? Math.max(0, ...cupboard.ledStrips.map(s => s.y + s.height)) : 0;
+
+                        const canvasWidth = Math.max(600, maxShelfX + 40, maxStripX + 40);
+                        const canvasHeight = Math.max(500, maxShelfY + 40, maxStripY + 40);
 
                         return (
                             <div
@@ -235,6 +240,31 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                                         </div>
                                     );
                                 })}
+
+                                {/* Render LED Strips */}
+                                {cupboard.ledStrips && cupboard.ledStrips.map(strip => (
+                                    <div
+                                        key={strip.id}
+                                        className="absolute rounded-full border border-yellow-500/40 bg-yellow-500/10 flex items-center overflow-hidden z-20 pointer-events-none"
+                                        style={{
+                                            left: strip.x,
+                                            top: strip.y,
+                                            width: strip.width,
+                                            height: strip.height,
+                                        }}
+                                    >
+                                        <div className="absolute -top-3 left-1 text-[8px] font-mono text-yellow-500/70 font-semibold">{strip.label}</div>
+                                        <div className="flex items-center justify-around w-full px-1 opacity-70">
+                                            {Array.from({ length: Math.min(strip.ledCount || 30, 200) }).map((_, i) => {
+                                                const renderCount = Math.min(strip.ledCount || 30, 200);
+                                                const dotSize = Math.max(1, Math.min(4, (strip.width - 8) / renderCount));
+                                                return (
+                                                    <div key={i} className="rounded-full shrink-0 bg-yellow-400 shadow-[0_0_4px_rgba(250,204,21,0.5)]" style={{ width: dotSize, height: dotSize }} />
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         );
                     })()
