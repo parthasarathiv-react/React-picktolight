@@ -11,8 +11,8 @@ import LocationSelectionDialog from 'components/LocationSelectionDialog';
 
 export default function Login() {
     const navigate = useNavigate();
-    const [username, setUsername] = useState('');
-    const [password, setPassword] = useState('');
+    const [username, setUsername] = useState('gopal@example.com');
+    const [password, setPassword] = useState('Gopal@123');
     const [error, setError] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [showLocationDialog, setShowLocationDialog] = useState(false);
@@ -167,7 +167,7 @@ export default function Login() {
                 </Card>
             </div>
             {/* Location Selection Overlay */}
-            <LocationSelectionDialog 
+            <LocationSelectionDialog
                 open={showLocationDialog}
                 onOpenChange={setShowLocationDialog}
                 onSelectLocation={handleLocationSelect}

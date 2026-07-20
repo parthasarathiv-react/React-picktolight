@@ -19,6 +19,14 @@ const handleResponse = async (response) => {
         } else if (errData?.message) {
             errMsg = errData.message;
         }
+
+        if (response.status === 401) {
+            localStorage.removeItem('token');
+            localStorage.removeItem('selectedLocation');
+            window.location.href = '#/login';
+            throw new Error('Session expired. Please login again.');
+        }
+
         throw new Error(errMsg);
     }
     // Handle cases where 204 No Content is returned, to prevent JSON parse errors
@@ -83,6 +91,37 @@ export const apiService = {
     },
     deleteWall: async (id) => {
         const response = await fetch(`${API_URL}/config/delete-wall/${id}`, {
+            method: 'DELETE',
+            headers: getHeaders()
+        });
+        return handleResponse(response);
+    },
+
+    // Cupboards
+    getCupboards: async (locId) => {
+        const response = await fetch(`${API_URL}/config/get-cupboards?location=${locId}`, {
+            headers: getHeaders()
+        });
+        return handleResponse(response);
+    },
+    createCupboard: async (payload) => {
+        const response = await fetch(`${API_URL}/config/create-cupboard`, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify(payload)
+        });
+        return handleResponse(response);
+    },
+    updateCupboard: async (id, payload) => {
+        const response = await fetch(`${API_URL}/config/update-cupboard/${id}`, {
+            method: 'PUT',
+            headers: getHeaders(),
+            body: JSON.stringify(payload)
+        });
+        return handleResponse(response);
+    },
+    deleteCupboard: async (id) => {
+        const response = await fetch(`${API_URL}/config/delete-cupboard/${id}`, {
             method: 'DELETE',
             headers: getHeaders()
         });

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useOutletContext } from 'react-router-dom';
 import { Activity, Settings, Users, Box, LogOut, PackageSearch, PanelLeftClose, PanelLeft, Barcode, MapPin, RefreshCw } from 'lucide-react';
 import { cn } from 'lib/utils';
@@ -18,6 +18,22 @@ export default function MainLayout() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [showLocationDialog, setShowLocationDialog] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
+
+    useEffect(() => {
+        const checkToken = () => {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                navigate('/login');
+            }
+        };
+
+        // Check immediately on mount/render
+        checkToken();
+
+        // Listen for token removal across tabs or devtools
+        window.addEventListener('storage', checkToken);
+        return () => window.removeEventListener('storage', checkToken);
+    }, [navigate]);
 
     const handleSync = async () => {
         setIsSyncing(true);

@@ -2,6 +2,9 @@ import React, { useState, useRef, useCallback, useEffect, useLayoutEffect } from
 import { Button } from 'components/ui/button';
 import { ArrowLeft, Save, CheckCircle2, Plus, X, Box, Grid3X3 } from 'lucide-react';
 import { cn } from 'lib/utils';
+import { toast } from 'sonner';
+import { apiService } from 'lib/apiService';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from 'components/ui/dialog';
 
 const CELL = 120;
 const MIN_ROWS = 4;
@@ -14,6 +17,7 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
     const [dragging, setDragging] = useState(null);
     const [saveFlash, setSaveFlash] = useState(false);
     const [gridCols, setGridCols] = useState(MIN_COLS);
+    const [cupboardToDelete, setCupboardToDelete] = useState(null);
 
 
     // Track whether user actually moved during a drag (to distinguish drag vs click)
@@ -59,6 +63,7 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
         const newId = Date.now();
         const newCb = {
             id: newId,
+            isNew: true,
             canvasId: `cb-${newId}`,
             name: `Cupboard ${canvasCupboards.length + 1}`,
             shelves: 5,
@@ -74,8 +79,30 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
         setCanvasCupboards([...canvasCupboards, newCb]);
     };
 
-    const removeCupboard = (canvasId) => {
-        setCanvasCupboards(prev => prev.filter(c => c.canvasId !== canvasId));
+    const requestRemoveCupboard = (canvasId) => {
+        setCupboardToDelete(canvasId);
+    };
+
+    const confirmRemoveCupboard = async () => {
+        if (!cupboardToDelete) return;
+        const cb = canvasCupboards.find(c => c.canvasId === cupboardToDelete);
+        
+        if (cb && !cb.isNew) {
+            try {
+                await apiService.deleteCupboard(cb.id);
+                const updatedData = cupboardsData.filter(ec => String(ec.id) !== String(cb.id));
+                syncCupboards(updatedData);
+                toast.success("Cupboard deleted successfully");
+            } catch (err) {
+                console.error("Failed to delete cupboard", err);
+                toast.error(err.message || "Failed to delete cupboard");
+                setCupboardToDelete(null);
+                return;
+            }
+        }
+        
+        setCanvasCupboards(prev => prev.filter(c => c.canvasId !== cupboardToDelete));
+        setCupboardToDelete(null);
     };
 
     const startDrag = (e, canvasId) => {
@@ -124,40 +151,98 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
         };
     }, [onMouseMove, onMouseUp]);
 
-    const handleSave = () => {
-        // Sync back to global cupboards state
-        const otherCupboards = cupboardsData.filter(c => c.wall !== wall.name);
-        const updatedWallCupboards = canvasCupboards.map(c => {
-            const originalC = cupboardsData.find(cd => cd.id === c.id) || c;
-            return {
-                ...originalC,
-                layoutGridX: c.gridX,
-                layoutGridY: c.gridY,
-            };
-        });
-
-        const newGlobalState = [...otherCupboards, ...updatedWallCupboards];
-        syncCupboards(newGlobalState);
-
-        // Also persist this to local storage for cupboards
+    const handleSave = async () => {
         try {
-            const layouts = JSON.parse(localStorage.getItem('cupboardLayouts') || '{}');
-            updatedWallCupboards.forEach(c => {
-                layouts[c.id] = {
-                    ...(layouts[c.id] || {}),
-                    layoutGridX: c.layoutGridX,
-                    layoutGridY: c.layoutGridY,
-                    shelves: c.shelves,
-                    rows: c.rows,
-                    ledsPerDrawer: c.ledsPerDrawer,
-                    shelfLayout: c.shelfLayout
-                };
-            });
-            localStorage.setItem('cupboardLayouts', JSON.stringify(layouts));
-        } catch (e) { }
+            let locId = '';
+            const selectedLocationStr = localStorage.getItem('selectedLocation');
+            if (selectedLocationStr) {
+                try {
+                    const loc = JSON.parse(selectedLocationStr);
+                    locId = loc.pick_location_id || '';
+                } catch (e) { }
+            }
 
-        setSaveFlash(true);
-        setTimeout(() => setSaveFlash(false), 2000);
+            const updatedCupboards = [];
+            let createdCount = 0;
+            let updatedCount = 0;
+
+            for (const cb of canvasCupboards) {
+                const payload = {
+                    cupboard_name: cb.name,
+                    cupboard_wall_id: String(wall.id),
+                    cupboard_ctl_id: String(wall.controller_id),
+                    cupboard_loc_id: String(locId),
+                    cupboard_status: cb.status === 'Active' ? 'True' : 'False',
+                    cupboard_gridx: String(cb.gridX),
+                    cupboard_gridy: String(cb.gridY),
+                    cupboard_orientation: cb.orientation || 'h'
+                };
+
+                if (cb.isNew) {
+                    const res = await apiService.createCupboard([payload]);
+                    if (res && res.data) {
+                        createdCount++;
+                        const newCbData = Array.isArray(res.data) ? res.data[0] : res.data;
+                        updatedCupboards.push({
+                            id: newCbData?.cupboard_id || cb.id,
+                            name: newCbData?.cupboard_name || cb.name,
+                            wall: wall.name,
+                            wall_id: wall.id,
+                            controller: wall.controller,
+                            controller_id: wall.controller_id,
+                            status: (newCbData?.cupboard_status === 'True' || newCbData?.cupboard_status === true || newCbData?.cupboard_status === 'Active') ? 'Active' : 'Inactive',
+                            layoutGridX: cb.gridX,
+                            layoutGridY: cb.gridY,
+                            shelves: cb.shelves,
+                            rows: cb.rows,
+                            columns: cb.columns,
+                            ledsPerDrawer: cb.ledsPerDrawer,
+                            orientation: cb.orientation || 'h'
+                        });
+                    }
+                } else {
+                    const originalCb = cupboardsData.find(c => String(c.id) === String(cb.id));
+                    const hasChanged = !originalCb || (
+                        originalCb.name !== cb.name ||
+                        originalCb.status !== cb.status ||
+                        String(originalCb.layoutGridX) !== String(cb.gridX) ||
+                        String(originalCb.layoutGridY) !== String(cb.gridY) ||
+                        originalCb.orientation !== cb.orientation
+                    );
+
+                    if (hasChanged) {
+                        await apiService.updateCupboard(cb.id, payload);
+                        updatedCount++;
+                    }
+                    updatedCupboards.push({
+                        ...cb,
+                        layoutGridX: cb.gridX,
+                        layoutGridY: cb.gridY
+                    });
+                }
+            }
+
+            const otherCupboards = cupboardsData.filter(c => c.wall !== wall.name);
+            const newGlobalState = [...otherCupboards, ...updatedCupboards];
+            syncCupboards(newGlobalState);
+
+            setSaveFlash(true);
+            setTimeout(() => setSaveFlash(false), 2000);
+
+            if (createdCount > 0 && updatedCount > 0) {
+                toast.success(`Successfully created ${createdCount} new cupboard(s) and updated ${updatedCount} cupboard(s)!`);
+            } else if (createdCount > 0) {
+                toast.success(`Successfully created ${createdCount} new cupboard(s)!`);
+            } else if (updatedCount > 0) {
+                toast.success(`Successfully updated ${updatedCount} cupboard(s)!`);
+            } else {
+                toast.success("No changes to save.");
+            }
+
+        } catch (e) {
+            console.error("Failed to save cupboard layout", e);
+            toast.error(e.message || "Failed to save cupboard layout");
+        }
     };
 
 
@@ -284,7 +369,7 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
                                         <div className="flex items-center justify-between gap-1 shrink-0">
                                             <span className="text-[10px] font-bold text-white truncate">{cb.name}</span>
                                             <button
-                                                onClick={(e) => { e.stopPropagation(); removeCupboard(cb.canvasId); }}
+                                                onClick={(e) => { e.stopPropagation(); requestRemoveCupboard(cb.canvasId); }}
                                                 className="w-4 h-4 rounded flex items-center justify-center text-muted-foreground hover:text-red-400 hover:bg-red-400/10 transition-colors">
                                                 <X className="w-3 h-3" />
                                             </button>
@@ -339,7 +424,7 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
                                         </div>
                                     </div>
                                     <button
-                                        onClick={(e) => { e.stopPropagation(); removeCupboard(c.canvasId); }}
+                                        onClick={(e) => { e.stopPropagation(); requestRemoveCupboard(c.canvasId); }}
                                         className="opacity-0 group-hover:opacity-100 w-3.5 h-3.5 flex items-center justify-center text-muted-foreground hover:text-red-400 transition-all shrink-0 mt-0.5">
                                         <X className="w-2 h-2" />
                                     </button>
@@ -349,6 +434,25 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
                     )}
                 </div>
             </div>
+            {/* Delete Confirmation Dialog */}
+            <Dialog open={!!cupboardToDelete} onOpenChange={(open) => !open && setCupboardToDelete(null)}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Delete Cupboard</DialogTitle>
+                        <DialogDescription>
+                            Are you sure you want to delete this cupboard? This will immediately remove it from the database.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="mt-4">
+                        <Button variant="ghost" onClick={() => setCupboardToDelete(null)}>
+                            Cancel
+                        </Button>
+                        <Button className="bg-red-500 hover:bg-red-600 text-white" onClick={confirmRemoveCupboard}>
+                            Delete
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

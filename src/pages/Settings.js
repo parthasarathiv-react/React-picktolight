@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from 'components/ui/card';
 import { Button } from 'components/ui/button';
-import { Server, Box, LayoutGrid, Layers, Archive, Lightbulb } from 'lucide-react';
+import { Server, Box, LayoutGrid, Layers, Archive, Lightbulb, Loader2 } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { useOutletContext } from 'react-router-dom';
 import { apiService } from 'lib/apiService';
 import { toast } from 'sonner';
+import { useQuery } from '@tanstack/react-query';
 import {
     CONTROLLERS_CONFIG,
     WALLS_CONFIG,
@@ -27,86 +28,131 @@ export default function Settings() {
     const [controllersData, setControllersData] = useState([]);
     const [wallsData, setWallsData] = useState([]);
     const [cupboardsData, setCupboardsData] = useState([...CUPBOARDS_CONFIG]);
-
-    useEffect(() => {
-
-
-        const fetchControllers = async () => {
-            try {
-                let locId = '';
-                const selectedLocationStr = localStorage.getItem('selectedLocation');
-                if (selectedLocationStr) {
-                    try {
-                        const loc = JSON.parse(selectedLocationStr);
-                        locId = loc.pick_location_id || '';
-                    } catch (e) { }
-                }
-
-                if (!locId) return;
-
-                const data = await apiService.getControllers(locId);
-                if (data.success && data.data) {
-                    const mapped = data.data.map(c => ({
-                        id: c.ctl_id || c.id || Math.random().toString(36).substr(2, 9),
-                        name: c.ctl_name,
-                        ip: c.ctl_ip,
-                        port: c.ctl_port,
-                        status: (c.ctl_status === 'True' || c.ctl_status === true || c.ctl_status === 'Online') ? 'Online' : 'Offline'
-                    }));
-                    syncControllers(mapped);
-                }
-            } catch (err) {
-                console.error("Failed to fetch controllers", err);
-                toast.error(`Failed to fetch controllers: ${err.message}`);
+    const locId = React.useMemo(() => {
+        try {
+            const selectedLocationStr = localStorage.getItem('selectedLocation');
+            if (selectedLocationStr) {
+                const loc = JSON.parse(selectedLocationStr);
+                return loc.pick_location_id || '';
             }
-        };
-
-        fetchControllers();
+        } catch (e) { }
+        return '';
     }, []);
 
-    // Fetch walls when Walls tab is active
+    const { data: fetchedControllers, isFetching: isFetchingControllers, error: errorControllers } = useQuery({
+        queryKey: ['controllers', locId],
+        queryFn: async () => {
+            if (!locId) return [];
+            const data = await apiService.getControllers(locId);
+            if (!data.success || !data.data) throw new Error("Failed to fetch controllers");
+            return data.data.map(c => ({
+                id: c.ctl_id || c.id || Math.random().toString(36).substr(2, 9),
+                name: c.ctl_name,
+                ip: c.ctl_ip,
+                port: c.ctl_port,
+                status: (c.ctl_status === 'True' || c.ctl_status === true || c.ctl_status === 'Online') ? 'Online' : 'Offline'
+            }));
+        },
+        enabled: !!locId,
+    });
+
+    const shouldFetchWalls = ['walls', 'cupboards', 'shelves', 'bins', 'leds'].includes(activeTab);
+    const { data: rawWalls, isFetching: isFetchingWalls, error: errorWalls } = useQuery({
+        queryKey: ['walls', locId],
+        queryFn: async () => {
+            if (!locId) return [];
+            const data = await apiService.getWalls(locId);
+            if (!data.success || !data.data) throw new Error("Failed to fetch walls");
+            return data.data;
+        },
+        enabled: !!locId && shouldFetchWalls,
+    });
+
+    const shouldFetchCupboards = ['cupboards', 'shelves', 'bins', 'leds'].includes(activeTab);
+    const { data: rawCupboards, isFetching: isFetchingCupboards, error: errorCupboards } = useQuery({
+        queryKey: ['cupboards', locId],
+        queryFn: async () => {
+            if (!locId) return [];
+            const data = await apiService.getCupboards(locId);
+            if (!data.success || !data.data) throw new Error("Failed to fetch cupboards");
+            return data.data;
+        },
+        enabled: !!locId && shouldFetchCupboards,
+    });
+
     useEffect(() => {
-        if (activeTab !== 'walls' && activeTab !== 'cupboards') return; // Cupboards also needs wallsData
+        if (fetchedControllers) {
+            syncControllers(fetchedControllers);
+        }
+    }, [fetchedControllers]);
 
-        const fetchWalls = async () => {
+    useEffect(() => {
+        if (rawWalls && fetchedControllers) {
+            const mapped = rawWalls.map(w => {
+                const ctrl = fetchedControllers.find(c => String(c.id) === String(w.wall_ctl_id));
+                return {
+                    id: w.wall_id,
+                    name: w.wall_name,
+                    controller: ctrl ? ctrl.name : w.wall_ctl_id,
+                    controller_id: w.wall_ctl_id,
+                    status: (w.wall_status === 'True' || w.wall_status === true || w.wall_status === 'Active') ? 'Active' : 'Inactive',
+                    gridX: parseInt(w.wall_gridx, 10) || 0,
+                    gridY: parseInt(w.wall_gridy, 10) || 0,
+                    orientation: w.wall_orientation || 'h',
+                    cupboardsCount: 4
+                };
+            });
+            syncWalls(mapped);
+        }
+    }, [rawWalls, fetchedControllers]);
+
+    useEffect(() => {
+        if (rawCupboards && rawWalls && fetchedControllers) {
+            const mapped = rawCupboards.map(c => {
+                const wall = rawWalls.find(w => String(w.wall_id) === String(c.cupboard_wall_id));
+                const ctrl = fetchedControllers.find(ctrl => String(ctrl.id) === String(c.cupboard_ctl_id));
+                return {
+                    id: c.cupboard_id,
+                    name: c.cupboard_name,
+                    wall: wall ? wall.wall_name : c.cupboard_wall_id,
+                    wall_id: c.cupboard_wall_id,
+                    controller: ctrl ? ctrl.name : c.cupboard_ctl_id,
+                    controller_id: c.cupboard_ctl_id,
+                    status: (c.cupboard_status === 'True' || c.cupboard_status === true || c.cupboard_status === 'Active') ? 'Active' : 'Inactive',
+                    layoutGridX: parseInt(c.cupboard_gridx, 10) || 0,
+                    layoutGridY: parseInt(c.cupboard_gridy, 10) || 0,
+                    orientation: c.cupboard_orientation || 'h',
+                    shelves: 5,
+                    rows: 5,
+                    columns: 4,
+                    ledsPerDrawer: 6
+                };
+            });
+            
             try {
-                let locId = '';
-                const selectedLocationStr = localStorage.getItem('selectedLocation');
-                if (selectedLocationStr) {
-                    try {
-                        const loc = JSON.parse(selectedLocationStr);
-                        locId = loc.pick_location_id || '';
-                    } catch (e) { }
-                }
+                const layouts = JSON.parse(localStorage.getItem('cupboardLayouts') || '{}');
+                mapped.forEach(c => {
+                    if (layouts[c.id]) {
+                        c.shelves = layouts[c.id].shelves || c.shelves;
+                        c.rows = layouts[c.id].rows || c.rows;
+                        c.columns = layouts[c.id].columns || c.columns;
+                        c.ledsPerDrawer = layouts[c.id].ledsPerDrawer || c.ledsPerDrawer;
+                        c.shelfLayout = layouts[c.id].shelfLayout || c.shelfLayout;
+                    }
+                });
+            } catch (e) { }
 
-                if (!locId) return;
+            syncCupboards(mapped);
+        }
+    }, [rawCupboards, rawWalls, fetchedControllers]);
 
-                const data = await apiService.getWalls(locId);
-                if (data.success && data.data) {
-                    const mapped = data.data.map(w => {
-                        const ctrl = controllersData.find(c => c.id == w.wall_ctl_id);
-                        return {
-                            id: w.wall_id,
-                            name: w.wall_name,
-                            controller: ctrl ? ctrl.name : w.wall_ctl_id,
-                            controller_id: w.wall_ctl_id,
-                            status: (w.wall_status === 'True' || w.wall_status === true || w.wall_status === 'Active') ? 'Active' : 'Inactive',
-                            gridX: parseInt(w.wall_gridx, 10) || 0,
-                            gridY: parseInt(w.wall_gridy, 10) || 0,
-                            orientation: w.wall_orientation || 'h',
-                            cupboardsCount: 4 // default
-                        };
-                    });
-                    syncWalls(mapped);
-                }
-            } catch (err) {
-                console.error("Failed to fetch walls", err);
-                toast.error(`Failed to fetch walls: ${err.message}`);
-            }
-        };
+    useEffect(() => {
+        if (errorControllers) toast.error(`Failed to fetch controllers: ${errorControllers.message}`);
+        if (errorWalls) toast.error(`Failed to fetch walls: ${errorWalls.message}`);
+        if (errorCupboards) toast.error(`Failed to fetch cupboards: ${errorCupboards.message}`);
+    }, [errorControllers, errorWalls, errorCupboards]);
 
-        fetchWalls();
-    }, [activeTab, controllersData]);
+    const isFetchingAny = isFetchingControllers || isFetchingWalls || isFetchingCupboards;
 
     // Wall layout designer: which controller was selected
     const [selectedController, setSelectedController] = useState(null);
@@ -223,8 +269,15 @@ export default function Settings() {
             <Card className="flex-1 flex flex-col min-w-0 overflow-hidden">
                 <div className={cn('flex-1 flex flex-col overflow-hidden', isInDesignerMode ? 'p-0' : 'p-6')}>
 
-                    {/* Controllers tab */}
-                    {activeTab === 'controllers' && (
+                    {isFetchingAny ? (
+                        <div className="flex-1 flex flex-col items-center justify-center gap-4 text-muted-foreground">
+                            <Loader2 className="w-8 h-8 animate-spin text-ot-action" />
+                            <div className="text-sm font-medium animate-pulse">Loading configuration data...</div>
+                        </div>
+                    ) : (
+                        <>
+                            {/* Controllers tab */}
+                            {activeTab === 'controllers' && (
                         <ControllersTab
                             controllersData={controllersData}
                             syncControllers={syncControllers}
@@ -291,6 +344,8 @@ export default function Settings() {
                             wallsData={wallsData}
                             controllersData={controllersData}
                         />
+                    )}
+                        </>
                     )}
                 </div>
             </Card>
