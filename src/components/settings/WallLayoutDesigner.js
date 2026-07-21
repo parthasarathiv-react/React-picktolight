@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
 import { Button } from 'components/ui/button';
-import { ArrowLeft, Save, CheckCircle2, Plus, RotateCcw, X, Grid3X3 } from 'lucide-react';
+import { ArrowLeft, Save, CheckCircle2, Plus, RotateCcw, X, Grid3X3, Server } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { toast } from 'sonner';
 
@@ -320,11 +320,16 @@ export default function WallLayoutDesigner({ controller, onBack, wallsData, sync
                         <ArrowLeft className="w-4 h-4" /> Back
                     </Button>
                     <div className="h-5 w-px bg-ot-border" />
-                    <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                        <span className="text-sm font-semibold text-white">{controller.name}</span>
-                        <span className="text-xs text-muted-foreground font-mono">{controller.ip}:{controller.port}</span>
+                    <div className="flex items-center gap-1.5 text-xs">
+                        <div className="flex items-center gap-1.5 text-ot-action bg-ot-action/10 px-2 py-1 rounded-md font-medium border border-ot-action/20">
+                            <Server className="w-3.5 h-3.5" />
+                            <span>{controller.name}</span>
+                            <span className="text-muted-foreground ml-1">({controller.ip}:{controller.port})</span>
+                        </div>
                     </div>
+                    
+                    <div className="h-5 w-px bg-ot-border ml-2" />
+                    <span className="text-xs text-muted-foreground font-mono ml-1">Wall Designer</span>
                 </div>
 
                 <div className="flex items-center gap-3">

@@ -162,10 +162,10 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
 
                 {cupboard.shelfLayout && cupboard.shelfLayout.length > 0 ? (
                     (() => {
-                        const maxShelfX = Math.max(0, ...cupboard.shelfLayout.map(s => s.x + s.width));
-                        const maxShelfY = Math.max(0, ...cupboard.shelfLayout.map(s => s.y + s.height));
-                        const maxStripX = cupboard.ledStrips ? Math.max(0, ...cupboard.ledStrips.map(s => s.x + s.width)) : 0;
-                        const maxStripY = cupboard.ledStrips ? Math.max(0, ...cupboard.ledStrips.map(s => s.y + s.height)) : 0;
+                        const maxShelfX = Math.max(0, ...cupboard.shelfLayout.map(s => Number(s.x) + Number(s.width)));
+                        const maxShelfY = Math.max(0, ...cupboard.shelfLayout.map(s => Number(s.y) + Number(s.height)));
+                        const maxStripX = cupboard.ledStrips ? Math.max(0, ...cupboard.ledStrips.map(s => Number(s.x) + Number(s.width))) : 0;
+                        const maxStripY = cupboard.ledStrips ? Math.max(0, ...cupboard.ledStrips.map(s => Number(s.y) + Number(s.height))) : 0;
 
                         const canvasWidth = Math.max(600, maxShelfX + 40, maxStripX + 40);
                         const canvasHeight = Math.max(500, maxShelfY + 40, maxStripY + 40);
@@ -178,13 +178,13 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                                     height: canvasHeight
                                 }}
                             >
-                                {[...cupboard.shelfLayout].sort((a, b) => a.y - b.y || a.x - b.x).map((shelf, sortedIdx) => {
-                                    const maxBinX = shelf.bins && shelf.bins.length > 0 ? Math.max(0, ...shelf.bins.map(b => b.x + b.width)) : 0;
-                                    const maxBinY = shelf.bins && shelf.bins.length > 0 ? Math.max(0, ...shelf.bins.map(b => b.y + b.height)) : 0;
-                                    
-                                    const displayWidth = shelf.width || 560;
-                                    const displayHeight = shelf.height || 48;
-                                    
+                                {[...cupboard.shelfLayout].sort((a, b) => Number(a.y) - Number(b.y) || Number(a.x) - Number(b.x)).map((shelf, sortedIdx) => {
+                                    const maxBinX = shelf.bins && shelf.bins.length > 0 ? Math.max(0, ...shelf.bins.map(b => Number(b.x) + Number(b.width))) : 0;
+                                    const maxBinY = shelf.bins && shelf.bins.length > 0 ? Math.max(0, ...shelf.bins.map(b => Number(b.y) + Number(b.height))) : 0;
+
+                                    const displayWidth = Number(shelf.width) || 560;
+                                    const displayHeight = Number(shelf.height) || 48;
+
                                     const scaleX = maxBinX > 0 && displayWidth > 0 ? Math.min(1, displayWidth / (maxBinX + 10)) : 1;
                                     const scaleY = maxBinY > 0 && displayHeight > 0 ? Math.min(1, displayHeight / (maxBinY + 10)) : 1;
                                     const binScale = Math.min(scaleX, scaleY);

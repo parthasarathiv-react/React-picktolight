@@ -1,12 +1,14 @@
-import React, { useState, useCallback, lazy, Suspense, useMemo } from 'react';
+import React, { useState, useCallback, lazy, Suspense, useMemo, useEffect } from 'react';
 import { Card, CardContent } from 'components/ui/card';
 import Cupboard2D from 'components/visualization/Cupboard2D';
-import { Layers, Box, MonitorPlay, ChevronRight, PanelRightClose, PanelRightOpen, LayoutGrid, List } from 'lucide-react';
+import { Layers, Box, MonitorPlay, ChevronRight, PanelRightClose, PanelRightOpen, LayoutGrid, List, Loader2 } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { CONTROLLERS_CONFIG, WALLS_CONFIG, CUPBOARDS_CONFIG, getCupboardAssignments } from 'lib/dataStore';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from 'components/ui/collapsible';
 import { Tabs, TabsList, TabsTrigger } from 'components/ui/tabs';
 import { Button } from 'components/ui/button';
+import { useQuery } from '@tanstack/react-query';
+import { apiService } from 'lib/apiService';
 
 // Cupboard3D is lazy-loaded — Three.js (~600 KB) is only fetched when user
 // clicks "3D View", keeping the initial bundle small and TBT low.
@@ -28,16 +30,144 @@ export default function Monitoring() {
     const [controlsVisible, setControlsVisible] = useState(true);
     const [activeCupboardIdx, setActiveCupboardIdx] = useState(0);
 
+    const locId = React.useMemo(() => {
+        try {
+            const selectedLocationStr = localStorage.getItem('selectedLocation');
+            if (selectedLocationStr) {
+                const loc = JSON.parse(selectedLocationStr);
+                return loc.pick_location_id || '';
+            }
+        } catch (e) { }
+        return '';
+    }, []);
+
+    const { data: fetchedControllers, isFetching: isFetchingControllers } = useQuery({
+        queryKey: ['controllers', locId],
+        queryFn: async () => {
+            if (!locId) return [];
+            const data = await apiService.getControllers(locId);
+            if (!data.success || !data.data) throw new Error("Failed to fetch controllers");
+            return data.data.map(c => ({
+                id: c.ctl_id || c.id || Math.random().toString(36).substr(2, 9),
+                name: c.ctl_name,
+                ip: c.ctl_ip,
+                port: c.ctl_port,
+                status: (c.ctl_status === 'True' || c.ctl_status === true || c.ctl_status === 'Online') ? 'Online' : 'Offline'
+            }));
+        },
+        enabled: !!locId,
+    });
+
+    const { data: rawWalls, isFetching: isFetchingWalls } = useQuery({
+        queryKey: ['walls', locId],
+        queryFn: async () => {
+            if (!locId) return [];
+            const data = await apiService.getWalls(locId);
+            if (!data.success || !data.data) throw new Error("Failed to fetch walls");
+            return data.data;
+        },
+        enabled: !!locId,
+    });
+
+    const { data: rawCupboards, isFetching: isFetchingCupboards } = useQuery({
+        queryKey: ['cupboards', locId],
+        queryFn: async () => {
+            if (!locId) return [];
+            const data = await apiService.getCupboards(locId);
+            if (!data.success || !data.data) throw new Error("Failed to fetch cupboards");
+            return data.data;
+        },
+        enabled: !!locId,
+    });
+
+    const [controllersData, setControllersData] = useState([...CONTROLLERS_CONFIG]);
+    const [wallsData, setWallsData] = useState([...WALLS_CONFIG]);
+    const [cupboardsData, setCupboardsData] = useState([...CUPBOARDS_CONFIG]);
+
+    useEffect(() => {
+        if (fetchedControllers) {
+            setControllersData(fetchedControllers);
+            CONTROLLERS_CONFIG.length = 0;
+            fetchedControllers.forEach(c => CONTROLLERS_CONFIG.push(c));
+        }
+    }, [fetchedControllers]);
+
+    useEffect(() => {
+        if (rawWalls && fetchedControllers) {
+            const mapped = rawWalls.map(w => {
+                const ctrl = fetchedControllers.find(c => String(c.id) === String(w.wall_ctl_id));
+                return {
+                    id: w.wall_id,
+                    name: w.wall_name,
+                    controller: ctrl ? ctrl.name : w.wall_ctl_id,
+                    controller_id: w.wall_ctl_id,
+                    status: (w.wall_status === 'True' || w.wall_status === true || w.wall_status === 'Active') ? 'Active' : 'Inactive',
+                    gridX: parseInt(w.wall_gridx, 10) || 0,
+                    gridY: parseInt(w.wall_gridy, 10) || 0,
+                    orientation: w.wall_orientation || 'h',
+                    cupboardsCount: 4
+                };
+            });
+            setWallsData(mapped);
+            WALLS_CONFIG.length = 0;
+            mapped.forEach(w => WALLS_CONFIG.push(w));
+        }
+    }, [rawWalls, fetchedControllers]);
+
+    useEffect(() => {
+        if (rawCupboards && rawWalls && fetchedControllers) {
+            const mapped = rawCupboards.map(c => {
+                const wall = rawWalls.find(w => String(w.wall_id) === String(c.cupboard_wall_id));
+                const ctrl = fetchedControllers.find(ctrl => String(ctrl.id) === String(c.cupboard_ctl_id));
+                const shelvesCount = Number(c.shelves || c.rows || 5);
+                const cupboardObj = {
+                    id: c.cupboard_id,
+                    name: c.cupboard_name,
+                    wall: wall ? wall.wall_name : c.cupboard_wall_id,
+                    wall_id: c.cupboard_wall_id,
+                    controller: ctrl ? ctrl.name : c.cupboard_ctl_id,
+                    controller_id: c.cupboard_ctl_id,
+                    status: (c.cupboard_status === 'True' || c.cupboard_status === true || c.cupboard_status === 'Active') ? 'Active' : 'Inactive',
+                    layoutGridX: parseInt(c.cupboard_gridx, 10) || 0,
+                    layoutGridY: parseInt(c.cupboard_gridy, 10) || 0,
+                    orientation: c.cupboard_orientation || 'h',
+                    shelves: shelvesCount,
+                    rows: shelvesCount,
+                    columns: 4,
+                    ledsPerDrawer: 6
+                };
+
+                try {
+                    const layouts = JSON.parse(localStorage.getItem('cupboardLayouts') || '{}');
+                    if (layouts[cupboardObj.id]) {
+                        cupboardObj.shelves = layouts[cupboardObj.id].shelves || cupboardObj.shelves;
+                        cupboardObj.rows = layouts[cupboardObj.id].rows || cupboardObj.rows;
+                        cupboardObj.columns = layouts[cupboardObj.id].columns || cupboardObj.columns;
+                        cupboardObj.ledsPerDrawer = layouts[cupboardObj.id].ledsPerDrawer || cupboardObj.ledsPerDrawer;
+                        cupboardObj.shelfLayout = layouts[cupboardObj.id].shelfLayout || cupboardObj.shelfLayout;
+                    }
+                } catch (e) { }
+
+                return cupboardObj;
+            });
+            setCupboardsData(mapped);
+            CUPBOARDS_CONFIG.length = 0;
+            mapped.forEach(c => CUPBOARDS_CONFIG.push(c));
+        }
+    }, [rawCupboards, rawWalls, fetchedControllers]);
+
+    const isFetchingAny = isFetchingControllers || isFetchingWalls || isFetchingCupboards;
+
     const hierarchy = useMemo(() => {
         const controllersMap = new Map();
-        CONTROLLERS_CONFIG.forEach((controller) => {
+        controllersData.forEach((controller) => {
             const controllerCopy = { ...controller, walls: new Map() };
             controllersMap.set(controller.name, controllerCopy);
         });
 
         const unassignedController = { id: 'unassigned-controller', name: 'Unassigned Controller', walls: new Map() };
 
-        WALLS_CONFIG.forEach((wall) => {
+        wallsData.forEach((wall) => {
             const ctrlName = wall.controller || 'Unassigned Controller';
             let controllerEntry = controllersMap.get(ctrlName);
 
@@ -51,7 +181,7 @@ export default function Monitoring() {
             }
         });
 
-        CUPBOARDS_CONFIG.forEach((cupboard) => {
+        cupboardsData.forEach((cupboard) => {
             const ctrlName = cupboard.controller || 'Unassigned Controller';
             let controllerEntry = controllersMap.get(ctrlName);
 
@@ -90,11 +220,7 @@ export default function Monitoring() {
         }).sort((a, b) => a.name.localeCompare(b.name));
 
         return orderedControllers;
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [
-        JSON.stringify(CONTROLLERS_CONFIG.map(c => ({id: c.id, name: c.name}))),
-        JSON.stringify(CUPBOARDS_CONFIG.map(c => ({id: c.id, shelves: c.shelves, columns: c.columns, wall: c.wall, leds: c.ledsPerDrawer})))
-    ]);
+    }, [controllersData, wallsData, cupboardsData]);
 
     const firstController = hierarchy[0] || null;
     const [selectedControllerName, setSelectedControllerName] = useState(firstController?.name || '');
@@ -211,8 +337,15 @@ export default function Monitoring() {
 
             {/* ── Main content ───────────────────────────────────────────── */}
             <div className="flex-1 flex gap-6 min-h-0">
-                {/* Canvas */}
-                <Card className="flex-1 overflow-hidden bg-ot-surface-bottom relative p-0 flex flex-col border-ot-border">
+                {isFetchingAny ? (
+                    <div className="flex-1 flex flex-col items-center justify-center gap-4 text-muted-foreground bg-ot-surface-bottom/50 rounded-xl border border-ot-border">
+                        <Loader2 className="w-8 h-8 animate-spin text-ot-action" />
+                        <div className="text-sm font-medium animate-pulse">Loading hardware status...</div>
+                    </div>
+                ) : (
+                    <>
+                        {/* Canvas */}
+                        <Card className="flex-1 overflow-hidden bg-ot-surface-bottom relative p-0 flex flex-col border-ot-border">
                     {viewMode === '3d' ? (
                         <Suspense fallback={<Canvas3DLoader />}>
                             <Cupboard3D
@@ -376,6 +509,8 @@ export default function Monitoring() {
                         </div>
                     </CardContent>
                 </Card>
+                </>
+                )}
             </div>
         </div>
     );

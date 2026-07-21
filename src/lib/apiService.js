@@ -13,8 +13,8 @@ const handleResponse = async (response) => {
         const errData = await response.json().catch(() => ({}));
         let errMsg = 'Unknown error';
         if (errData?.detail) {
-            errMsg = typeof errData.detail === 'string' 
-                ? errData.detail 
+            errMsg = typeof errData.detail === 'string'
+                ? errData.detail
                 : (Array.isArray(errData.detail) ? errData.detail.map(e => e.msg || JSON.stringify(e)).join(', ') : 'Unknown error');
         } else if (errData?.message) {
             errMsg = errData.message;
@@ -43,7 +43,7 @@ export const apiService = {
         return handleResponse(response);
     },
     createController: async (payload) => {
-        const response = await fetch(`${API_URL}/config/create-controllers`, {
+        const response = await fetch(`${API_URL}/config/create-controller`, {
             method: 'POST',
             headers: getHeaders(),
             body: JSON.stringify(payload)
@@ -51,7 +51,7 @@ export const apiService = {
         return handleResponse(response);
     },
     updateController: async (id, payload) => {
-        const response = await fetch(`${API_URL}/config/update-controllers/${id}`, {
+        const response = await fetch(`${API_URL}/config/update-controller/${id}`, {
             method: 'PUT',
             headers: getHeaders(),
             body: JSON.stringify(payload)
@@ -59,7 +59,7 @@ export const apiService = {
         return handleResponse(response);
     },
     deleteController: async (id) => {
-        const response = await fetch(`${API_URL}/config/delete-controllers/${id}`, {
+        const response = await fetch(`${API_URL}/config/delete-controller/${id}`, {
             method: 'DELETE',
             headers: getHeaders()
         });

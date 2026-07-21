@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Button } from 'components/ui/button';
-import { ArrowLeft, Save, CheckCircle2, Plus, X, Box, GripVertical } from 'lucide-react';
+import { ArrowLeft, Save, CheckCircle2, Plus, X, Box, GripVertical, Server, ChevronRight, LayoutGrid } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { Input } from 'components/ui/input';
 
@@ -256,11 +256,25 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                         <ArrowLeft className="w-4 h-4" /> Back to Cupboards
                     </Button>
                     <div className="h-5 w-px bg-ot-border" />
-                    <div className="flex items-center gap-2">
-                        <Box className="w-4 h-4 text-ot-action" />
-                        <span className="text-sm font-semibold text-white">{cupboard.name}</span>
-                        <span className="text-xs text-muted-foreground font-mono">Shelves Designer</span>
+                    <div className="flex items-center gap-1.5 text-xs">
+                        <div className="flex items-center gap-1.5 text-ot-action bg-ot-action/10 px-2 py-1 rounded-md font-medium border border-ot-action/20">
+                            <Server className="w-3.5 h-3.5" />
+                            <span>{cupboard.controller}</span>
+                        </div>
+                        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+                        <div className="flex items-center gap-1.5 text-muted-foreground hover:text-white bg-ot-surface-elev-bottom px-2 py-1 rounded-md border border-ot-border transition-colors">
+                            <LayoutGrid className="w-3.5 h-3.5" />
+                            <span>{cupboard.wall}</span>
+                        </div>
+                        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+                        <div className="flex items-center gap-1.5 text-white bg-ot-surface-elev-bottom px-2 py-1 rounded-md border border-ot-border">
+                            <Box className="w-3.5 h-3.5 text-ot-action" />
+                            <span className="font-semibold">{cupboard.name}</span>
+                        </div>
                     </div>
+
+                    <div className="h-5 w-px bg-ot-border ml-2" />
+                    <span className="text-xs text-muted-foreground font-mono ml-1">Shelves Designer</span>
                 </div>
 
                 <div className="flex items-center gap-3">

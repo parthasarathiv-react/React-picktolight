@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
 import { Button } from 'components/ui/button';
-import { ArrowLeft, Save, CheckCircle2, Plus, X, Box, Grid3X3 } from 'lucide-react';
+import { ArrowLeft, Save, CheckCircle2, Plus, X, Box, Grid3X3, Server, ChevronRight } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { toast } from 'sonner';
 import { apiService } from 'lib/apiService';
@@ -207,7 +207,10 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
                         originalCb.status !== cb.status ||
                         String(originalCb.layoutGridX) !== String(cb.gridX) ||
                         String(originalCb.layoutGridY) !== String(cb.gridY) ||
-                        originalCb.orientation !== cb.orientation
+                        originalCb.orientation !== cb.orientation ||
+                        originalCb.shelves !== cb.shelves ||
+                        originalCb.columns !== cb.columns ||
+                        originalCb.ledsPerDrawer !== cb.ledsPerDrawer
                     );
 
                     if (hasChanged) {
@@ -221,6 +224,22 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
                     });
                 }
             }
+
+            // Save layout dimensions and details to localStorage under 'cupboardLayouts'
+            try {
+                const layouts = JSON.parse(localStorage.getItem('cupboardLayouts') || '{}');
+                for (const cb of canvasCupboards) {
+                    const savedId = updatedCupboards.find(uc => String(uc.canvasId) === String(cb.canvasId))?.id || cb.id;
+                    layouts[savedId] = {
+                        ...(layouts[savedId] || {}),
+                        shelves: cb.shelves || 5,
+                        rows: cb.shelves || 5,
+                        columns: cb.columns || 4,
+                        ledsPerDrawer: cb.ledsPerDrawer || 6,
+                    };
+                }
+                localStorage.setItem('cupboardLayouts', JSON.stringify(layouts));
+            } catch (e) { }
 
             const otherCupboards = cupboardsData.filter(c => c.wall !== wall.name);
             const newGlobalState = [...otherCupboards, ...updatedCupboards];
@@ -257,11 +276,20 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
                         <ArrowLeft className="w-4 h-4" /> Back to Walls
                     </Button>
                     <div className="h-5 w-px bg-ot-border" />
-                    <div className="flex items-center gap-2">
-                        <Box className="w-4 h-4 text-ot-action" />
-                        <span className="text-sm font-semibold text-white">{wall.name}</span>
-                        <span className="text-xs text-muted-foreground font-mono">Cupboards Designer</span>
+                    <div className="flex items-center gap-1.5 text-xs">
+                        <div className="flex items-center gap-1.5 text-ot-action bg-ot-action/10 px-2 py-1 rounded-md font-medium border border-ot-action/20">
+                            <Server className="w-3.5 h-3.5" />
+                            <span>{wall.controller}</span>
+                        </div>
+                        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+                        <div className="flex items-center gap-1.5 text-white bg-ot-surface-elev-bottom px-2 py-1 rounded-md border border-ot-border">
+                            <Box className="w-3.5 h-3.5 text-ot-action" />
+                            <span className="font-semibold">{wall.name}</span>
+                        </div>
                     </div>
+                    
+                    <div className="h-5 w-px bg-ot-border ml-2" />
+                    <span className="text-xs text-muted-foreground font-mono ml-1">Cupboards Designer</span>
                 </div>
 
                 <div className="flex items-center gap-3">
@@ -367,14 +395,23 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
                                         }}
                                     >
                                         <div className="flex items-center justify-between gap-1 shrink-0">
-                                            <span className="text-[10px] font-bold text-white truncate">{cb.name}</span>
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); requestRemoveCupboard(cb.canvasId); }}
-                                                className="w-4 h-4 rounded flex items-center justify-center text-muted-foreground hover:text-red-400 hover:bg-red-400/10 transition-colors">
-                                                <X className="w-3 h-3" />
-                                            </button>
+                                            <input
+                                                value={cb.name}
+                                                onChange={(e) => setCanvasCupboards(prev => prev.map(c => c.canvasId === cb.canvasId ? { ...c, name: e.target.value } : c))}
+                                                className="text-[10px] font-bold text-white bg-transparent border border-transparent hover:border-white/20 focus:border-ot-action focus:bg-ot-action/10 rounded outline-none w-full min-w-0 px-0.5 -ml-0.5 transition-all"
+                                                title="Edit cupboard name"
+                                            />
+                                            <div className="flex items-center gap-0.5 shrink-0">
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); requestRemoveCupboard(cb.canvasId); }}
+                                                    className="w-4 h-4 rounded flex items-center justify-center text-muted-foreground hover:text-red-400 hover:bg-red-400/10 transition-colors"
+                                                    title="Delete Cupboard"
+                                                >
+                                                    <X className="w-3 h-3" />
+                                                </button>
+                                            </div>
                                         </div>
-                                        <div className="mt-2 text-[10px] text-muted-foreground">
+                                        <div className="mt-1.5 text-[10px] text-muted-foreground leading-tight">
                                             {cb.shelves || 5} Shelves<br />
                                             {cb.columns || 4} Columns
                                         </div>
@@ -417,17 +454,26 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
                                 >
                                     <div className="w-1.5 h-1.5 rounded-full bg-ot-action mt-1.5 shrink-0" />
                                     <div className="flex-1 min-w-0">
-                                        <div className="text-[11px] font-semibold text-white truncate">{c.name}</div>
-                                        <div className="text-[9px] text-muted-foreground font-mono">
+                                        <input
+                                            value={c.name}
+                                            onChange={(e) => setCanvasCupboards(prev => prev.map(cc => cc.canvasId === c.canvasId ? { ...cc, name: e.target.value } : cc))}
+                                            className="text-[11px] font-semibold text-white bg-transparent border border-transparent hover:border-white/20 focus:border-ot-action focus:bg-ot-surface-top rounded outline-none w-full min-w-0 px-1 -ml-1 transition-all"
+                                            title="Edit cupboard name"
+                                        />
+                                        <div className="text-[9px] text-muted-foreground font-mono mt-0.5 px-1 -ml-1">
                                             {String.fromCharCode(65 + c.gridY)}{c.gridX + 1}
                                             {' · '}{c.shelves || 5} shelves
                                         </div>
                                     </div>
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); requestRemoveCupboard(c.canvasId); }}
-                                        className="opacity-0 group-hover:opacity-100 w-3.5 h-3.5 flex items-center justify-center text-muted-foreground hover:text-red-400 transition-all shrink-0 mt-0.5">
-                                        <X className="w-2 h-2" />
-                                    </button>
+                                    <div className="flex items-center gap-0.5 shrink-0 mt-0.5">
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); requestRemoveCupboard(c.canvasId); }}
+                                            className="opacity-0 group-hover:opacity-100 w-3.5 h-3.5 flex items-center justify-center text-muted-foreground hover:text-red-400 transition-all"
+                                            title="Delete Cupboard"
+                                        >
+                                            <X className="w-2.5 h-2.5" />
+                                        </button>
+                                    </div>
                                 </div>
                             ))}
                         </div>
