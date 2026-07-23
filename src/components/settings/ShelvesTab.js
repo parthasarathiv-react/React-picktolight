@@ -4,7 +4,7 @@ import { cn } from 'lib/utils';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from 'components/ui/select';
 import ShelfLayoutDesigner from './ShelfLayoutDesigner';
 
-export default function ShelvesTab({ cupboardsData, syncCupboards, selectedCupboard, onSelectCupboard, wallsData, controllersData }) {
+export default function ShelvesTab({ cupboardsData, syncCupboards, selectedCupboard, onSelectCupboard, wallsData, controllersData, refetchShelves }) {
     const [filterController, setFilterController] = useState('all');
     const [filterWall, setFilterWall] = useState('all');
     // If a cupboard is selected, show the layout designer for shelves
@@ -15,6 +15,7 @@ export default function ShelvesTab({ cupboardsData, syncCupboards, selectedCupbo
                 onBack={() => onSelectCupboard(null)}
                 cupboardsData={cupboardsData}
                 syncCupboards={syncCupboards}
+                refetchShelves={refetchShelves}
             />
         );
     }

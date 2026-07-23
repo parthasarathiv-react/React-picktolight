@@ -80,6 +80,17 @@ export default function Monitoring() {
         enabled: !!locId,
     });
 
+    const { data: rawShelves, isFetching: isFetchingShelves } = useQuery({
+        queryKey: ['shelves', locId],
+        queryFn: async () => {
+            if (!locId) return [];
+            const data = await apiService.getShelves(locId);
+            if (!data.success || !data.data) throw new Error("Failed to fetch shelves");
+            return data.data;
+        },
+        enabled: !!locId,
+    });
+
     const [controllersData, setControllersData] = useState([...CONTROLLERS_CONFIG]);
     const [wallsData, setWallsData] = useState([...WALLS_CONFIG]);
     const [cupboardsData, setCupboardsData] = useState([...CUPBOARDS_CONFIG]);
@@ -119,7 +130,35 @@ export default function Monitoring() {
             const mapped = rawCupboards.map(c => {
                 const wall = rawWalls.find(w => String(w.wall_id) === String(c.cupboard_wall_id));
                 const ctrl = fetchedControllers.find(ctrl => String(ctrl.id) === String(c.cupboard_ctl_id));
-                const shelvesCount = Number(c.shelves || c.rows || 5);
+
+                let shelfLayout = [];
+                if (rawShelves && Array.isArray(rawShelves)) {
+                    const matchingShelves = rawShelves.filter(s =>
+                        String(s.shelf_cupboard_id) === String(c.cupboard_id) ||
+                        String(s.shelf_cupboard_id) === String(c.cupboard_name)
+                    );
+                    if (matchingShelves.length > 0) {
+                        shelfLayout = matchingShelves.map((s, idx) => {
+                            const realId = (s.shelf_id !== undefined && s.shelf_id !== null) ? String(s.shelf_id) : ((s.id !== undefined && s.id !== null) ? String(s.id) : `shelf-${idx}`);
+                            return {
+                                id: realId,
+                                shelf_id: s.shelf_id || s.id || realId,
+                                label: s.shelf_name || `Shelf ${idx + 1}`,
+                                x: parseFloat(s.shelf_gridx) || 20,
+                                y: parseFloat(s.shelf_gridy) || (20 + idx * 56),
+                                width: parseFloat(s.shelf_width) || 560,
+                                height: parseFloat(s.shelf_height) || 48,
+                                shelf_order: s.shelf_order,
+                                shelf_phr_id: s.shelf_phr_id,
+                                shelf_org_id: s.shelf_org_id,
+                                shelf_branch_id: s.shelf_branch_id,
+                                shelf_status: s.shelf_status
+                            };
+                        });
+                    }
+                }
+
+                const shelvesCount = shelfLayout.length;
                 const cupboardObj = {
                     id: c.cupboard_id,
                     name: c.cupboard_name,
@@ -134,17 +173,15 @@ export default function Monitoring() {
                     shelves: shelvesCount,
                     rows: shelvesCount,
                     columns: 4,
-                    ledsPerDrawer: 6
+                    ledsPerDrawer: 6,
+                    shelfLayout: shelfLayout
                 };
 
                 try {
                     const layouts = JSON.parse(localStorage.getItem('cupboardLayouts') || '{}');
                     if (layouts[cupboardObj.id]) {
-                        cupboardObj.shelves = layouts[cupboardObj.id].shelves || cupboardObj.shelves;
-                        cupboardObj.rows = layouts[cupboardObj.id].rows || cupboardObj.rows;
                         cupboardObj.columns = layouts[cupboardObj.id].columns || cupboardObj.columns;
                         cupboardObj.ledsPerDrawer = layouts[cupboardObj.id].ledsPerDrawer || cupboardObj.ledsPerDrawer;
-                        cupboardObj.shelfLayout = layouts[cupboardObj.id].shelfLayout || cupboardObj.shelfLayout;
                     }
                 } catch (e) { }
 
@@ -154,9 +191,9 @@ export default function Monitoring() {
             CUPBOARDS_CONFIG.length = 0;
             mapped.forEach(c => CUPBOARDS_CONFIG.push(c));
         }
-    }, [rawCupboards, rawWalls, fetchedControllers]);
+    }, [rawCupboards, rawWalls, fetchedControllers, rawShelves]);
 
-    const isFetchingAny = isFetchingControllers || isFetchingWalls || isFetchingCupboards;
+    const isFetchingAny = isFetchingControllers || isFetchingWalls || isFetchingCupboards || isFetchingShelves;
 
     const hierarchy = useMemo(() => {
         const controllersMap = new Map();

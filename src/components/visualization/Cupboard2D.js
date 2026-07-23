@@ -14,7 +14,10 @@ function normalizeCount(value, fallback) {
 }
 
 function getShelfCount(cupboard) {
-    return normalizeCount(cupboard.shelves || cupboard.rows, 8);
+    if (cupboard.shelfLayout && Array.isArray(cupboard.shelfLayout)) {
+        return cupboard.shelfLayout.length;
+    }
+    return Number(cupboard.shelves || cupboard.rows || 0);
 }
 
 // Memoized: only re-renders when its own props change (cupboardId/row/col rarely change)

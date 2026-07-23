@@ -6,7 +6,7 @@ import BinLayoutDesigner from './BinLayoutDesigner';
 
 export default function BinsTab({ cupboardsData, syncCupboards, wallsData, controllersData }) {
     const [selectedShelfContext, setSelectedShelfContext] = useState(null); // { cupboard, shelf }
-    
+
     const [filterController, setFilterController] = useState('all');
     const [filterWall, setFilterWall] = useState('all');
     const [filterCupboard, setFilterCupboard] = useState('all');
@@ -57,10 +57,11 @@ export default function BinsTab({ cupboardsData, syncCupboards, wallsData, contr
                 <div>
                     <h3 className="text-xl font-semibold text-white">Bins Designer</h3>
                     <p className="text-sm text-muted-foreground mt-1">
+
                         Select a shelf to add and arrange bins inside it.
                     </p>
                 </div>
-                
+
                 <div className="flex flex-wrap items-center gap-3">
                     <div className="flex items-center gap-2">
                         <Filter className="w-4 h-4 text-muted-foreground" />
@@ -73,6 +74,7 @@ export default function BinsTab({ cupboardsData, syncCupboards, wallsData, contr
                                     <SelectItem value="all">All Controllers</SelectItem>
                                     {controllersData && controllersData.map(c => (
                                         <SelectItem key={c.id || c.name} value={c.name}>
+
                                             {c.name}
                                         </SelectItem>
                                     ))}
@@ -80,7 +82,7 @@ export default function BinsTab({ cupboardsData, syncCupboards, wallsData, contr
                             </Select>
                         </div>
                     </div>
-                    
+
                     <div className="flex items-center gap-2">
                         <Filter className="w-4 h-4 text-muted-foreground" />
                         <div className="w-[160px]">
@@ -93,10 +95,10 @@ export default function BinsTab({ cupboardsData, syncCupboards, wallsData, contr
                                     {wallsData && wallsData
                                         .filter(w => filterController === 'all' || w.controller === filterController)
                                         .map(w => (
-                                        <SelectItem key={w.id || w.name} value={w.name}>
-                                            {w.name}
-                                        </SelectItem>
-                                    ))}
+                                            <SelectItem key={w.id || w.name} value={w.name}>
+                                                {w.name}
+                                            </SelectItem>
+                                        ))}
                                 </SelectContent>
                             </Select>
                         </div>
@@ -119,10 +121,10 @@ export default function BinsTab({ cupboardsData, syncCupboards, wallsData, contr
                                             return true;
                                         })
                                         .map(c => (
-                                        <SelectItem key={c.id || c.name} value={c.name}>
-                                            {c.name}
-                                        </SelectItem>
-                                    ))}
+                                            <SelectItem key={c.id || c.name} value={c.name}>
+                                                {c.name}
+                                            </SelectItem>
+                                        ))}
                                 </SelectContent>
                             </Select>
                         </div>
@@ -163,8 +165,9 @@ export default function BinsTab({ cupboardsData, syncCupboards, wallsData, contr
                                     <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-white transition-colors duration-200" />
                                 </div>
                             </div>
-                            
-                            <div className="mt-4 pt-4 border-t border-ot-border/50 flex items-center justify-between text-xs text-muted-foreground w-full">
+
+                            <div className="mt-4 pt-4 border-t border-ot-border/50 flex i
+tems-center justify-between text-xs text-muted-foreground w-full">
                                 <span className="flex items-center gap-1.5">
                                     <Archive className="w-3.5 h-3.5" />
                                     {binCount} Bins

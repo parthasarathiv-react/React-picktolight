@@ -126,5 +126,36 @@ export const apiService = {
             headers: getHeaders()
         });
         return handleResponse(response);
+    },
+
+    // Shelves
+    getShelves: async (locId) => {
+        const response = await fetch(`${API_URL}/config/get-shelves?location=${locId}`, {
+            headers: getHeaders()
+        });
+        return handleResponse(response);
+    },
+    createShelf: async (payload) => {
+        const response = await fetch(`${API_URL}/config/create-shelf`, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify(payload)
+        });
+        return handleResponse(response);
+    },
+    updateShelf: async (id, payload) => {
+        const response = await fetch(`${API_URL}/config/update-shelf/${id}`, {
+            method: 'PUT',
+            headers: getHeaders(),
+            body: JSON.stringify(payload)
+        });
+        return handleResponse(response);
+    },
+    deleteShelf: async (id) => {
+        const response = await fetch(`${API_URL}/config/delete-shelf/${id}`, {
+            method: 'DELETE',
+            headers: getHeaders()
+        });
+        return handleResponse(response);
     }
 };

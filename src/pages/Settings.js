@@ -80,6 +80,18 @@ export default function Settings() {
         enabled: !!locId && shouldFetchCupboards,
     });
 
+    const shouldFetchShelves = ['shelves', 'bins', 'leds'].includes(activeTab);
+    const { data: rawShelves, isFetching: isFetchingShelves, error: errorShelves, refetch: refetchShelves } = useQuery({
+        queryKey: ['shelves', locId],
+        queryFn: async () => {
+            if (!locId) return [];
+            const data = await apiService.getShelves(locId);
+            if (!data.success || !data.data) throw new Error("Failed to fetch shelves");
+            return data.data;
+        },
+        enabled: !!locId && shouldFetchShelves,
+    });
+
     useEffect(() => {
         if (fetchedControllers) {
             syncControllers(fetchedControllers);
@@ -111,7 +123,37 @@ export default function Settings() {
             const mapped = rawCupboards.map(c => {
                 const wall = rawWalls.find(w => String(w.wall_id) === String(c.cupboard_wall_id));
                 const ctrl = fetchedControllers.find(ctrl => String(ctrl.id) === String(c.cupboard_ctl_id));
-                return {
+
+                let shelfLayout = [];
+                if (rawShelves && Array.isArray(rawShelves)) {
+                    const matchingShelves = rawShelves.filter(s =>
+                        String(s.shelf_cupboard_id) === String(c.cupboard_id) ||
+                        String(s.shelf_cupboard_id) === String(c.cupboard_name)
+                    );
+                    if (matchingShelves.length > 0) {
+                        shelfLayout = matchingShelves.map((s, idx) => {
+                            const realId = (s.shelf_id !== undefined && s.shelf_id !== null) ? String(s.shelf_id) : ((s.id !== undefined && s.id !== null) ? String(s.id) : `shelf-${idx}`);
+                            return {
+                                id: realId,
+                                shelf_id: s.shelf_id || s.id || realId,
+                                label: s.shelf_name || `Shelf ${idx + 1}`,
+                                x: parseFloat(s.shelf_gridx) || 20,
+                                y: parseFloat(s.shelf_gridy) || (20 + idx * 56),
+                                width: parseFloat(s.shelf_width) || 560,
+                                height: parseFloat(s.shelf_height) || 48,
+                                shelf_order: s.shelf_order,
+                                shelf_phr_id: s.shelf_phr_id,
+                                shelf_org_id: s.shelf_org_id,
+                                shelf_branch_id: s.shelf_branch_id,
+                                shelf_status: s.shelf_status
+                            };
+                        });
+                    }
+                }
+
+                const shelvesCount = shelfLayout.length;
+
+                const cupboardObj = {
                     id: c.cupboard_id,
                     name: c.cupboard_name,
                     wall: wall ? wall.wall_name : c.cupboard_wall_id,
@@ -122,37 +164,36 @@ export default function Settings() {
                     layoutGridX: parseInt(c.cupboard_gridx, 10) || 0,
                     layoutGridY: parseInt(c.cupboard_gridy, 10) || 0,
                     orientation: c.cupboard_orientation || 'h',
-                    shelves: 5,
-                    rows: 5,
+                    shelves: shelvesCount,
+                    rows: shelvesCount,
                     columns: 4,
-                    ledsPerDrawer: 6
+                    ledsPerDrawer: 6,
+                    shelfLayout: shelfLayout
                 };
-            });
-            
-            try {
-                const layouts = JSON.parse(localStorage.getItem('cupboardLayouts') || '{}');
-                mapped.forEach(c => {
-                    if (layouts[c.id]) {
-                        c.shelves = layouts[c.id].shelves || c.shelves;
-                        c.rows = layouts[c.id].rows || c.rows;
-                        c.columns = layouts[c.id].columns || c.columns;
-                        c.ledsPerDrawer = layouts[c.id].ledsPerDrawer || c.ledsPerDrawer;
-                        c.shelfLayout = layouts[c.id].shelfLayout || c.shelfLayout;
+                
+                try {
+                    const layouts = JSON.parse(localStorage.getItem('cupboardLayouts') || '{}');
+                    if (layouts[cupboardObj.id]) {
+                        cupboardObj.columns = layouts[cupboardObj.id].columns || cupboardObj.columns;
+                        cupboardObj.ledsPerDrawer = layouts[cupboardObj.id].ledsPerDrawer || cupboardObj.ledsPerDrawer;
                     }
-                });
-            } catch (e) { }
+                } catch (e) { }
+
+                return cupboardObj;
+            });
 
             syncCupboards(mapped);
         }
-    }, [rawCupboards, rawWalls, fetchedControllers]);
+    }, [rawCupboards, rawWalls, fetchedControllers, rawShelves]);
 
     useEffect(() => {
         if (errorControllers) toast.error(`Failed to fetch controllers: ${errorControllers.message}`);
         if (errorWalls) toast.error(`Failed to fetch walls: ${errorWalls.message}`);
         if (errorCupboards) toast.error(`Failed to fetch cupboards: ${errorCupboards.message}`);
-    }, [errorControllers, errorWalls, errorCupboards]);
+        if (errorShelves) toast.error(`Failed to fetch shelves: ${errorShelves.message}`);
+    }, [errorControllers, errorWalls, errorCupboards, errorShelves]);
 
-    const isFetchingAny = isFetchingControllers || isFetchingWalls || isFetchingCupboards;
+    const isFetchingAny = isFetchingControllers || isFetchingWalls || isFetchingCupboards || isFetchingShelves;
 
     // Wall layout designer: which controller was selected
     const [selectedController, setSelectedController] = useState(null);
@@ -177,12 +218,17 @@ export default function Settings() {
         setCupboardsData(newData);
         CUPBOARDS_CONFIG.length = 0;
         newData.forEach(c => {
-            const shelvesCount = Number(c.shelves || c.rows || 5);
+            const shelvesCount = Number(c.shelves || c.rows || 0);
             CUPBOARDS_CONFIG.push({
                 ...c,
                 shelves: shelvesCount,
                 rows: shelvesCount
             });
+        });
+        setSelectedCupboardForShelves(prev => {
+            if (!prev) return null;
+            const updated = newData.find(c => String(c.id) === String(prev.id));
+            return updated || prev;
         });
     };
 
@@ -323,6 +369,7 @@ export default function Settings() {
                             onSelectCupboard={handleSelectCupboardForShelves}
                             wallsData={wallsData}
                             controllersData={controllersData}
+                            refetchShelves={refetchShelves}
                         />
                     )}
 

@@ -1,8 +1,11 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Button } from 'components/ui/button';
-import { ArrowLeft, Save, CheckCircle2, Plus, X, Box, GripVertical, Server, ChevronRight, LayoutGrid } from 'lucide-react';
+import { ArrowLeft, Save, CheckCircle2, Plus, X, Box, GripVertical, Server, ChevronRight, LayoutGrid, AlertTriangle } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { Input } from 'components/ui/input';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from 'components/ui/dialog';
+import { apiService } from 'lib/apiService';
+import { toast } from 'sonner';
 
 const SHELF_W = 140;
 const SHELF_H = 48;
@@ -11,28 +14,26 @@ const CANVAS_H = 500;
 const MIN_SHELF_W = 120;
 const MIN_SHELF_H = 40;
 
-export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, syncCupboards }) {
+export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, syncCupboards, refetchShelves }) {
     const [saveFlash, setSaveFlash] = useState(false);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [shelfToDelete, setShelfToDelete] = useState(null);
     const [shelfBlocks, setShelfBlocks] = useState(() => {
-        if (cupboard.shelfLayout && cupboard.shelfLayout.length > 0) {
+        if (cupboard.shelfLayout && Array.isArray(cupboard.shelfLayout)) {
             return cupboard.shelfLayout;
         }
-        const count = cupboard.shelves || cupboard.rows || 5;
-        const cols = cupboard.columns || 4;
-        return Array.from({ length: count }, (_, i) => ({
-            id: `shelf-${i}`,
-            label: `Shelf ${i + 1}`,
-            x: 20,
-            y: 20 + i * (SHELF_H + 8),
-            width: SHELF_W * cols,
-            height: SHELF_H,
-            columns: 1, // Default to 1 section
-        }));
+        return [];
     });
+
+    useEffect(() => {
+        if (cupboard && cupboard.shelfLayout && Array.isArray(cupboard.shelfLayout)) {
+            setShelfBlocks(cupboard.shelfLayout);
+        }
+    }, [cupboard?.shelfLayout]);
 
     const [dragging, setDragging] = useState(null); // { id, type: 'move'|'resize-n'|'resize-s'|'resize-e'|'resize-w', offsetX, offsetY, startX, startY, startW, startH }
     const canvasRef = useRef(null);
-    
+
     // Panning state
     const scrollRef = useRef(null);
     const scrollDragRef = useRef({
@@ -58,8 +59,54 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
         setShelfBlocks(prev => [...prev, newShelf]);
     };
 
-    const removeShelf = (id) => {
-        setShelfBlocks(prev => prev.filter(s => s.id !== id));
+    const handleDeleteShelf = (shelf) => {
+        setShelfToDelete(shelf);
+        setDeleteDialogOpen(true);
+    };
+
+    const confirmDeleteShelf = async () => {
+        if (!shelfToDelete) return;
+        const targetShelf = shelfToDelete;
+        const shelfId = (targetShelf.shelf_id !== undefined && targetShelf.shelf_id !== null) ? targetShelf.shelf_id : targetShelf.id;
+
+        try {
+            const isBackendShelf = shelfId && !String(shelfId).startsWith('shelf-');
+            if (isBackendShelf) {
+                await apiService.deleteShelf(shelfId);
+                toast.success("Shelf deleted successfully");
+            } else {
+                toast.success("Shelf removed");
+            }
+
+            const updatedBlocks = shelfBlocks.filter(s =>
+                String(s.id) !== String(targetShelf.id) &&
+                String(s.shelf_id || '') !== String(shelfId)
+            );
+
+            // 1. Immediately update local state in canvas & sidebar
+            setShelfBlocks(updatedBlocks);
+
+            // 2. Immediately update parent cupboardsData state
+            const shelves = updatedBlocks.length;
+            const updatedCupboards = cupboardsData.map(c =>
+                String(c.id) === String(cupboard.id)
+                    ? { ...c, shelves, rows: shelves, shelfLayout: updatedBlocks }
+                    : c
+            );
+            syncCupboards(updatedCupboards);
+
+            // 3. Invalidate/refetch React Query cache
+            if (refetchShelves) {
+                await refetchShelves();
+            }
+
+        } catch (error) {
+            console.error("Error deleting shelf:", error);
+            toast.error(`Failed to delete shelf: ${error.message || 'Unknown error'}`);
+        } finally {
+            setDeleteDialogOpen(false);
+            setShelfToDelete(null);
+        }
     };
 
     const handleMouseDown = (e, id, type) => {
@@ -155,31 +202,111 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
         }
     }, [dragging, onMouseMove, onMouseUp]);
 
-    const handleSave = () => {
-        const shelves = shelfBlocks.length;
-        const updated = cupboardsData.map(c =>
-            c.id === cupboard.id
-                ? { ...c, shelves, rows: shelves, shelfLayout: shelfBlocks }
-                : c
-        );
-        syncCupboards(updated);
-
+    const handleSave = async () => {
         try {
-            const layouts = JSON.parse(localStorage.getItem('cupboardLayouts') || '{}');
-            layouts[cupboard.id] = {
-                ...(layouts[cupboard.id] || {}),
-                shelves,
-                rows: shelves,
-                shelfLayout: shelfBlocks
-            };
-            localStorage.setItem('cupboardLayouts', JSON.stringify(layouts));
-        } catch (e) { }
+            let locId = '';
+            const selectedLocationStr = localStorage.getItem('selectedLocation');
+            if (selectedLocationStr) {
+                try {
+                    const loc = JSON.parse(selectedLocationStr);
+                    locId = loc.pick_location_id || '';
+                } catch (e) { }
+            }
 
-        setSaveFlash(true);
-        setTimeout(() => {
-            setSaveFlash(false);
-            onBack();
-        }, 800);
+            let createdCount = 0;
+            let updatedCount = 0;
+
+            // 1. Separate new vs existing shelves
+            const newShelves = [];
+            const existingShelves = [];
+
+            shelfBlocks.forEach((s, idx) => {
+                const isNew = !s.id || String(s.id).startsWith('shelf-');
+                if (isNew) {
+                    newShelves.push({ s, idx });
+                } else {
+                    existingShelves.push({ s, idx });
+                }
+            });
+
+            // 3. Create new shelves via POST API
+            if (newShelves.length > 0) {
+                const createPayloads = newShelves.map(({ s, idx }) => ({
+                    shelf_name: s.label || `Shelf ${idx + 1}`,
+                    shelf_loc_id: String(locId),
+                    shelf_ctl_id: String(cupboard.controller_id || cupboard.controller || ''),
+                    shelf_wall_id: String(cupboard.wall_id || cupboard.wall || ''),
+                    shelf_cupboard_id: String(cupboard.id || cupboard.name || ''),
+                    shelf_gridx: String(Math.round(s.x)),
+                    shelf_gridy: String(Math.round(s.y)),
+                    shelf_width: String(Math.round(s.width)),
+                    shelf_height: String(Math.round(s.height)),
+                    shelf_order: String(s.shelf_order || idx + 1),
+                    shelf_phr_id: String(s.shelf_phr_id || "2"),
+                    shelf_org_id: String(s.shelf_org_id || "Salem"),
+                    shelf_branch_id: String(s.shelf_branch_id || "SKSHOSPITAL"),
+                    shelf_status: s.shelf_status !== undefined ? (s.shelf_status ? "True" : "False") : "True"
+                }));
+
+                const res = await apiService.createShelf(createPayloads);
+                if (res) {
+                    createdCount = newShelves.length;
+                }
+            }
+
+            // 4. Update existing shelves via PUT API
+            for (const { s, idx } of existingShelves) {
+                const updatePayload = {
+                    shelf_name: s.label || `Shelf ${idx + 1}`,
+                    shelf_loc_id: String(locId),
+                    shelf_ctl_id: String(cupboard.controller_id || cupboard.controller || ''),
+                    shelf_wall_id: String(cupboard.wall_id || cupboard.wall || ''),
+                    shelf_cupboard_id: String(cupboard.id || cupboard.name || ''),
+                    shelf_gridx: String(Math.round(s.x)),
+                    shelf_gridy: String(Math.round(s.y)),
+                    shelf_width: String(Math.round(s.width)),
+                    shelf_height: String(Math.round(s.height)),
+                    shelf_order: String(s.shelf_order || idx + 1),
+                    shelf_phr_id: String(s.shelf_phr_id || "2"),
+                    shelf_org_id: String(s.shelf_org_id || "Salem"),
+                    shelf_branch_id: String(s.shelf_branch_id || "SKSHOSPITAL"),
+                    shelf_status: s.shelf_status !== undefined ? (typeof s.shelf_status === 'boolean' ? s.shelf_status : s.shelf_status === 'True') : true
+                };
+
+                await apiService.updateShelf(s.id, updatePayload);
+                updatedCount++;
+            }
+
+            const shelves = shelfBlocks.length;
+            const updated = cupboardsData.map(c =>
+                c.id === cupboard.id
+                    ? { ...c, shelves, rows: shelves, shelfLayout: shelfBlocks }
+                    : c
+            );
+            syncCupboards(updated);
+
+            if (refetchShelves) {
+                refetchShelves();
+            }
+
+            const msgParts = [];
+            if (createdCount > 0) msgParts.push(`created ${createdCount}`);
+            if (updatedCount > 0) msgParts.push(`updated ${updatedCount}`);
+
+            if (msgParts.length > 0) {
+                toast.success(`Shelves ${msgParts.join(', ')} successfully!`);
+            } else {
+                toast.success('Shelves saved successfully!');
+            }
+
+            setSaveFlash(true);
+            setTimeout(() => {
+                setSaveFlash(false);
+                onBack();
+            }, 800);
+        } catch (error) {
+            toast.error(`Failed to save shelves: ${error.message || 'Unknown error'}`);
+        }
     };
 
     // Compute canvas size dynamically based on shelf positions
@@ -238,7 +365,7 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
         }
         scrollDragRef.current.isDown = false;
     };
-    
+
     const handleCanvasClick = (e) => {
         if (scrollDragRef.current.moved) {
             e.stopPropagation();
@@ -305,7 +432,7 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
             {/* Body */}
             <div className="flex flex-1 min-h-0 overflow-hidden bg-ot-bg-mid">
                 {/* Canvas */}
-                <div 
+                <div
                     className="flex-1 overflow-auto p-6 relative touch-none select-none cursor-grab active:cursor-grabbing"
                     ref={scrollRef}
                     onPointerDown={handlePointerDown}
@@ -328,6 +455,13 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                         <div className="absolute top-3 left-4 text-xs text-muted-foreground/40 font-semibold uppercase tracking-widest pointer-events-none">
                             {cupboard.name} — Drag & resize shelves
                         </div>
+
+                        {shelfBlocks.length === 0 && (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-muted-foreground/50 text-xs gap-1">
+                                <span>No shelves in this cupboard yet.</span>
+                                <span>Click &quot;+ Add Shelf&quot; to create a new shelf.</span>
+                            </div>
+                        )}
 
                         {/* Shelf blocks */}
                         {shelfBlocks.map((shelf, idx) => {
@@ -377,10 +511,8 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                                     <div className="absolute bottom-0.5 right-2 text-[8px] text-muted-foreground/40 font-mono pointer-events-none z-20">
                                         {Math.round(shelf.width)}×{Math.round(shelf.height)}
                                     </div>
-
-                                    {/* Remove button */}
                                     <button
-                                        onClick={(e) => { e.stopPropagation(); removeShelf(shelf.id); }}
+                                        onClick={(e) => { e.stopPropagation(); handleDeleteShelf(shelf); }}
                                         onPointerDown={(e) => e.stopPropagation()}
                                         className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500/80 hover:bg-red-500 text-white flex items-center justify-center z-30 opacity-0 hover:opacity-100 transition-opacity shadow-lg"
                                         style={{ pointerEvents: 'auto' }}
@@ -466,17 +598,50 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                                     </div>
                                 </div>
                                 <button
-                                    onClick={() => removeShelf(shelf.id)}
+                                    onClick={() => handleDeleteShelf(shelf)}
                                     className="opacity-0 group-hover:opacity-100 w-3.5 h-3.5 flex items-center justify-center text-muted-foreground hover:text-red-400 transition-all shrink-0">
                                     <X className="w-2 h-2" />
                                 </button>
                             </div>
                         ))}
                     </div>
-
-
                 </div>
             </div>
+
+            <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                <DialogContent className="sm:max-w-md border-red-500/20 bg-gradient-to-b from-ot-surface-top/90 to-ot-bg-bottom/90 backdrop-blur-xl">
+                    <DialogHeader>
+                        <div className="flex flex-col items-center gap-4 py-4">
+                            <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center border border-red-500/20">
+                                <AlertTriangle className="w-6 h-6 text-red-500" />
+                            </div>
+                            <div className="space-y-2 text-center">
+                                <DialogTitle className="text-xl text-white">Confirm Deletion</DialogTitle>
+                                <DialogDescription className="text-muted-foreground text-sm">
+                                    Are you sure you want to delete this shelf? This action cannot be undone and will remove it permanently.
+                                </DialogDescription>
+                            </div>
+                        </div>
+                    </DialogHeader>
+                    <DialogFooter className="flex justify-center gap-3 sm:justify-center mt-2 border-t border-ot-border/50 pt-4">
+                        <Button
+                            variant="outline"
+                            className="border-ot-border text-white hover:bg-ot-surface-elev-bottom min-w-[100px]"
+                            onClick={() => {
+                                setDeleteDialogOpen(false);
+                                setShelfToDelete(null);
+                            }}>
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            className="bg-red-600 hover:bg-red-700 text-white min-w-[100px] shadow-lg shadow-red-900/20"
+                            onClick={confirmDeleteShelf}>
+                            Delete
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
