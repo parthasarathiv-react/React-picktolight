@@ -157,5 +157,28 @@ export const apiService = {
             headers: getHeaders()
         });
         return handleResponse(response);
+    },
+
+    // Bins
+    getBins: async (locId = 'All', shelfId = 'All') => {
+        const response = await fetch(`${API_URL}/config/get-bins?location=${locId}&shelf=${shelfId}`, {
+            headers: getHeaders()
+        });
+        return handleResponse(response);
+    },
+    updateBin: async (id, payload) => {
+        const response = await fetch(`${API_URL}/config/update-bin/${id}`, {
+            method: 'PUT',
+            headers: getHeaders(),
+            body: JSON.stringify(payload)
+        });
+        return handleResponse(response);
+    },
+    deleteBin: async (id) => {
+        const response = await fetch(`${API_URL}/config/delete-bin/${id}`, {
+            method: 'DELETE',
+            headers: getHeaders()
+        });
+        return handleResponse(response);
     }
 };

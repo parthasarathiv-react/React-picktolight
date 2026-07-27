@@ -1,28 +1,156 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Button } from 'components/ui/button';
-import { ArrowLeft, Save, CheckCircle2, Plus, X, Layers, GripVertical, Server, ChevronRight, LayoutGrid, Box } from 'lucide-react';
+import { ArrowLeft, Save, CheckCircle2, Plus, X, Layers, GripVertical, Server, ChevronRight, LayoutGrid, Box, Sparkles, Check, AlertTriangle } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { Input } from 'components/ui/input';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from 'components/ui/dialog';
+import { ConfirmDialog } from 'components/ui/ConfirmDialog';
+import { toast } from 'sonner';
+import { apiService } from 'lib/apiService';
 
 const MIN_BIN_W = 40;
 const MIN_BIN_H = 40;
 
-export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsData, syncCupboards }) {
+export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsData, syncCupboards, refetchBins }) {
     const [saveFlash, setSaveFlash] = useState(false);
-    const [genRows, setGenRows] = useState(1);
-    const [genCols, setGenCols] = useState(4);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [binToDelete, setBinToDelete] = useState(null);
+    const [isCanvasOver, setIsCanvasOver] = useState(false);
+    const [isLoadingBins, setIsLoadingBins] = useState(false);
+    const sidebarDragItemRef = useRef(null);
 
     // Initial load from existing bins or default to empty
     const [binBlocks, setBinBlocks] = useState(() => {
         if (shelf.bins && shelf.bins.length > 0) {
-            return shelf.bins;
+            return shelf.bins.map(b => ({
+                ...b,
+                placed: b.placed !== undefined ? b.placed : true,
+            }));
         }
         return [];
     });
 
+    const handleDeleteBin = (bin) => {
+        setBinToDelete(bin);
+        setDeleteDialogOpen(true);
+    };
+
+    const confirmDeleteBin = async () => {
+        if (!binToDelete) return;
+        const targetBin = binToDelete;
+        const binId = targetBin.bin_id || (typeof targetBin.id === 'number' ? targetBin.id : (!isNaN(Number(targetBin.id)) && String(targetBin.id).indexOf('bin-') === -1 ? Number(targetBin.id) : null));
+
+        try {
+            const isBackendBin = binId && !String(binId).startsWith('bin-');
+            if (isBackendBin) {
+                await apiService.deleteBin(binId);
+                toast.success("Bin deleted successfully");
+            } else {
+                toast.success("Bin removed");
+            }
+
+            const updatedBlocks = binBlocks.filter(b =>
+                String(b.id) !== String(targetBin.id) &&
+                String(b.bin_id || '') !== String(binId || '')
+            );
+
+            setBinBlocks(updatedBlocks);
+
+            const updatedCupboards = JSON.parse(JSON.stringify(cupboardsData));
+            const targetCupboard = updatedCupboards.find(c => String(c.id) === String(cupboard.id));
+            if (targetCupboard && targetCupboard.shelfLayout) {
+                const targetShelf = targetCupboard.shelfLayout.find(s => String(s.id) === String(shelf.id));
+                if (targetShelf) {
+                    targetShelf.bins = updatedBlocks;
+                }
+            }
+            syncCupboards(updatedCupboards);
+
+            try {
+                const layouts = JSON.parse(localStorage.getItem('cupboardLayouts') || '{}');
+                if (layouts[cupboard.id]) {
+                    const lsShelf = layouts[cupboard.id].shelfLayout?.find(s => String(s.id) === String(shelf.id));
+                    if (lsShelf) {
+                        lsShelf.bins = updatedBlocks;
+                    }
+                }
+                localStorage.setItem('cupboardLayouts', JSON.stringify(layouts));
+            } catch (e) { }
+
+            if (refetchBins) {
+                await refetchBins();
+            }
+        } catch (error) {
+            console.error("Error deleting bin:", error);
+            toast.error(`Failed to delete bin: ${error.message || 'Unknown error'}`);
+        } finally {
+            setDeleteDialogOpen(false);
+            setBinToDelete(null);
+        }
+    };
+
+    // Fetch bins specifically for current shelf ID from API
+    useEffect(() => {
+        const fetchBinsForShelf = async () => {
+            let locId = 'All';
+            try {
+                const selectedLocationStr = localStorage.getItem('selectedLocation');
+                if (selectedLocationStr) {
+                    const loc = JSON.parse(selectedLocationStr);
+                    locId = loc.pick_location_id || loc.id || 'All';
+                }
+            } catch (e) { }
+
+            const targetShelfId = String(shelf.shelf_phr_id || '').trim();
+
+            if (!targetShelfId) return;
+
+            setIsLoadingBins(true);
+            try {
+                const res = await apiService.getBins(locId, targetShelfId);
+                if (res && res.success && Array.isArray(res.data)) {
+                    const mappedBins = res.data.map((b, idx) => {
+                        const hasGridX = b.bin_gridx !== undefined && b.bin_gridx !== null && b.bin_gridx !== '' && !isNaN(parseFloat(b.bin_gridx));
+                        const hasGridY = b.bin_gridy !== undefined && b.bin_gridy !== null && b.bin_gridy !== '' && !isNaN(parseFloat(b.bin_gridy));
+                        const isPlaced = hasGridX && hasGridY && (b.bin_status !== false && b.bin_status !== 'False');
+
+                        return {
+                            id: String(b.bin_id || `bin-${idx}`),
+                            bin_id: b.bin_id,
+                            label: b.bin_name || `Bin ${idx + 1}`,
+                            x: hasGridX ? parseFloat(b.bin_gridx) : (10 + idx * 90),
+                            y: hasGridY ? parseFloat(b.bin_gridy) : 10,
+                            width: (b.bin_width && !isNaN(parseFloat(b.bin_width))) ? parseFloat(b.bin_width) : 80,
+                            height: (b.bin_height && !isNaN(parseFloat(b.bin_height))) ? parseFloat(b.bin_height) : 48,
+                            placed: isPlaced,
+                            bin_order: b.bin_order,
+                            bin_phr_id: b.bin_phr_id || "122",
+                            bin_org_id: b.bin_org_id || "skshospital",
+                            bin_branch_id: b.bin_branch_id || "Salem",
+                            bin_status: b.bin_status !== undefined ? b.bin_status : true,
+                            bin_shelf_id: b.bin_shelf_id || targetShelfId,
+                            bin_loc_id: b.bin_loc_id
+                        };
+                    });
+
+                    if (mappedBins.length > 0) {
+                        setBinBlocks(mappedBins);
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to fetch bins for shelf:", err);
+            } finally {
+                setIsLoadingBins(false);
+            }
+        };
+
+        fetchBinsForShelf();
+    }, [shelf?.shelf_id, shelf?.id]);
+
     const [dragging, setDragging] = useState(null);
+    const [selectedId, setSelectedId] = useState(null);
     const canvasRef = useRef(null);
-    
+
     // Panning state
     const scrollRef = useRef(null);
     const scrollDragRef = useRef({
@@ -34,49 +162,100 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
         moved: false,
     });
 
-    const addBin = () => {
-        // Place bin at next available slot horizontally
-        const maxX = binBlocks.reduce((m, b) => Math.max(m, b.x + b.width), 0);
-        const newBin = {
-            id: `bin-${Date.now()}`,
-            label: `Bin ${binBlocks.length + 1}`,
-            x: maxX + 10,
-            y: 0, // Top aligned within shelf
-            width: 80,
-            height: shelf.height || 48,
-        };
-        setBinBlocks(prev => [...prev, newBin]);
-    };
-
-    const generateGrid = () => {
-        const newBins = [];
-        const padding = 10;
-        const totalW = shelf.width || 600;
-        const totalH = shelf.height || 100;
-        
-        const binW = Math.max(MIN_BIN_W, (totalW - (genCols + 1) * padding) / genCols);
-        const binH = Math.max(MIN_BIN_H, (totalH - (genRows + 1) * padding) / genRows);
-        
-        let counter = 1;
-        for (let r = 0; r < genRows; r++) {
-            for (let c = 0; c < genCols; c++) {
-                newBins.push({
-                    id: `bin-${Date.now()}-${counter}`,
-                    label: `Bin ${counter}`,
-                    x: padding + c * (binW + padding),
-                    y: padding + r * (binH + padding),
-                    width: binW,
-                    height: binH
-                });
-                counter++;
-            }
-        }
-        setBinBlocks(newBins);
-    };
-
     const removeBin = (id) => {
         setBinBlocks(prev => prev.filter(b => b.id !== id));
     };
+
+    const handleSidebarDragStart = (e, bin) => {
+        sidebarDragItemRef.current = bin;
+        e.dataTransfer.setData('text/plain', String(bin.id));
+        e.dataTransfer.effectAllowed = 'move';
+    };
+
+    const handleCanvasDragOver = (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (!isCanvasOver) setIsCanvasOver(true);
+    };
+
+    const handleCanvasDragLeave = (e) => {
+        if (e.currentTarget && e.relatedTarget && e.currentTarget.contains(e.relatedTarget)) return;
+        setIsCanvasOver(false);
+    };
+
+    const handleCanvasDrop = (e) => {
+        e.preventDefault();
+        setIsCanvasOver(false);
+
+        const binId = e.dataTransfer.getData('text/plain') || sidebarDragItemRef.current?.id;
+        if (!binId) return;
+
+        const targetBin = binBlocks.find(b => String(b.id) === String(binId));
+        if (!targetBin) return;
+
+        if (!canvasRef.current) return;
+        const rect = canvasRef.current.getBoundingClientRect();
+        const dropX = Math.max(0, Math.round(e.clientX - rect.left - (targetBin.width || 80) / 2));
+        const dropY = Math.max(0, Math.round(e.clientY - rect.top - (targetBin.height || 48) / 2));
+
+        setBinBlocks(prev => prev.map(b => {
+            if (String(b.id) === String(binId)) {
+                return {
+                    ...b,
+                    x: dropX,
+                    y: dropY,
+                    placed: true
+                };
+            }
+            return b;
+        }));
+
+        sidebarDragItemRef.current = null;
+        toast.success(`Placed "${targetBin.label}" on canvas`);
+    };
+
+    const handlePlaceOnCanvas = (binId) => {
+        setBinBlocks(prev => prev.map(b => {
+            if (String(b.id) === String(binId)) {
+                const placedItems = prev.filter(item => item.placed !== false);
+                const maxX = placedItems.reduce((m, item) => Math.max(m, item.x + item.width), 0);
+                return {
+                    ...b,
+                    x: b.x !== undefined && b.placed ? b.x : maxX + 10,
+                    y: b.y !== undefined && b.placed ? b.y : 10,
+                    placed: true
+                };
+            }
+            return b;
+        }));
+    };
+
+    // Keyboard Arrow Nudging Listener
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (!selectedId) return;
+            if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+
+            const step = e.shiftKey ? 10 : 2;
+
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setBinBlocks(prev => prev.map(b => b.id === selectedId ? { ...b, y: Math.max(0, b.y - step) } : b));
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setBinBlocks(prev => prev.map(b => b.id === selectedId ? { ...b, y: b.y + step } : b));
+            } else if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                setBinBlocks(prev => prev.map(b => b.id === selectedId ? { ...b, x: Math.max(0, b.x - step) } : b));
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                setBinBlocks(prev => prev.map(b => b.id === selectedId ? { ...b, x: b.x + step } : b));
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [selectedId]);
 
     const handleMouseDown = (e, id, type) => {
         e.preventDefault();
@@ -84,16 +263,10 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
         const bin = binBlocks.find(b => b.id === id);
         if (!bin) return;
 
-        let activeId = id;
-
-        if (type === 'move' && (e.ctrlKey || e.metaKey)) {
-            activeId = `bin-${Date.now()}`;
-            const newBin = { ...bin, id: activeId, label: `${bin.label} (Copy)` };
-            setBinBlocks(prev => [...prev, newBin]);
-        }
+        setSelectedId(id);
 
         setDragging({
-            id: activeId,
+            id,
             type,
             startMouseX: e.clientX,
             startMouseY: e.clientY,
@@ -108,7 +281,6 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
         if (!dragging) return;
         const dx = e.clientX - dragging.startMouseX;
         const dy = e.clientY - dragging.startMouseY;
-        // Calculate dynamic minimum width
         const currentMinW = Math.max(MIN_BIN_W, 40);
 
         setBinBlocks(prev => prev.map(b => {
@@ -165,42 +337,96 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
         }
     }, [dragging, onMouseMove, onMouseUp]);
 
-    const handleSave = () => {
-        // Deep clone cupboardsData to avoid mutating state directly
-        const updatedCupboards = JSON.parse(JSON.stringify(cupboardsData));
-        
-        // Find the current cupboard and update its shelf
-        const targetCupboard = updatedCupboards.find(c => c.id === cupboard.id);
-        if (targetCupboard && targetCupboard.shelfLayout) {
-            const targetShelf = targetCupboard.shelfLayout.find(s => s.id === shelf.id);
-            if (targetShelf) {
-                targetShelf.bins = binBlocks;
-            }
-        }
+    const [isSaving, setIsSaving] = useState(false);
 
-        syncCupboards(updatedCupboards);
-
+    const handleSave = async () => {
+        setIsSaving(true);
+        let locId = '';
         try {
-            const layouts = JSON.parse(localStorage.getItem('cupboardLayouts') || '{}');
-            if (layouts[cupboard.id]) {
-                const lsShelf = layouts[cupboard.id].shelfLayout?.find(s => s.id === shelf.id);
-                if (lsShelf) {
-                    lsShelf.bins = binBlocks;
-                }
+            const selectedLocationStr = localStorage.getItem('selectedLocation');
+            if (selectedLocationStr) {
+                const loc = JSON.parse(selectedLocationStr);
+                locId = loc.pick_location_id || loc.id || '';
             }
-            localStorage.setItem('cupboardLayouts', JSON.stringify(layouts));
         } catch (e) { }
 
-        setSaveFlash(true);
-        setTimeout(() => {
-            setSaveFlash(false);
-            onBack();
-        }, 800);
+        try {
+            const placedBins = binBlocks.filter(b => b.placed !== false);
+
+            for (let idx = 0; idx < placedBins.length; idx++) {
+                const bin = placedBins[idx];
+                const binId = bin.bin_id || (typeof bin.id === 'number' ? bin.id : (!isNaN(Number(bin.id)) && String(bin.id).indexOf('bin-') === -1 ? Number(bin.id) : null));
+
+                if (!binId) continue;
+
+                const payload = {
+                    bin_name: String(bin.label || bin.bin_name || `Bin ${idx + 1}`),
+                    bin_loc_id: String(bin.bin_loc_id || locId),
+                    bin_shelf_id: String(shelf.shelf_phr_id || ''),
+                    bin_gridx: String(Math.round(bin.x || 0)),
+                    bin_gridy: String(Math.round(bin.y || 0)),
+                    bin_width: String(Math.round(bin.width || 80)),
+                    bin_height: String(Math.round(bin.height || 48)),
+                    bin_order: String(bin.bin_order || idx + 1),
+                    bin_phr_id: String(shelf.shelf_phr_id || ''),
+                    bin_org_id: String(bin.bin_org_id || "skshospital"),
+                    bin_branch_id: String(bin.bin_branch_id || "Salem"),
+                    bin_status: bin.bin_status !== undefined ? (typeof bin.bin_status === 'boolean' ? bin.bin_status : bin.bin_status === 'True') : true
+                };
+
+                await apiService.updateBin(binId, payload);
+            }
+
+            const updatedCupboards = JSON.parse(JSON.stringify(cupboardsData));
+
+            const targetCupboard = updatedCupboards.find(c => String(c.id) === String(cupboard.id));
+            if (targetCupboard && targetCupboard.shelfLayout) {
+                const targetShelf = targetCupboard.shelfLayout.find(s => String(s.id) === String(shelf.id));
+                if (targetShelf) {
+                    targetShelf.bins = binBlocks;
+                }
+            }
+
+            syncCupboards(updatedCupboards);
+
+            try {
+                const layouts = JSON.parse(localStorage.getItem('cupboardLayouts') || '{}');
+                if (layouts[cupboard.id]) {
+                    const lsShelf = layouts[cupboard.id].shelfLayout?.find(s => String(s.id) === String(shelf.id));
+                    if (lsShelf) {
+                        lsShelf.bins = binBlocks;
+                    }
+                }
+                localStorage.setItem('cupboardLayouts', JSON.stringify(layouts));
+            } catch (e) { }
+
+            if (refetchBins) {
+                await refetchBins();
+            }
+
+            toast.success('Bins saved successfully!');
+
+            setSaveFlash(true);
+            setTimeout(() => {
+                setSaveFlash(false);
+                onBack();
+            }, 800);
+        } catch (error) {
+            console.error("Error saving bins:", error);
+            toast.error(`Failed to save bins: ${error.message}`);
+        } finally {
+            setIsSaving(false);
+        }
     };
 
-    // Calculate canvas size
-    const shelfVisualWidth = Math.max(shelf.width || 600, ...binBlocks.map(b => b.x + b.width + 40));
-    const shelfVisualHeight = Math.max(shelf.height || 100, ...binBlocks.map(b => b.y + b.height + 40), 200);
+    const canvasBlocks = binBlocks.filter(b => b.placed !== false);
+
+    const CANVAS_W = 600;
+    const CANVAS_H = 450;
+
+    // Calculate canvas size based on placed bins or default canvas box dimensions
+    const shelfVisualWidth = Math.max(CANVAS_W, shelf.width || 600, ...canvasBlocks.map(b => (b.x || 0) + (b.width || 80) + 40));
+    const shelfVisualHeight = Math.max(CANVAS_H, shelf.height || 100, ...canvasBlocks.map(b => (b.y || 0) + (b.height || 48) + 40));
 
     // Panning logic
     const handlePointerDown = (e) => {
@@ -244,7 +470,7 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
         }
         scrollDragRef.current.isDown = false;
     };
-    
+
     const handleCanvasClick = (e) => {
         if (scrollDragRef.current.moved) {
             e.stopPropagation();
@@ -290,13 +516,8 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
 
                 <div className="flex items-center gap-3">
                     <Button
-                        onClick={addBin}
-                        className="gap-2 h-8 px-4 bg-ot-surface-elev-bottom border border-ot-border text-white hover:bg-ot-surface-top text-sm"
-                    >
-                        <Plus className="w-4 h-4" /> Add Bin
-                    </Button>
-                    <Button
                         onClick={handleSave}
+                        disabled={isSaving}
                         className={cn(
                             'gap-2 h-8 px-4 text-sm transition-all duration-300 disabled:opacity-40',
                             saveFlash
@@ -306,7 +527,7 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                     >
                         {saveFlash
                             ? <><CheckCircle2 className="w-4 h-4" /> Saved!</>
-                            : <><Save className="w-4 h-4" /> Save Shelf</>
+                            : <><Save className="w-4 h-4" /> {isSaving ? 'Saving...' : 'Save Shelf'}</>
                         }
                     </Button>
                 </div>
@@ -315,7 +536,7 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
             {/* Body */}
             <div className="flex flex-1 min-h-0 overflow-hidden bg-ot-bg-mid">
                 {/* Canvas */}
-                <div 
+                <div
                     className="flex-1 overflow-auto p-6 relative touch-none select-none cursor-grab active:cursor-grabbing"
                     ref={scrollRef}
                     onPointerDown={handlePointerDown}
@@ -326,7 +547,15 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                 >
                     <div
                         ref={canvasRef}
-                        className="relative rounded-xl border-2 border-dashed border-ot-border/50 bg-ot-surface-top/50"
+                        onDragOver={handleCanvasDragOver}
+                        onDragLeave={handleCanvasDragLeave}
+                        onDrop={handleCanvasDrop}
+                        className={cn(
+                            "relative rounded-xl border-2 border-dashed transition-all duration-200",
+                            isCanvasOver
+                                ? "border-ot-action bg-ot-action/15 shadow-2xl shadow-ot-action/30 ring-2 ring-ot-action/40"
+                                : "border-ot-border/50 bg-ot-surface-top/50"
+                        )}
                         style={{
                             width: shelfVisualWidth,
                             height: shelfVisualHeight,
@@ -342,8 +571,16 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                             {shelf.label} — Drag & resize bins
                         </div>
 
+                        {canvasBlocks.length === 0 && (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-muted-foreground/50 text-xs gap-2">
+                                <Sparkles className="w-8 h-8 text-ot-action/50 animate-pulse" />
+                                <span className="font-medium text-white/80">No bins placed on canvas yet.</span>
+                                <span>Drag a bin from the right sidebar to place & align it here.</span>
+                            </div>
+                        )}
+
                         {/* Bin blocks */}
-                        {binBlocks.map((bin, idx) => {
+                        {canvasBlocks.map((bin) => {
                             const isActive = dragging?.id === bin.id;
                             return (
                                 <div
@@ -371,17 +608,9 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                                     <div className="flex flex-col items-center justify-center gap-1 z-20 shrink-0 h-full w-full pointer-events-none">
                                         <div className="flex items-center w-full justify-center relative">
                                             <GripVertical className="absolute left-1 w-3 h-3 text-muted-foreground/40 pointer-events-none" />
-                                            <input
-                                                type="text"
-                                                value={bin.label}
-                                                onChange={(e) => {
-                                                    const newVal = e.target.value;
-                                                    setBinBlocks(prev => prev.map(sb => sb.id === bin.id ? { ...sb, label: newVal } : sb));
-                                                }}
-                                                onPointerDown={(e) => e.stopPropagation()}
-                                                className="bg-transparent text-xs font-semibold text-white text-center outline-none border-none focus:bg-ot-bg-top/50 px-1 py-0.5 rounded w-full max-w-[80%] pointer-events-auto"
-                                                placeholder="Label"
-                                            />
+                                            <span className="text-xs font-semibold text-white text-center px-1 py-0.5 rounded w-full max-w-[80%] truncate pointer-events-none select-none">
+                                                {bin.label}
+                                            </span>
                                         </div>
                                     </div>
 
@@ -392,7 +621,7 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
 
                                     {/* Remove button */}
                                     <button
-                                        onClick={(e) => { e.stopPropagation(); removeBin(bin.id); }}
+                                        onClick={(e) => { e.stopPropagation(); handleDeleteBin(bin); }}
                                         onPointerDown={(e) => e.stopPropagation()}
                                         className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500/80 hover:bg-red-500 text-white flex items-center justify-center z-30 opacity-0 hover:opacity-100 transition-opacity shadow-lg"
                                         style={{ pointerEvents: 'auto' }}
@@ -417,7 +646,7 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                                     <div onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-e')} className="absolute top-2 bottom-2 -right-[3px] w-[6px] cursor-e-resize z-30 group">
                                         <div className="absolute inset-y-0 right-[2px] w-[2px] bg-orange-500/0 group-hover:bg-orange-500/60 transition-colors rounded-full" />
                                     </div>
-                                    
+
                                     {/* Corner handles (visible dots) */}
                                     {/* NW */}
                                     <div
@@ -450,54 +679,105 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                 </div>
 
                 {/* Right Sidebar */}
-                <div className="w-56 border-l border-ot-border bg-ot-surface-top flex flex-col shrink-0">
-                    <div className="px-4 py-3 border-b border-ot-border">
-                        <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Bins</div>
-                        <div className="text-[10px] text-muted-foreground mt-0.5">{binBlocks.length} items</div>
+                <div className="w-64 border-l border-ot-border bg-ot-surface-top flex flex-col shrink-0">
+                    <div className="px-4 py-3 border-b border-ot-border flex items-center justify-between">
+                        <div>
+                            <div className="text-xs font-bold text-white uppercase tracking-widest flex items-center gap-2">
+                                <Box className="w-3.5 h-3.5 text-ot-action" /> Bins
+                            </div>
+                            <div className="text-[10px] text-muted-foreground mt-0.5">
+                                {isLoadingBins ? 'Loading bins...' : `${binBlocks.length} bin${binBlocks.length !== 1 ? 's' : ''} fetched`}
+                            </div>
+                        </div>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1"
+                    <div className="p-2 bg-ot-surface-elev-bottom/40 border-b border-ot-border/40 text-[10px] text-muted-foreground flex items-center gap-1.5 px-3">
+                        <GripVertical className="w-3 h-3 text-ot-action shrink-0" />
+                        <span>Drag & drop bins onto the canvas on the left</span>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2"
                         style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.1) transparent' }}>
-                        {binBlocks.map((bin) => (
-                            <div key={bin.id}
-                                className="flex items-center gap-2 p-2 rounded-lg bg-ot-surface-elev-bottom/60 border border-ot-border/50 group"
-                            >
-                                <div className="w-1.5 h-1.5 rounded-full bg-orange-500 shrink-0" />
-                                <div className="flex-1 min-w-0">
-                                    <div className="text-[11px] font-semibold text-white truncate">{bin.label}</div>
-                                    <div className="text-[9px] text-muted-foreground font-mono">
-                                        {Math.round(bin.width)}×{Math.round(bin.height)}
+                        {binBlocks.map((bin) => {
+                            const isPlaced = bin.placed !== false;
+                            return (
+                                <div
+                                    key={bin.id}
+                                    draggable
+                                    onDragStart={(e) => handleSidebarDragStart(e, bin)}
+                                    className={cn(
+                                        "flex flex-col gap-1.5 p-2.5 rounded-lg border transition-all cursor-grab active:cursor-grabbing group select-none relative",
+                                        isPlaced
+                                            ? "bg-ot-surface-elev-bottom/80 border-ot-action/40 hover:border-ot-action hover:shadow-md hover:shadow-ot-action/10"
+                                            : "bg-ot-surface-elev-bottom/40 border-amber-500/30 hover:border-amber-500/60"
+                                    )}
+                                >
+                                    <div className="flex items-center justify-between gap-2">
+                                        <div className="flex items-center gap-1.5 min-w-0">
+                                            <GripVertical className="w-3.5 h-3.5 text-muted-foreground/60 group-hover:text-ot-action shrink-0" />
+                                            <span className="text-xs font-semibold text-white whitespace-nowrap px-1 py-0.5 rounded truncate select-none">
+                                                {bin.label}
+                                            </span>
+                                        </div>
+
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); handleDeleteBin(bin); }}
+                                            className="w-4 h-4 rounded flex items-center justify-center text-muted-foreground hover:text-red-400 hover:bg-red-400/10 transition-colors shrink-0"
+                                            title="Delete Bin"
+                                        >
+                                            <X className="w-3 h-3" />
+                                        </button>
+                                    </div>
+
+                                    <div className="flex items-center justify-between text-[10px] pl-5">
+                                        <span className="text-muted-foreground font-mono">
+                                            {Math.round(bin.width)}×{Math.round(bin.height)}
+                                        </span>
+
+                                        <div className="flex items-center gap-1.5">
+                                            {isPlaced ? (
+                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 text-[9px] font-medium border border-emerald-500/20">
+                                                    <Check className="w-2.5 h-2.5" /> Placed
+                                                </span>
+                                            ) : (
+                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 text-[9px] font-medium border border-amber-500/20">
+                                                    Unplaced
+                                                </span>
+                                            )}
+
+                                            <button
+                                                onClick={() => handlePlaceOnCanvas(bin.id)}
+                                                className="px-1.5 py-0.5 rounded bg-ot-action/20 hover:bg-ot-action text-ot-action hover:text-white text-[9px] font-medium transition-colors border border-ot-action/30"
+                                                title="Place bin on canvas"
+                                            >
+                                                {isPlaced ? "Move" : "+ Place"}
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
-                                <button
-                                    onClick={() => removeBin(bin.id)}
-                                    className="opacity-0 group-hover:opacity-100 w-3.5 h-3.5 flex items-center justify-center text-muted-foreground hover:text-red-400 transition-all shrink-0">
-                                    <X className="w-2 h-2" />
-                                </button>
-                            </div>
-                        ))}
-                    </div>
+                            );
+                        })}
 
-                    <div className="border-t border-ot-border p-4 space-y-4">
-                        <div>
-                            <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase mb-2 block">Generate Grid</label>
-                            <div className="flex gap-2 mb-2">
-                                <div className="flex-1">
-                                    <span className="text-[10px] text-muted-foreground">Rows</span>
-                                    <Input type="number" min={1} max={10} value={genRows} onChange={e => setGenRows(Number(e.target.value) || 1)} className="h-8 text-xs" />
-                                </div>
-                                <div className="flex-1">
-                                    <span className="text-[10px] text-muted-foreground">Cols</span>
-                                    <Input type="number" min={1} max={20} value={genCols} onChange={e => setGenCols(Number(e.target.value) || 1)} className="h-8 text-xs" />
-                                </div>
+                        {binBlocks.length === 0 && !isLoadingBins && (
+                            <div className="py-8 text-center text-xs text-muted-foreground/50">
+                                No bins returned from API for this shelf.
                             </div>
-                            <Button variant="secondary" onClick={generateGrid} className="w-full h-8 text-xs bg-ot-surface-elev-bottom border border-ot-border text-white hover:bg-ot-surface-top transition-colors">
-                                Generate Bins
-                            </Button>
-                        </div>
+                        )}
                     </div>
                 </div>
             </div>
+
+            <ConfirmDialog
+                open={deleteDialogOpen}
+                onOpenChange={setDeleteDialogOpen}
+                title="Confirm Deletion"
+                description="Are you sure you want to delete this bin? This action cannot be undone and will remove it permanently."
+                confirmText="Delete"
+                cancelText="Cancel"
+                variant="destructive"
+                onConfirm={confirmDeleteBin}
+                onCancel={() => setBinToDelete(null)}
+            />
         </div>
     );
 }

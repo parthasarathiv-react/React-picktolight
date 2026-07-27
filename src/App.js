@@ -41,13 +41,19 @@ function PageLoader() {
     );
 }
 
+function RootRedirect() {
+    const token = localStorage.getItem('token');
+    const lastPath = localStorage.getItem('last_active_path') || '/monitoring';
+    return token ? <Navigate to={lastPath} replace /> : <Navigate to="/login" replace />;
+}
+
 function App() {
     return (
         <Router>
             <Suspense fallback={<PageLoader />}>
                 <Routes>
                     <Route path="/login" element={<Login />} />
-                    <Route path="/" element={<Navigate to="/login" replace />} />
+                    <Route path="/" element={<RootRedirect />} />
                     <Route path="/" element={<MainLayout />}>
                         <Route path="/monitoring" element={<Monitoring />} />
                         <Route path="/settings" element={<Settings />} />

@@ -5,6 +5,7 @@ import { cn } from 'lib/utils';
 import { toast } from 'sonner';
 import { apiService } from 'lib/apiService';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from 'components/ui/dialog';
+import { ConfirmDialog } from 'components/ui/ConfirmDialog';
 
 const CELL = 120;
 const MIN_ROWS = 4;
@@ -15,7 +16,33 @@ const DRAG_THRESHOLD = 5; // pixels moved before it counts as a drag
 export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, syncCupboards }) {
     const [canvasCupboards, setCanvasCupboards] = useState([]);
     const [dragging, setDragging] = useState(null);
+    const [selectedCanvasId, setSelectedCanvasId] = useState(null);
     const [saveFlash, setSaveFlash] = useState(false);
+
+    // Keyboard Arrow Nudging Listener
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (!selectedCanvasId) return;
+            if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setCanvasCupboards(prev => prev.map(c => c.canvasId === selectedCanvasId ? { ...c, gridY: Math.max(0, c.gridY - 1) } : c));
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setCanvasCupboards(prev => prev.map(c => c.canvasId === selectedCanvasId ? { ...c, gridY: c.gridY + 1 } : c));
+            } else if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                setCanvasCupboards(prev => prev.map(c => c.canvasId === selectedCanvasId ? { ...c, gridX: Math.max(0, c.gridX - 1) } : c));
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                setCanvasCupboards(prev => prev.map(c => c.canvasId === selectedCanvasId ? { ...c, gridX: c.gridX + 1 } : c));
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [selectedCanvasId]);
     const [gridCols, setGridCols] = useState(MIN_COLS);
     const [cupboardToDelete, setCupboardToDelete] = useState(null);
 
@@ -86,7 +113,7 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
     const confirmRemoveCupboard = async () => {
         if (!cupboardToDelete) return;
         const cb = canvasCupboards.find(c => c.canvasId === cupboardToDelete);
-        
+
         if (cb && !cb.isNew) {
             try {
                 await apiService.deleteCupboard(cb.id);
@@ -100,7 +127,7 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
                 return;
             }
         }
-        
+
         setCanvasCupboards(prev => prev.filter(c => c.canvasId !== cupboardToDelete));
         setCupboardToDelete(null);
     };
@@ -108,6 +135,7 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
     const startDrag = (e, canvasId) => {
         if (e.target.closest('button')) return;
         e.preventDefault();
+        setSelectedCanvasId(canvasId);
         const wr = e.currentTarget.getBoundingClientRect();
         didDragRef.current = false;
         mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
@@ -287,7 +315,7 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
                             <span className="font-semibold">{wall.name}</span>
                         </div>
                     </div>
-                    
+
                     <div className="h-5 w-px bg-ot-border ml-2" />
                     <span className="text-xs text-muted-foreground font-mono ml-1">Cupboards Designer</span>
                 </div>
@@ -481,24 +509,17 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
                 </div>
             </div>
             {/* Delete Confirmation Dialog */}
-            <Dialog open={!!cupboardToDelete} onOpenChange={(open) => !open && setCupboardToDelete(null)}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Delete Cupboard</DialogTitle>
-                        <DialogDescription>
-                            Are you sure you want to delete this cupboard? This will immediately remove it from the database.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter className="mt-4">
-                        <Button variant="ghost" onClick={() => setCupboardToDelete(null)}>
-                            Cancel
-                        </Button>
-                        <Button className="bg-red-500 hover:bg-red-600 text-white" onClick={confirmRemoveCupboard}>
-                            Delete
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+            <ConfirmDialog
+                open={!!cupboardToDelete}
+                onOpenChange={(open) => !open && setCupboardToDelete(null)}
+                title="Confirm Deletion"
+                description="Are you sure you want to delete this cupboard? This will immediately remove it from the database."
+                confirmText="Delete"
+                cancelText="Cancel"
+                variant="destructive"
+                onConfirm={confirmRemoveCupboard}
+                onCancel={() => setCupboardToDelete(null)}
+            />
         </div>
     );
 }

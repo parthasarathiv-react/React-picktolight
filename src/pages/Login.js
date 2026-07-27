@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from 'components/ui/card';
 import { Input } from 'components/ui/input';
 import { Button } from 'components/ui/button';
@@ -16,6 +16,14 @@ export default function Login() {
     const [error, setError] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [showLocationDialog, setShowLocationDialog] = useState(false);
+
+    useEffect(() => {
+        const token = localStorage.getItem('token');
+        if (token) {
+            const lastPath = localStorage.getItem('last_active_path');
+            navigate(lastPath, { replace: true });
+        }
+    }, [navigate]);
 
     const handleLogin = async (e) => {
         e.preventDefault();
@@ -56,7 +64,8 @@ export default function Login() {
     const handleLocationSelect = (location) => {
         localStorage.setItem('selectedLocation', JSON.stringify(location));
         setShowLocationDialog(false);
-        navigate('/monitoring');
+        const lastPath = localStorage.getItem('last_active_path');
+        navigate(lastPath);
     };
 
     return (

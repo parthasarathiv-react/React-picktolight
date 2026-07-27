@@ -5,6 +5,7 @@ import { Input } from 'components/ui/input';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from 'components/ui/select';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from 'components/ui/table';
 import { Users as Plus, PenSquare, Trash2, Shield, Search, Eye, EyeOff } from 'lucide-react';
+import { ConfirmDialog } from 'components/ui/ConfirmDialog';
 
 const INITIAL_USERS = [
     { id: 1, username: 'admin_user', email: 'admin@system.local', full_name: 'Admin User', role: 'admin', is_active: true, password: 'StrongPass@123' },
@@ -19,6 +20,7 @@ export default function Users() {
     const [editingUser, setEditingUser] = useState(null);
     const [showPassword, setShowPassword] = useState(false);
     const [isActiveToggle, setIsActiveToggle] = useState(true);
+    const [userToDelete, setUserToDelete] = useState(null);
 
     const handleAddUser = () => {
         setEditingUser(null);
@@ -67,9 +69,13 @@ export default function Users() {
     };
 
     const handleDeleteUser = (id) => {
-        if (window.confirm("Are you sure you want to delete this user?")) {
-            setUsers(users.filter(u => u.id !== id));
-        }
+        setUserToDelete(id);
+    };
+
+    const confirmDeleteUser = () => {
+        if (!userToDelete) return;
+        setUsers(users.filter(u => u.id !== userToDelete));
+        setUserToDelete(null);
     };
 
     return (
@@ -231,6 +237,18 @@ export default function Users() {
                     </Table>
                 </CardContent>
             </Card>
+
+            <ConfirmDialog
+                open={!!userToDelete}
+                onOpenChange={(open) => !open && setUserToDelete(null)}
+                title="Confirm Deletion"
+                description="Are you sure you want to delete this user? This action cannot be undone."
+                confirmText="Delete"
+                cancelText="Cancel"
+                variant="destructive"
+                onConfirm={confirmDeleteUser}
+                onCancel={() => setUserToDelete(null)}
+            />
         </div>
     );
 }

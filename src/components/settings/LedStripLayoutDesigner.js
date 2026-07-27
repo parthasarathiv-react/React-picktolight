@@ -5,6 +5,12 @@ import { cn } from 'lib/utils';
 import { Input } from 'components/ui/input';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from 'components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from 'components/ui/dialog';
+import { ConfirmDialog } from 'components/ui/ConfirmDialog';
+
+const calculateLedWidth = (count) => {
+    const numLeds = Math.max(1, Number(count));
+    return Math.max(30, 10 + numLeds * 8);
+};
 
 export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData, syncCupboards }) {
     const [saveFlash, setSaveFlash] = useState(false);
@@ -12,7 +18,10 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
     // Load LED strips from cupboard data, or empty array
     const [ledStrips, setLedStrips] = useState(() => {
         if (cupboard.ledStrips && cupboard.ledStrips.length > 0) {
-            return cupboard.ledStrips;
+            return cupboard.ledStrips.map(s => ({
+                ...s,
+                width: s.width || calculateLedWidth(s.ledCount)
+            }));
         }
         return [];
     });
@@ -34,17 +43,25 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
         moved: false,
     });
 
-    const shelves = cupboard.shelfLayout || [];
+    // Only include shelves that have valid non-empty controller, wall, and cupboard IDs and placed === true
+    const shelves = (cupboard.shelfLayout || []).filter(shelf => {
+        const ctlId = shelf.shelf_ctl_id !== undefined ? String(shelf.shelf_ctl_id).trim() : String(cupboard.controller_id || cupboard.controller || '').trim();
+        const wallId = shelf.shelf_wall_id !== undefined ? String(shelf.shelf_wall_id).trim() : String(cupboard.wall_id || cupboard.wall || '').trim();
+        const cupboardId = shelf.shelf_cupboard_id !== undefined ? String(shelf.shelf_cupboard_id).trim() : String(cupboard.id || cupboard.name || '').trim();
+
+        return ctlId !== '' && wallId !== '' && cupboardId !== '' && shelf.placed !== false;
+    });
 
     const addStrip = () => {
+        const defaultLedCount = 6;
         const newStrip = {
             id: `strip-${Date.now()}`,
             label: `Strip ${ledStrips.length + 1}`,
             x: 20,
             y: 20,
-            width: 200,
-            height: 12, // Fixed height for LED strips
-            ledCount: 6, // Default LED count
+            width: calculateLedWidth(defaultLedCount),
+            height: 14, // Fixed height for LED strips
+            ledCount: defaultLedCount, // Default LED count
             linkedBins: [], // Array of bin IDs: "shelfId_binId"
         };
         setLedStrips(prev => [...prev, newStrip]);
@@ -411,8 +428,8 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
 
                                     {/* Visual LED dots inside the strip */}
                                     <div className="flex items-center justify-around w-full px-1 pointer-events-none opacity-80 overflow-hidden">
-                                        {Array.from({ length: Math.min(strip.ledCount || 6, 200) }).map((_, i) => {
-                                            const renderCount = Math.min(strip.ledCount || 6, 200);
+                                        {Array.from({ length: Math.min(strip.ledCount, 200) }).map((_, i) => {
+                                            const renderCount = Math.min(strip.ledCount, 200);
                                             const dotSize = Math.max(1, Math.min(4, (strip.width - 8) / renderCount));
                                             return (
                                                 <div key={i} className={cn("rounded-full shrink-0", isSelected ? "bg-yellow-300" : "bg-yellow-500/50")} style={{ width: dotSize, height: dotSize }} />
@@ -514,7 +531,8 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
                                             value={strip.ledCount}
                                             onChange={(e) => {
                                                 const newVal = Number(e.target.value) || 1;
-                                                setLedStrips(prev => prev.map(s => s.id === strip.id ? { ...s, ledCount: newVal } : s));
+                                                const newW = calculateLedWidth(newVal);
+                                                setLedStrips(prev => prev.map(s => s.id === strip.id ? { ...s, ledCount: newVal, width: newW } : s));
                                             }}
                                             className="h-8 text-xs bg-ot-surface-bottom border-ot-border/50"
                                         />
@@ -635,24 +653,17 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
             </div>
 
             {/* Delete Confirmation Dialog */}
-            <Dialog open={!!stripToDelete} onOpenChange={(open) => !open && setStripToDelete(null)}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Delete LED Strip</DialogTitle>
-                        <DialogDescription>
-                            Are you sure you want to delete this LED strip? This action cannot be undone.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter className="mt-4">
-                        <Button variant="ghost" onClick={() => setStripToDelete(null)}>
-                            Cancel
-                        </Button>
-                        <Button className="bg-red-500 hover:bg-red-600 text-white" onClick={handleConfirmDelete}>
-                            Delete
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+            <ConfirmDialog
+                open={!!stripToDelete}
+                onOpenChange={(open) => !open && setStripToDelete(null)}
+                title="Confirm Deletion"
+                description="Are you sure you want to delete this LED strip? This action cannot be undone."
+                confirmText="Delete"
+                cancelText="Cancel"
+                variant="destructive"
+                onConfirm={handleConfirmDelete}
+                onCancel={() => setStripToDelete(null)}
+            />
         </div>
     );
 }

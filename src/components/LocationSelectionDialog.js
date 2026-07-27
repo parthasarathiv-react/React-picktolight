@@ -30,8 +30,8 @@ export default function LocationSelectionDialog({ open, onOpenChange, onSelectLo
                 if (data.success && data.data) {
                     const grouped = {};
                     data.data.forEach(loc => {
-                        const org = loc.organization_id || 'Organization';
-                        const branch = loc.branch_id || 'Branch';
+                        const org = loc.organization_id;
+                        const branch = loc.branch_id;
                         if (!grouped[org]) grouped[org] = {};
                         if (!grouped[org][branch]) grouped[org][branch] = [];
                         grouped[org][branch].push(loc);

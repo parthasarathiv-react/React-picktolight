@@ -4,7 +4,7 @@ import { cn } from 'lib/utils';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from 'components/ui/select';
 import BinLayoutDesigner from './BinLayoutDesigner';
 
-export default function BinsTab({ cupboardsData, syncCupboards, wallsData, controllersData }) {
+export default function BinsTab({ cupboardsData, syncCupboards, wallsData, controllersData, refetchBins }) {
     const [selectedShelfContext, setSelectedShelfContext] = useState(null); // { cupboard, shelf }
 
     const [filterController, setFilterController] = useState('all');
@@ -19,19 +19,29 @@ export default function BinsTab({ cupboardsData, syncCupboards, wallsData, contr
                 onBack={() => setSelectedShelfContext(null)}
                 cupboardsData={cupboardsData}
                 syncCupboards={syncCupboards}
+                refetchBins={refetchBins}
             />
         );
     }
 
-    // Flatten all shelves from all cupboards
+    // Flatten all shelves from all cupboards (only showing shelves assigned to controller, wall & cupboard)
     const allShelves = [];
     cupboardsData.forEach(cupboard => {
         if (cupboard.shelfLayout) {
             cupboard.shelfLayout.forEach(shelf => {
-                allShelves.push({
-                    cupboard,
-                    shelf
-                });
+                const ctlId = shelf.shelf_ctl_id !== undefined ? String(shelf.shelf_ctl_id).trim() : String(cupboard.controller_id || cupboard.controller || '').trim();
+                const wallId = shelf.shelf_wall_id !== undefined ? String(shelf.shelf_wall_id).trim() : String(cupboard.wall_id || cupboard.wall || '').trim();
+                const cupboardId = shelf.shelf_cupboard_id !== undefined ? String(shelf.shelf_cupboard_id).trim() : String(cupboard.id || cupboard.name || '').trim();
+
+                // Only display shelves that have valid non-empty controller, wall, and cupboard IDs and placed === true
+                const isAssigned = ctlId !== '' && wallId !== '' && cupboardId !== '' && shelf.placed !== false;
+
+                if (isAssigned) {
+                    allShelves.push({
+                        cupboard,
+                        shelf
+                    });
+                }
             });
         }
     });

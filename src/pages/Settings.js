@@ -23,7 +23,17 @@ import LedStripsTab from 'components/settings/LedStripsTab';
 
 export default function Settings() {
     const { setSidebarOpen } = useOutletContext() || {};
-    const [activeTab, setActiveTab] = useState('controllers');
+    const [activeTab, setActiveTab] = useState(() => {
+        return localStorage.getItem('settings_active_tab') || 'controllers';
+    });
+
+    const handleTabChange = (tabId) => {
+        setActiveTab(tabId);
+        localStorage.setItem('settings_active_tab', tabId);
+        setSelectedController(null);
+        setSelectedWallForCupboards(null);
+        setSelectedCupboardForShelves(null);
+    };
 
     const [controllersData, setControllersData] = useState([]);
     const [wallsData, setWallsData] = useState([]);
@@ -92,6 +102,18 @@ export default function Settings() {
         enabled: !!locId && shouldFetchShelves,
     });
 
+    const shouldFetchBins = ['bins', 'leds'].includes(activeTab);
+    const { data: rawBins, isFetching: isFetchingBins, error: errorBins, refetch: refetchBins } = useQuery({
+        queryKey: ['bins', locId],
+        queryFn: async () => {
+            if (!locId) return [];
+            const data = await apiService.getBins(locId, 'All');
+            if (!data.success || !data.data) throw new Error("Failed to fetch bins");
+            return data.data;
+        },
+        enabled: !!locId && shouldFetchBins,
+    });
+
     useEffect(() => {
         if (fetchedControllers) {
             syncControllers(fetchedControllers);
@@ -126,26 +148,83 @@ export default function Settings() {
 
                 let shelfLayout = [];
                 if (rawShelves && Array.isArray(rawShelves)) {
-                    const matchingShelves = rawShelves.filter(s =>
-                        String(s.shelf_cupboard_id) === String(c.cupboard_id) ||
-                        String(s.shelf_cupboard_id) === String(c.cupboard_name)
-                    );
+                    const cId = String(c.cupboard_id || c.id || '');
+                    const cName = String(c.cupboard_name || c.name || '');
+
+                    const matchingShelves = rawShelves.filter(s => {
+                        const sCupId = String(s.shelf_cupboard_id || '').trim();
+                        // Matches this cupboard
+                        if (sCupId && (sCupId === cId || sCupId === cName)) return true;
+                        // Unassigned shelf from API (available for placement)
+                        if (!sCupId || sCupId === '0' || sCupId === 'null') return true;
+                        return false;
+                    });
+
                     if (matchingShelves.length > 0) {
                         shelfLayout = matchingShelves.map((s, idx) => {
                             const realId = (s.shelf_id !== undefined && s.shelf_id !== null) ? String(s.shelf_id) : ((s.id !== undefined && s.id !== null) ? String(s.id) : `shelf-${idx}`);
+                            
+                            const sCupId = String(s.shelf_cupboard_id || '').trim();
+                            const isAssigned = sCupId !== '' && (sCupId === cId || sCupId === cName);
+                            const hasGridX = s.shelf_gridx !== undefined && s.shelf_gridx !== null && s.shelf_gridx !== '' && !isNaN(parseFloat(s.shelf_gridx));
+                            const hasGridY = s.shelf_gridy !== undefined && s.shelf_gridy !== null && s.shelf_gridy !== '' && !isNaN(parseFloat(s.shelf_gridy));
+                            const hasWidth = s.shelf_width !== undefined && s.shelf_width !== null && s.shelf_width !== '' && !isNaN(parseFloat(s.shelf_width));
+                            const hasHeight = s.shelf_height !== undefined && s.shelf_height !== null && s.shelf_height !== '' && !isNaN(parseFloat(s.shelf_height));
+
+                            const isPlaced = isAssigned && hasGridX && hasGridY;
+
+                            let bins = [];
+                            if (rawBins && Array.isArray(rawBins)) {
+                                const matchingBins = rawBins.filter(b => 
+                                    String(b.bin_shelf_id || '').trim() === String(s.shelf_phr_id || '').trim()
+                                );
+                                if (matchingBins.length > 0) {
+                                    bins = matchingBins.map((b, bIdx) => ({
+                                        id: String(b.bin_id || `bin-${bIdx}`),
+                                        bin_id: b.bin_id,
+                                        label: b.bin_name || `Bin ${bIdx + 1}`,
+                                        x: parseFloat(b.bin_gridx) || 10,
+                                        y: parseFloat(b.bin_gridy) || 10,
+                                        width: parseFloat(b.bin_width) || 80,
+                                        height: parseFloat(b.bin_height) || 48,
+                                        placed: b.bin_status !== false && b.bin_status !== 'False',
+                                        bin_order: b.bin_order,
+                                        bin_phr_id: b.bin_phr_id || "122",
+                                        bin_org_id: b.bin_org_id || "skshospital",
+                                        bin_branch_id: b.bin_branch_id || "Salem",
+                                        bin_status: b.bin_status,
+                                        bin_shelf_id: b.bin_shelf_id
+                                    }));
+                                }
+                            }
+
+                            if (bins.length === 0) {
+                                try {
+                                    const layouts = JSON.parse(localStorage.getItem('cupboardLayouts') || '{}');
+                                    if (layouts[c.cupboard_id]) {
+                                        const lsShelf = layouts[c.cupboard_id].shelfLayout?.find(ls => String(ls.id) === realId || String(ls.shelf_id) === realId);
+                                        if (lsShelf && lsShelf.bins && Array.isArray(lsShelf.bins)) {
+                                            bins = lsShelf.bins;
+                                        }
+                                    }
+                                } catch (e) { }
+                            }
+
                             return {
                                 id: realId,
                                 shelf_id: s.shelf_id || s.id || realId,
                                 label: s.shelf_name || `Shelf ${idx + 1}`,
-                                x: parseFloat(s.shelf_gridx) || 20,
-                                y: parseFloat(s.shelf_gridy) || (20 + idx * 56),
-                                width: parseFloat(s.shelf_width) || 560,
-                                height: parseFloat(s.shelf_height) || 48,
+                                x: hasGridX ? parseFloat(s.shelf_gridx) : 20,
+                                y: hasGridY ? parseFloat(s.shelf_gridy) : (20 + idx * 56),
+                                width: hasWidth ? parseFloat(s.shelf_width) : 560,
+                                height: hasHeight ? parseFloat(s.shelf_height) : 48,
+                                placed: isPlaced,
                                 shelf_order: s.shelf_order,
-                                shelf_phr_id: s.shelf_phr_id,
-                                shelf_org_id: s.shelf_org_id,
-                                shelf_branch_id: s.shelf_branch_id,
-                                shelf_status: s.shelf_status
+                                shelf_phr_id: s.shelf_phr_id || "122",
+                                shelf_org_id: s.shelf_org_id || "skshospital",
+                                shelf_branch_id: s.shelf_branch_id || "Salem",
+                                shelf_status: s.shelf_status,
+                                bins: bins
                             };
                         });
                     }
@@ -184,16 +263,17 @@ export default function Settings() {
 
             syncCupboards(mapped);
         }
-    }, [rawCupboards, rawWalls, fetchedControllers, rawShelves]);
+    }, [rawCupboards, rawWalls, fetchedControllers, rawShelves, rawBins]);
 
     useEffect(() => {
         if (errorControllers) toast.error(`Failed to fetch controllers: ${errorControllers.message}`);
         if (errorWalls) toast.error(`Failed to fetch walls: ${errorWalls.message}`);
         if (errorCupboards) toast.error(`Failed to fetch cupboards: ${errorCupboards.message}`);
         if (errorShelves) toast.error(`Failed to fetch shelves: ${errorShelves.message}`);
-    }, [errorControllers, errorWalls, errorCupboards, errorShelves]);
+        if (errorBins) toast.error(`Failed to fetch bins: ${errorBins.message}`);
+    }, [errorControllers, errorWalls, errorCupboards, errorShelves, errorBins]);
 
-    const isFetchingAny = isFetchingControllers || isFetchingWalls || isFetchingCupboards || isFetchingShelves;
+    const isFetchingAny = isFetchingControllers || isFetchingWalls || isFetchingCupboards || isFetchingShelves || isFetchingBins;
 
     // Wall layout designer: which controller was selected
     const [selectedController, setSelectedController] = useState(null);
@@ -271,7 +351,7 @@ export default function Settings() {
     }, [isInDesignerMode, setSidebarOpen]);
 
     return (
-        <div className={cn('flex', isInDesignerMode ? 'h-[calc(100vh-5rem)]' : 'h-[calc(100vh-8rem)] gap-6')}>
+        <div className={cn('flex w-full', isInDesignerMode ? 'h-[calc(100vh-7.5rem)]' : 'h-[calc(100vh-8rem)] gap-6')}>
 
             {/* ── Left nav sidebar — hidden in designer mode ──────────────── */}
             {!isInDesignerMode && (
@@ -288,12 +368,7 @@ export default function Settings() {
                                     <Button
                                         key={tab.id}
                                         variant="ghost"
-                                        onClick={() => {
-                                            setActiveTab(tab.id);
-                                            setSelectedController(null);
-                                            setSelectedWallForCupboards(null);
-                                            setSelectedCupboardForShelves(null);
-                                        }}
+                                        onClick={() => handleTabChange(tab.id)}
                                         className={cn(
                                             'flex items-center justify-start gap-3 px-3 py-2.5 w-full rounded-lg text-sm font-medium transition-all',
                                             activeTab === tab.id
@@ -313,7 +388,7 @@ export default function Settings() {
 
             {/* ── Right content area ──────────────────────────────────────── */}
             <Card className="flex-1 flex flex-col min-w-0 overflow-hidden">
-                <div className={cn('flex-1 flex flex-col overflow-hidden', isInDesignerMode ? 'p-0' : 'p-6')}>
+                <div className={cn('flex-1 flex flex-col', isInDesignerMode ? 'p-0 overflow-hidden' : 'p-6 overflow-y-auto')}>
 
                     {isFetchingAny ? (
                         <div className="flex-1 flex flex-col items-center justify-center gap-4 text-muted-foreground">
@@ -380,6 +455,7 @@ export default function Settings() {
                             syncCupboards={syncCupboards}
                             wallsData={wallsData}
                             controllersData={controllersData}
+                            refetchBins={refetchBins}
                         />
                     )}
 

@@ -7,6 +7,7 @@ import { cn } from 'lib/utils';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from 'components/ui/table';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from 'components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from 'components/ui/dialog';
+import { ConfirmDialog } from 'components/ui/ConfirmDialog';
 import { toast } from 'sonner';
 import { apiService } from 'lib/apiService';
 
@@ -240,40 +241,17 @@ export default function ControllersTab({ controllersData, syncControllers }) {
                     </div>
                 )}
             </div>
-            <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-                <DialogContent className="sm:max-w-md border-red-500/20 bg-gradient-to-b from-ot-surface-top/90 to-ot-bg-bottom/90 backdrop-blur-xl">
-                    <DialogHeader>
-                        <div className="flex flex-col items-center gap-4 py-4">
-                            <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center border border-red-500/20">
-                                <AlertTriangle className="w-6 h-6 text-red-500" />
-                            </div>
-                            <div className="space-y-2 text-center">
-                                <DialogTitle className="text-xl text-white">Confirm Deletion</DialogTitle>
-                                <DialogDescription className="text-muted-foreground text-sm">
-                                    Are you sure you want to delete this controller? This action cannot be undone and will remove it permanently.
-                                </DialogDescription>
-                            </div>
-                        </div>
-                    </DialogHeader>
-                    <DialogFooter className="flex justify-center gap-3 sm:justify-center mt-2 border-t border-ot-border/50 pt-4">
-                        <Button
-                            variant="outline"
-                            className="border-ot-border text-white hover:bg-ot-surface-elev-bottom min-w-[100px]"
-                            onClick={() => {
-                                setDeleteDialogOpen(false);
-                                setControllerToDelete(null);
-                            }}>
-                            Cancel
-                        </Button>
-                        <Button
-                            variant="destructive"
-                            className="bg-red-600 hover:bg-red-700 text-white min-w-[100px] shadow-lg shadow-red-900/20"
-                            onClick={confirmDeleteController}>
-                            Delete
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+            <ConfirmDialog
+                open={deleteDialogOpen}
+                onOpenChange={setDeleteDialogOpen}
+                title="Confirm Deletion"
+                description="Are you sure you want to delete this controller? This action cannot be undone and will remove it permanently."
+                confirmText="Delete"
+                cancelText="Cancel"
+                variant="destructive"
+                onConfirm={confirmDeleteController}
+                onCancel={() => setControllerToDelete(null)}
+            />
         </div>
     );
 }

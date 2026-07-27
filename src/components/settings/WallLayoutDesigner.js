@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { apiService } from 'lib/apiService';
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from 'components/ui/dialog';
+import { ConfirmDialog } from 'components/ui/ConfirmDialog';
 
 const CELL = 56;
 const MIN_ROWS = 10;
@@ -16,6 +17,32 @@ const COL_LABEL_H = 18;   // px for 1–N labels on top
 export default function WallLayoutDesigner({ controller, onBack, wallsData, syncWalls }) {
     const [canvasWalls, setCanvasWalls] = useState([]);
     const [dragging, setDragging] = useState(null);
+    const [selectedWallId, setSelectedWallId] = useState(null);
+
+    // Keyboard Arrow Nudging Listener
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (!selectedWallId) return;
+            if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setCanvasWalls(prev => prev.map(w => w.canvasId === selectedWallId ? { ...w, y: Math.max(0, (w.y !== undefined ? w.y : w.gridY || 0) - 1) } : w));
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setCanvasWalls(prev => prev.map(w => w.canvasId === selectedWallId ? { ...w, y: (w.y !== undefined ? w.y : w.gridY || 0) + 1 } : w));
+            } else if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                setCanvasWalls(prev => prev.map(w => w.canvasId === selectedWallId ? { ...w, x: Math.max(0, (w.x !== undefined ? w.x : w.gridX || 0) - 1) } : w));
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                setCanvasWalls(prev => prev.map(w => w.canvasId === selectedWallId ? { ...w, x: (w.x !== undefined ? w.x : w.gridX || 0) + 1 } : w));
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [selectedWallId]);
     const [panDragging, setPanDragging] = useState(null);
     const [saveFlash, setSaveFlash] = useState(false);
     const [wallToDelete, setWallToDelete] = useState(null);
@@ -140,6 +167,7 @@ export default function WallLayoutDesigner({ controller, onBack, wallsData, sync
     const startDrag = (e, canvasId) => {
         if (e.target.closest('button') || e.target.closest('input')) return;
         e.preventDefault();
+        setSelectedWallId(canvasId);
         const wr = e.currentTarget.getBoundingClientRect();
         setDragging({ canvasId, offsetX: e.clientX - wr.left, offsetY: e.clientY - wr.top });
     };
@@ -534,24 +562,17 @@ export default function WallLayoutDesigner({ controller, onBack, wallsData, sync
                 </div>
             </div>
             {/* Delete Confirmation Dialog */}
-            <Dialog open={!!wallToDelete} onOpenChange={(open) => !open && setWallToDelete(null)}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Delete Wall</DialogTitle>
-                        <DialogDescription>
-                            Are you sure you want to delete this wall? This will immediately remove it from the database.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter className="mt-4">
-                        <Button variant="ghost" onClick={() => setWallToDelete(null)}>
-                            Cancel
-                        </Button>
-                        <Button className="bg-red-500 hover:bg-red-600 text-white" onClick={confirmRemoveWall}>
-                            Delete
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+            <ConfirmDialog
+                open={!!wallToDelete}
+                onOpenChange={(open) => !open && setWallToDelete(null)}
+                title="Confirm Deletion"
+                description="Are you sure you want to delete this wall? This will immediately remove it from the database."
+                confirmText="Delete"
+                cancelText="Cancel"
+                variant="destructive"
+                onConfirm={confirmRemoveWall}
+                onCancel={() => setWallToDelete(null)}
+            />
         </div>
     );
 }

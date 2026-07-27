@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Outlet, NavLink, useOutletContext } from 'react-router-dom';
+import { Outlet, NavLink, useOutletContext, useNavigate, useLocation } from 'react-router-dom';
 import { Activity, Settings, Users, Box, LogOut, PackageSearch, PanelLeftClose, PanelLeft, Barcode, MapPin, RefreshCw } from 'lucide-react';
 import { cn } from 'lib/utils';
-import { useNavigate } from 'react-router-dom';
 import { Button } from 'components/ui/button';
 import LocationSelectionDialog from 'components/LocationSelectionDialog';
 import { API_URL } from 'config/api';
@@ -15,9 +14,16 @@ const navItems = [
 
 export default function MainLayout() {
     const navigate = useNavigate();
+    const location = useLocation();
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [showLocationDialog, setShowLocationDialog] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
+
+    useEffect(() => {
+        if (location.pathname && location.pathname !== '/login') {
+            localStorage.setItem('last_active_path', location.pathname);
+        }
+    }, [location]);
 
     useEffect(() => {
         const checkToken = () => {
