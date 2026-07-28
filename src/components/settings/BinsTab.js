@@ -4,8 +4,18 @@ import { cn } from 'lib/utils';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from 'components/ui/select';
 import BinLayoutDesigner from './BinLayoutDesigner';
 
-export default function BinsTab({ cupboardsData, syncCupboards, wallsData, controllersData, refetchBins }) {
-    const [selectedShelfContext, setSelectedShelfContext] = useState(null); // { cupboard, shelf }
+export default function BinsTab({
+    cupboardsData,
+    syncCupboards,
+    wallsData,
+    controllersData,
+    refetchBins,
+    selectedShelfContext: propSelectedShelfContext,
+    onSelectShelfContext
+}) {
+    const [internalSelectedShelfContext, setInternalSelectedShelfContext] = useState(null); // { cupboard, shelf }
+    const selectedShelfContext = propSelectedShelfContext !== undefined ? propSelectedShelfContext : internalSelectedShelfContext;
+    const setSelectedShelfContext = onSelectShelfContext || setInternalSelectedShelfContext;
 
     const [filterController, setFilterController] = useState('all');
     const [filterWall, setFilterWall] = useState('all');
@@ -176,11 +186,13 @@ export default function BinsTab({ cupboardsData, syncCupboards, wallsData, contr
                                 </div>
                             </div>
 
-                            <div className="mt-4 pt-4 border-t border-ot-border/50 flex i
-tems-center justify-between text-xs text-muted-foreground w-full">
+                            <div className="mt-4 pt-4 border-t border-ot-border/50 flex items-center justify-between text-xs text-muted-foreground w-full">
                                 <span className="flex items-center gap-1.5">
                                     <Archive className="w-3.5 h-3.5" />
                                     {binCount} Bins
+                                </span>
+                                <span className="font-mono text-[11px] text-muted-foreground/70">
+                                    {Math.round(parseFloat(shelf.width) || parseFloat(shelf.shelf_width) || 560)}×{Math.round(parseFloat(shelf.height) || parseFloat(shelf.shelf_height) || 48)}px
                                 </span>
                             </div>
 

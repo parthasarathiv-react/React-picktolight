@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Button } from 'components/ui/button';
-import { ArrowLeft, Save, CheckCircle2, Plus, X, Box, GripVertical, Server, ChevronRight, LayoutGrid, AlertTriangle, Layers, Check, Sparkles } from 'lucide-react';
+import { ArrowLeft, Save, CheckCircle2, Box, GripVertical, Server, ChevronRight, LayoutGrid, Layers, Check, Sparkles, Ban } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { Input } from 'components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from 'components/ui/dialog';
@@ -17,8 +17,8 @@ const MIN_SHELF_H = 40;
 
 export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, syncCupboards, refetchShelves }) {
     const [saveFlash, setSaveFlash] = useState(false);
-    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-    const [shelfToDelete, setShelfToDelete] = useState(null);
+    const [disableDialogOpen, setDisableDialogOpen] = useState(false);
+    const [shelfToDisable, setShelfToDisable] = useState(null);
     const [isCanvasOver, setIsCanvasOver] = useState(false);
     const sidebarDragItemRef = useRef(null);
 
@@ -88,7 +88,7 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
     });
 
     const addShelf = () => {
-        const placedBlocks = shelfBlocks.filter(s => s.placed !== false);
+        const placedBlocks = shelfBlocks.filter(s => s.placed !== false && s.disabled !== true && s.shelf_status !== false && String(s.shelf_status).toLowerCase() !== 'false');
         const maxY = placedBlocks.reduce((m, s) => Math.max(m, s.y + s.height), 20);
         const newShelf = {
             id: `shelf-${Date.now()}`,
@@ -154,7 +154,7 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
     const handlePlaceOnCanvas = (shelfId) => {
         setShelfBlocks(prev => prev.map(s => {
             if (String(s.id) === String(shelfId)) {
-                const placedItems = prev.filter(item => item.placed !== false);
+                const placedItems = prev.filter(item => item.placed !== false && item.disabled !== true && item.shelf_status !== false && String(item.shelf_status).toLowerCase() !== 'false');
                 const maxY = placedItems.reduce((m, item) => Math.max(m, item.y + item.height), 20);
                 return {
                     ...s,
@@ -167,29 +167,36 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
         }));
     };
 
-    const handleDeleteShelf = (shelf) => {
-        setShelfToDelete(shelf);
-        setDeleteDialogOpen(true);
+    const handleDisableShelf = (shelf) => {
+        setShelfToDisable(shelf);
+        setDisableDialogOpen(true);
     };
 
-    const confirmDeleteShelf = async () => {
-        if (!shelfToDelete) return;
-        const targetShelf = shelfToDelete;
+    const confirmDisableShelf = async () => {
+        if (!shelfToDisable) return;
+        const targetShelf = shelfToDisable;
         const shelfId = (targetShelf.shelf_id !== undefined && targetShelf.shelf_id !== null) ? targetShelf.shelf_id : targetShelf.id;
 
         try {
             const isBackendShelf = shelfId && !String(shelfId).startsWith('shelf-');
             if (isBackendShelf) {
-                await apiService.deleteShelf(shelfId);
-                toast.success("Shelf deleted successfully");
+                await apiService.disableShelf(shelfId, false);
+                toast.success("Shelf disabled successfully");
             } else {
-                toast.success("Shelf removed");
+                toast.success("Shelf disabled");
             }
 
-            const updatedBlocks = shelfBlocks.filter(s =>
-                String(s.id) !== String(targetShelf.id) &&
-                String(s.shelf_id || '') !== String(shelfId)
-            );
+            const updatedBlocks = shelfBlocks.map(s => {
+                if (String(s.id) === String(targetShelf.id) || (shelfId && String(s.shelf_id || '') === String(shelfId))) {
+                    return {
+                        ...s,
+                        placed: false,
+                        disabled: true,
+                        shelf_status: false
+                    };
+                }
+                return s;
+            });
 
             // 1. Immediately update local state in canvas & sidebar
             setShelfBlocks(updatedBlocks);
@@ -209,11 +216,54 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
             }
 
         } catch (error) {
-            console.error("Error deleting shelf:", error);
-            toast.error(`Failed to delete shelf: ${error.message || 'Unknown error'}`);
+            console.error("Error disabling shelf:", error);
+            toast.error(`Failed to disable shelf: ${error.message || 'Unknown error'}`);
         } finally {
-            setDeleteDialogOpen(false);
-            setShelfToDelete(null);
+            setDisableDialogOpen(false);
+            setShelfToDisable(null);
+        }
+    };
+
+    const handleEnableShelf = async (shelf) => {
+        const shelfId = (shelf.shelf_id !== undefined && shelf.shelf_id !== null) ? shelf.shelf_id : shelf.id;
+
+        try {
+            const isBackendShelf = shelfId && !String(shelfId).startsWith('shelf-');
+            if (isBackendShelf) {
+                await apiService.disableShelf(shelfId, true);
+                toast.success("Shelf enabled successfully");
+            } else {
+                toast.success("Shelf enabled");
+            }
+
+            const updatedBlocks = shelfBlocks.map(s => {
+                if (String(s.id) === String(shelf.id) || (shelfId && String(s.shelf_id || '') === String(shelfId))) {
+                    return {
+                        ...s,
+                        disabled: false,
+                        shelf_status: true
+                    };
+                }
+                return s;
+            });
+
+            setShelfBlocks(updatedBlocks);
+
+            const shelves = updatedBlocks.length;
+            const updatedCupboards = cupboardsData.map(c =>
+                String(c.id) === String(cupboard.id)
+                    ? { ...c, shelves, rows: shelves, shelfLayout: updatedBlocks }
+                    : c
+            );
+            syncCupboards(updatedCupboards);
+
+            if (refetchShelves) {
+                await refetchShelves();
+            }
+
+        } catch (error) {
+            console.error("Error enabling shelf:", error);
+            toast.error(`Failed to enable shelf: ${error.message || 'Unknown error'}`);
         }
     };
 
@@ -416,7 +466,7 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
         }
     };
 
-    const canvasBlocks = shelfBlocks.filter(s => s.placed === true);
+    const canvasBlocks = shelfBlocks.filter(s => s.placed === true && s.disabled !== true && s.shelf_status !== false && String(s.shelf_status).toLowerCase() !== 'false');
 
     // Compute canvas size dynamically based on PLACED shelf positions only
     const canvasWidth = Math.max(CANVAS_W, ...canvasBlocks.map(s => (s.x || 0) + (s.width || SHELF_W) + 40));
@@ -516,7 +566,7 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                 <div className="flex items-center gap-3">
                     <Button
                         onClick={handleSave}
-                        disabled={shelfBlocks.filter(s => s.placed === true).length === 0}
+                        disabled={shelfBlocks.filter(s => s.placed === true && s.disabled !== true && s.shelf_status !== false).length === 0}
                         className={cn(
                             'gap-2 h-8 px-4 text-sm transition-all duration-300 disabled:opacity-40',
                             saveFlash
@@ -570,7 +620,7 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                         {canvasBlocks.length === 0 && (
                             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-muted-foreground/50 text-xs gap-2">
                                 <Sparkles className="w-8 h-8 text-ot-action/50 animate-pulse" />
-                                <span className="font-medium text-white/80">No shelves placed on canvas yet.</span>
+                                <span className="font-medium text-white/80">No active shelves placed on canvas yet.</span>
                                 <span>Drag a shelf from the right sidebar to place & align it here.</span>
                             </div>
                         )}
@@ -612,14 +662,15 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                                         </span>
                                     </div>
 
-
+                                    {/* Disable button */}
                                     <button
-                                        onClick={(e) => { e.stopPropagation(); handleDeleteShelf(shelf); }}
+                                        onClick={(e) => { e.stopPropagation(); handleDisableShelf(shelf); }}
                                         onPointerDown={(e) => e.stopPropagation()}
-                                        className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500/80 hover:bg-red-500 text-white flex items-center justify-center z-30 opacity-0 hover:opacity-100 transition-opacity shadow-lg"
+                                        className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-amber-500/80 hover:bg-amber-500 text-white flex items-center justify-center z-30 opacity-0 hover:opacity-100 transition-opacity shadow-lg"
                                         style={{ pointerEvents: 'auto' }}
+                                        title="Disable Shelf"
                                     >
-                                        <X className="w-3 h-3" />
+                                        <Ban className="w-3 h-3" />
                                     </button>
 
                                     {/* ─── Resize Handles (4 edges + 4 corners) ──────────── */}
@@ -698,17 +749,20 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                     <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2"
                         style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.1) transparent' }}>
                         {shelfBlocks.map((shelf, idx) => {
-                            const isPlaced = shelf.placed !== false;
+                            const isDisabled = shelf.disabled === true || shelf.shelf_status === false || String(shelf.shelf_status).toLowerCase() === 'false';
+                            const isPlaced = shelf.placed !== false && !isDisabled;
                             return (
                                 <div
                                     key={shelf.id}
-                                    draggable
-                                    onDragStart={(e) => handleSidebarDragStart(e, shelf)}
+                                    draggable={!isDisabled}
+                                    onDragStart={(e) => !isDisabled && handleSidebarDragStart(e, shelf)}
                                     className={cn(
-                                        "flex flex-col gap-1.5 p-2.5 rounded-lg border transition-all cursor-grab active:cursor-grabbing group select-none relative",
-                                        isPlaced
-                                            ? "bg-ot-surface-elev-bottom/80 border-ot-action/40 hover:border-ot-action hover:shadow-md hover:shadow-ot-action/10"
-                                            : "bg-ot-surface-elev-bottom/40 border-amber-500/30 hover:border-amber-500/60"
+                                        "flex flex-col gap-1.5 p-2.5 rounded-lg border transition-all select-none relative",
+                                        isDisabled
+                                            ? "bg-red-500/5 border-red-500/20 opacity-80"
+                                            : (isPlaced
+                                                ? "bg-ot-surface-elev-bottom/80 border-ot-action/40 hover:border-ot-action hover:shadow-md hover:shadow-ot-action/10 cursor-grab active:cursor-grabbing group"
+                                                : "bg-ot-surface-elev-bottom/40 border-amber-500/30 hover:border-amber-500/60 cursor-grab active:cursor-grabbing group")
                                     )}
                                 >
                                     <div className="flex items-center justify-between gap-2">
@@ -722,13 +776,15 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                                             </span>
                                         </div>
 
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); handleDeleteShelf(shelf); }}
-                                            className="w-4 h-4 rounded flex items-center justify-center text-muted-foreground hover:text-red-400 hover:bg-red-400/10 transition-colors shrink-0"
-                                            title="Delete Shelf"
-                                        >
-                                            <X className="w-3 h-3" />
-                                        </button>
+                                        {!isDisabled && (
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handleDisableShelf(shelf); }}
+                                                className="w-4 h-4 rounded flex items-center justify-center text-muted-foreground hover:text-amber-400 hover:bg-amber-400/10 transition-colors shrink-0"
+                                                title="Disable Shelf"
+                                            >
+                                                <Ban className="w-3 h-3" />
+                                            </button>
+                                        )}
                                     </div>
 
                                     <div className="flex items-center justify-between text-[10px] pl-5">
@@ -737,23 +793,40 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                                         </span>
 
                                         <div className="flex items-center gap-1.5">
-                                            {isPlaced ? (
-                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 text-[9px] font-medium border border-emerald-500/20">
-                                                    <Check className="w-2.5 h-2.5" /> Placed
-                                                </span>
+                                            {isDisabled ? (
+                                                <>
+                                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 text-[9px] font-medium border border-red-500/20">
+                                                        <Ban className="w-2.5 h-2.5" /> Disabled
+                                                    </span>
+                                                    <button
+                                                        onClick={() => handleEnableShelf(shelf)}
+                                                        className="px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500 text-emerald-400 hover:text-white text-[9px] font-medium transition-colors border border-emerald-500/30"
+                                                        title="Enable shelf"
+                                                    >
+                                                        Enable
+                                                    </button>
+                                                </>
                                             ) : (
-                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 text-[9px] font-medium border border-amber-500/20">
-                                                    Unplaced
-                                                </span>
-                                            )}
+                                                <>
+                                                    {isPlaced ? (
+                                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 text-[9px] font-medium border border-emerald-500/20">
+                                                            <Check className="w-2.5 h-2.5" /> Placed
+                                                        </span>
+                                                    ) : (
+                                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 text-[9px] font-medium border border-amber-500/20">
+                                                            Unplaced
+                                                        </span>
+                                                    )}
 
-                                            <button
-                                                onClick={() => handlePlaceOnCanvas(shelf.id)}
-                                                className="px-1.5 py-0.5 rounded bg-ot-action/20 hover:bg-ot-action text-ot-action hover:text-white text-[9px] font-medium transition-colors border border-ot-action/30"
-                                                title="Place shelf on canvas"
-                                            >
-                                                {isPlaced ? "Move" : "+ Place"}
-                                            </button>
+                                                    <button
+                                                        onClick={() => handlePlaceOnCanvas(shelf.id)}
+                                                        className="px-1.5 py-0.5 rounded bg-ot-action/20 hover:bg-ot-action text-ot-action hover:text-white text-[9px] font-medium transition-colors border border-ot-action/30"
+                                                        title="Place shelf on canvas"
+                                                    >
+                                                        {isPlaced ? "Move" : "+ Place"}
+                                                    </button>
+                                                </>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -770,15 +843,15 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
             </div>
 
             <ConfirmDialog
-                open={deleteDialogOpen}
-                onOpenChange={setDeleteDialogOpen}
-                title="Confirm Deletion"
-                description="Are you sure you want to delete this shelf? This action cannot be undone and will remove it permanently."
-                confirmText="Delete"
+                open={disableDialogOpen}
+                onOpenChange={setDisableDialogOpen}
+                title="Confirm Disable Shelf"
+                description={`Are you sure you want to disable "${shelfToDisable?.label || 'this shelf'}"? It will be removed from the design page canvas and moved to the side list.`}
+                confirmText="Disable"
                 cancelText="Cancel"
-                variant="destructive"
-                onConfirm={confirmDeleteShelf}
-                onCancel={() => setShelfToDelete(null)}
+                variant="warning"
+                onConfirm={confirmDisableShelf}
+                onCancel={() => setShelfToDisable(null)}
             />
         </div>
     );

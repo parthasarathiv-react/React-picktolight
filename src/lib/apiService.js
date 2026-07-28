@@ -8,30 +8,72 @@ const getHeaders = () => {
     };
 };
 
+const extractErrorMessage = (errData) => {
+    if (!errData) return 'Unknown error';
+
+    if (errData.errors && Array.isArray(errData.errors) && errData.errors.length > 0) {
+        return errData.errors
+            .map(e => {
+                if (typeof e === 'string') return e;
+                if (e?.msg) return e.msg;
+                if (e?.detail) return e.detail;
+                return JSON.stringify(e);
+            })
+            .join('; ');
+    }
+
+    if (errData.detail) {
+        if (typeof errData.detail === 'string') return errData.detail;
+        if (Array.isArray(errData.detail) && errData.detail.length > 0) {
+            return errData.detail
+                .map(e => {
+                    if (typeof e === 'string') return e;
+                    if (e?.msg) return e.msg;
+                    return JSON.stringify(e);
+                })
+                .join('; ');
+        }
+    }
+
+    if (errData.message && typeof errData.message === 'string') {
+        return errData.message;
+    }
+
+    return 'Unknown error';
+};
+
 const handleResponse = async (response) => {
     if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
-        let errMsg = 'Unknown error';
-        if (errData?.detail) {
-            errMsg = typeof errData.detail === 'string'
-                ? errData.detail
-                : (Array.isArray(errData.detail) ? errData.detail.map(e => e.msg || JSON.stringify(e)).join(', ') : 'Unknown error');
-        } else if (errData?.message) {
-            errMsg = errData.message;
-        }
+        let errMsg = extractErrorMessage(errData);
 
         if (response.status === 401) {
             localStorage.removeItem('token');
             localStorage.removeItem('selectedLocation');
             window.location.href = '#/login';
-            throw new Error('Session expired. Please login again.');
+            const err = new Error('Session expired. Please login again.');
+            err.raw = errData;
+            throw err;
         }
 
-        throw new Error(errMsg);
+        const err = new Error(errMsg);
+        err.raw = errData;
+        err.fieldErrors = errData?.errors || errData?.detail;
+        throw err;
     }
     // Handle cases where 204 No Content is returned, to prevent JSON parse errors
     if (response.status === 204) return null;
-    return response.json();
+
+    const data = await response.json();
+    if (data && data.success === false) {
+        let errMsg = extractErrorMessage(data);
+        const err = new Error(errMsg);
+        err.raw = data;
+        err.fieldErrors = data?.errors || data?.detail;
+        throw err;
+    }
+
+    return data;
 };
 
 export const apiService = {
@@ -158,6 +200,13 @@ export const apiService = {
         });
         return handleResponse(response);
     },
+    disableShelf: async (id, status = true) => {
+        const response = await fetch(`${API_URL}/config/disable-shelf/${id}/${status}`, {
+            method: 'PUT',
+            headers: getHeaders()
+        });
+        return handleResponse(response);
+    },
 
     // Bins
     getBins: async (locId = 'All', shelfId = 'All') => {
@@ -176,6 +225,44 @@ export const apiService = {
     },
     deleteBin: async (id) => {
         const response = await fetch(`${API_URL}/config/delete-bin/${id}`, {
+            method: 'DELETE',
+            headers: getHeaders()
+        });
+        return handleResponse(response);
+    },
+    disableBin: async (id, status = true) => {
+        const response = await fetch(`${API_URL}/config/disable-bin/${id}/${status}`, {
+            method: 'PUT',
+            headers: getHeaders()
+        });
+        return handleResponse(response);
+    },
+
+    // Users
+    getUsers: async () => {
+        const response = await fetch(`${API_URL}/users/getusers`, {
+            headers: getHeaders()
+        });
+        return handleResponse(response);
+    },
+    createUser: async (payload) => {
+        const response = await fetch(`${API_URL}/users/`, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify(payload)
+        });
+        return handleResponse(response);
+    },
+    updateUser: async (id, payload) => {
+        const response = await fetch(`${API_URL}/users/${id}`, {
+            method: 'PUT',
+            headers: getHeaders(),
+            body: JSON.stringify(payload)
+        });
+        return handleResponse(response);
+    },
+    deleteUser: async (id) => {
+        const response = await fetch(`${API_URL}/users/${id}`, {
             method: 'DELETE',
             headers: getHeaders()
         });

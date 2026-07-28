@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Button } from 'components/ui/button';
-import { ArrowLeft, Save, CheckCircle2, Plus, X, Layers, GripVertical, Server, ChevronRight, LayoutGrid, Box, Sparkles, Check, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Save, CheckCircle2, Plus, X, Layers, GripVertical, Server, ChevronRight, LayoutGrid, Box, Sparkles, Check, AlertTriangle, Ban } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { Input } from 'components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from 'components/ui/dialog';
@@ -13,8 +13,8 @@ const MIN_BIN_H = 40;
 
 export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsData, syncCupboards, refetchBins }) {
     const [saveFlash, setSaveFlash] = useState(false);
-    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-    const [binToDelete, setBinToDelete] = useState(null);
+    const [disableDialogOpen, setDisableDialogOpen] = useState(false);
+    const [binToDisable, setBinToDisable] = useState(null);
     const [isCanvasOver, setIsCanvasOver] = useState(false);
     const [isLoadingBins, setIsLoadingBins] = useState(false);
     const sidebarDragItemRef = useRef(null);
@@ -30,29 +30,36 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
         return [];
     });
 
-    const handleDeleteBin = (bin) => {
-        setBinToDelete(bin);
-        setDeleteDialogOpen(true);
+    const handleDisableBin = (bin) => {
+        setBinToDisable(bin);
+        setDisableDialogOpen(true);
     };
 
-    const confirmDeleteBin = async () => {
-        if (!binToDelete) return;
-        const targetBin = binToDelete;
+    const confirmDisableBin = async () => {
+        if (!binToDisable) return;
+        const targetBin = binToDisable;
         const binId = targetBin.bin_id || (typeof targetBin.id === 'number' ? targetBin.id : (!isNaN(Number(targetBin.id)) && String(targetBin.id).indexOf('bin-') === -1 ? Number(targetBin.id) : null));
 
         try {
             const isBackendBin = binId && !String(binId).startsWith('bin-');
             if (isBackendBin) {
-                await apiService.deleteBin(binId);
-                toast.success("Bin deleted successfully");
+                await apiService.disableBin(binId, false);
+                toast.success("Bin disabled successfully");
             } else {
-                toast.success("Bin removed");
+                toast.success("Bin disabled");
             }
 
-            const updatedBlocks = binBlocks.filter(b =>
-                String(b.id) !== String(targetBin.id) &&
-                String(b.bin_id || '') !== String(binId || '')
-            );
+            const updatedBlocks = binBlocks.map(b => {
+                if (String(b.id) === String(targetBin.id) || (binId && String(b.bin_id || '') === String(binId))) {
+                    return {
+                        ...b,
+                        placed: false,
+                        disabled: true,
+                        bin_status: false
+                    };
+                }
+                return b;
+            });
 
             setBinBlocks(updatedBlocks);
 
@@ -81,11 +88,55 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                 await refetchBins();
             }
         } catch (error) {
-            console.error("Error deleting bin:", error);
-            toast.error(`Failed to delete bin: ${error.message || 'Unknown error'}`);
+            console.error("Error disabling bin:", error);
+            toast.error(`Failed to disable bin: ${error.message || 'Unknown error'}`);
         } finally {
-            setDeleteDialogOpen(false);
-            setBinToDelete(null);
+            setDisableDialogOpen(false);
+            setBinToDisable(null);
+        }
+    };
+
+    const handleEnableBin = async (bin) => {
+        const binId = bin.bin_id || (typeof bin.id === 'number' ? bin.id : (!isNaN(Number(bin.id)) && String(bin.id).indexOf('bin-') === -1 ? Number(bin.id) : null));
+
+        try {
+            const isBackendBin = binId && !String(binId).startsWith('bin-');
+            if (isBackendBin) {
+                await apiService.disableBin(binId, true);
+                toast.success("Bin enabled successfully");
+            } else {
+                toast.success("Bin enabled");
+            }
+
+            const updatedBlocks = binBlocks.map(b => {
+                if (String(b.id) === String(bin.id) || (binId && String(b.bin_id || '') === String(binId))) {
+                    return {
+                        ...b,
+                        disabled: false,
+                        bin_status: true
+                    };
+                }
+                return b;
+            });
+
+            setBinBlocks(updatedBlocks);
+
+            const updatedCupboards = JSON.parse(JSON.stringify(cupboardsData));
+            const targetCupboard = updatedCupboards.find(c => String(c.id) === String(cupboard.id));
+            if (targetCupboard && targetCupboard.shelfLayout) {
+                const targetShelf = targetCupboard.shelfLayout.find(s => String(s.id) === String(shelf.id));
+                if (targetShelf) {
+                    targetShelf.bins = updatedBlocks;
+                }
+            }
+            syncCupboards(updatedCupboards);
+
+            if (refetchBins) {
+                await refetchBins();
+            }
+        } catch (error) {
+            console.error("Error enabling bin:", error);
+            toast.error(`Failed to enable bin: ${error.message || 'Unknown error'}`);
         }
     };
 
@@ -147,6 +198,15 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
         fetchBinsForShelf();
     }, [shelf?.shelf_id, shelf?.id]);
 
+    const shelfW = (shelf?.width && !isNaN(parseFloat(shelf.width)))
+        ? parseFloat(shelf.width)
+        : ((shelf?.shelf_width && !isNaN(parseFloat(shelf.shelf_width))) ? parseFloat(shelf.shelf_width) : 560);
+
+    const shelfH = (shelf?.height && !isNaN(parseFloat(shelf.height)))
+        ? parseFloat(shelf.height)
+        : ((shelf?.shelf_height && !isNaN(parseFloat(shelf.shelf_height))) ? parseFloat(shelf.shelf_height) : 48);
+
+
     const [dragging, setDragging] = useState(null);
     const [selectedId, setSelectedId] = useState(null);
     const canvasRef = useRef(null);
@@ -182,6 +242,8 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
         if (e.currentTarget && e.relatedTarget && e.currentTarget.contains(e.relatedTarget)) return;
         setIsCanvasOver(false);
     };
+    // Multiplier scale (scales small shelf dimensions up to ~720px wide workspace)
+    const scale = Math.max(2.5, Math.min(3.5, 720 / shelfW));
 
     const handleCanvasDrop = (e) => {
         e.preventDefault();
@@ -195,8 +257,8 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
 
         if (!canvasRef.current) return;
         const rect = canvasRef.current.getBoundingClientRect();
-        const dropX = Math.max(0, Math.round(e.clientX - rect.left - (targetBin.width || 80) / 2));
-        const dropY = Math.max(0, Math.round(e.clientY - rect.top - (targetBin.height || 48) / 2));
+        const dropX = Math.max(0, Math.round(e.clientX - rect.left - (targetBin.width) / 2));
+        const dropY = Math.max(0, Math.round(e.clientY - rect.top - (targetBin.height) / 2));
 
         setBinBlocks(prev => prev.map(b => {
             if (String(b.id) === String(binId)) {
@@ -421,12 +483,15 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
 
     const canvasBlocks = binBlocks.filter(b => b.placed !== false);
 
-    const CANVAS_W = 600;
-    const CANVAS_H = 450;
+    const maxBinRight = canvasBlocks.length > 0 ? Math.max(...canvasBlocks.map(b => (Number(b.x) || 0) + (Number(b.width) || 0))) : 0;
+    const maxBinBottom = canvasBlocks.length > 0 ? Math.max(...canvasBlocks.map(b => (Number(b.y) || 0) + (Number(b.height) || 0))) : 0;
 
-    // Calculate canvas size based on placed bins or default canvas box dimensions
-    const shelfVisualWidth = Math.max(CANVAS_W, shelf.width || 600, ...canvasBlocks.map(b => (b.x || 0) + (b.width || 80) + 40));
-    const shelfVisualHeight = Math.max(CANVAS_H, shelf.height || 100, ...canvasBlocks.map(b => (b.y || 0) + (b.height || 48) + 40));
+    const baseShelfW = shelfW * 2; // shelf width + 100% extra width
+    const baseShelfH = shelfH * 1.5; // shelf height + 50% extra height
+
+    // Canvas visual width (+100% width) and height (+50% height) for Bin Designer, expanding if bins overflow
+    const shelfVisualWidth = Math.max(baseShelfW, maxBinRight > baseShelfW ? maxBinRight + 20 : baseShelfW);
+    const shelfVisualHeight = Math.max(baseShelfH, maxBinBottom > baseShelfH ? maxBinBottom + 20 : baseShelfH);
 
     // Panning logic
     const handlePointerDown = (e) => {
@@ -489,16 +554,24 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                     </Button>
                     <div className="h-5 w-px bg-ot-border" />
                     <div className="flex items-center gap-1.5 text-xs">
-                        <div className="flex items-center gap-1.5 text-ot-action bg-ot-action/10 px-2 py-1 rounded-md font-medium border border-ot-action/20">
-                            <Server className="w-3.5 h-3.5" />
-                            <span>{cupboard.controller}</span>
-                        </div>
-                        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
-                        <div className="flex items-center gap-1.5 text-muted-foreground hover:text-white bg-ot-surface-elev-bottom px-2 py-1 rounded-md border border-ot-border transition-colors">
-                            <LayoutGrid className="w-3.5 h-3.5" />
-                            <span>{cupboard.wall}</span>
-                        </div>
-                        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+                        {cupboard?.controller && (
+                            <>
+                                <div className="flex items-center gap-1.5 text-ot-action bg-ot-action/10 px-2 py-1 rounded-md font-medium border border-ot-action/20">
+                                    <Server className="w-3.5 h-3.5" />
+                                    <span>{cupboard.controller}</span>
+                                </div>
+                                <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+                            </>
+                        )}
+                        {cupboard?.wall && (
+                            <>
+                                <div className="flex items-center gap-1.5 text-muted-foreground hover:text-white bg-ot-surface-elev-bottom px-2 py-1 rounded-md border border-ot-border transition-colors">
+                                    <LayoutGrid className="w-3.5 h-3.5" />
+                                    <span>{cupboard.wall}</span>
+                                </div>
+                                <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+                            </>
+                        )}
                         <div className="flex items-center gap-1.5 text-muted-foreground hover:text-white bg-ot-surface-elev-bottom px-2 py-1 rounded-md border border-ot-border transition-colors">
                             <Box className="w-3.5 h-3.5" />
                             <span>{cupboard.name}</span>
@@ -509,9 +582,6 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                             <span className="font-semibold">{shelf.label}</span>
                         </div>
                     </div>
-
-                    <div className="h-5 w-px bg-ot-border ml-2" />
-                    <span className="text-xs text-muted-foreground font-mono ml-1">Bins Designer</span>
                 </div>
 
                 <div className="flex items-center gap-3">
@@ -519,23 +589,28 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                         onClick={handleSave}
                         disabled={isSaving}
                         className={cn(
-                            'gap-2 h-8 px-4 text-sm transition-all duration-300 disabled:opacity-40',
+                            "flex items-center gap-2 px-5 transition-all duration-300 font-semibold shadow-lg",
                             saveFlash
-                                ? 'bg-green-600 hover:bg-green-600 text-white shadow-lg shadow-green-500/30'
-                                : 'bg-ot-action text-white hover:bg-ot-action-hover'
+                                ? "bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20"
+                                : "bg-ot-action hover:bg-ot-action-hover text-white shadow-ot-action/20"
                         )}
                     >
-                        {saveFlash
-                            ? <><CheckCircle2 className="w-4 h-4" /> Saved!</>
-                            : <><Save className="w-4 h-4" /> {isSaving ? 'Saving...' : 'Save Shelf'}</>
-                        }
+                        {saveFlash ? (
+                            <>
+                                <CheckCircle2 className="w-4 h-4" /> Saved!
+                            </>
+                        ) : (
+                            <>
+                                <Save className="w-4 h-4" /> {isSaving ? 'Saving...' : 'Save Bin Layout'}
+                            </>
+                        )}
                     </Button>
                 </div>
             </div>
 
             {/* Body */}
             <div className="flex flex-1 min-h-0 overflow-hidden bg-ot-bg-mid">
-                {/* Canvas */}
+                {/* Canvas Workspace */}
                 <div
                     className="flex-1 overflow-auto p-6 relative touch-none select-none cursor-grab active:cursor-grabbing"
                     ref={scrollRef}
@@ -543,7 +618,6 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                     onPointerMove={handlePointerMove}
                     onPointerUp={stopScrolling}
                     onPointerCancel={stopScrolling}
-                    onClickCapture={handleCanvasClick}
                 >
                     <div
                         ref={canvasRef}
@@ -551,31 +625,30 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                         onDragLeave={handleCanvasDragLeave}
                         onDrop={handleCanvasDrop}
                         className={cn(
-                            "relative rounded-xl border-2 border-dashed transition-all duration-200",
+                            "relative rounded-xl border-2 border-dashed transition-all duration-200 shadow-2xl",
                             isCanvasOver
-                                ? "border-ot-action bg-ot-action/15 shadow-2xl shadow-ot-action/30 ring-2 ring-ot-action/40"
+                                ? "border-ot-action bg-ot-action/15 shadow-ot-action/30 ring-2 ring-ot-action/40"
                                 : "border-ot-border/50 bg-ot-surface-top/50"
                         )}
                         style={{
                             width: shelfVisualWidth,
                             height: shelfVisualHeight,
-                            userSelect: 'none',
-                            cursor: dragging?.type === 'move' ? 'grabbing' : 'default',
                         }}
                     >
                         {/* Shelf frame outline */}
                         <div className="absolute inset-0 border border-ot-border/30 rounded-xl pointer-events-none" />
 
                         {/* Label */}
-                        <div className="absolute top-3 left-4 text-xs text-muted-foreground/40 font-semibold uppercase tracking-widest pointer-events-none">
-                            {shelf.label} — Drag & resize bins
+                        <div className="absolute top-3 left-4 text-xs text-muted-foreground/40 font-semibold uppercase tracking-widest pointer-events-none flex items-center gap-2">
+                            <Layers className="w-3.5 h-3.5 text-ot-action" />
+                            <span>{shelf.label} — Drag & resize bins</span>
                         </div>
 
                         {canvasBlocks.length === 0 && (
-                            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-muted-foreground/50 text-xs gap-2">
+                            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-muted-foreground/50 text-xs gap-2 pt-6">
                                 <Sparkles className="w-8 h-8 text-ot-action/50 animate-pulse" />
-                                <span className="font-medium text-white/80">No bins placed on canvas yet.</span>
-                                <span>Drag a bin from the right sidebar to place & align it here.</span>
+                                <span className="font-medium text-white/80">No active bins placed on {shelf.label} yet.</span>
+                                <span>Drag a bin from the right side panel to place & align it here.</span>
                             </div>
                         )}
 
@@ -619,14 +692,15 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                                         {Math.round(bin.width)}×{Math.round(bin.height)}
                                     </div>
 
-                                    {/* Remove button */}
+                                    {/* Disable button */}
                                     <button
-                                        onClick={(e) => { e.stopPropagation(); handleDeleteBin(bin); }}
+                                        onClick={(e) => { e.stopPropagation(); handleDisableBin(bin); }}
                                         onPointerDown={(e) => e.stopPropagation()}
-                                        className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500/80 hover:bg-red-500 text-white flex items-center justify-center z-30 opacity-0 hover:opacity-100 transition-opacity shadow-lg"
+                                        className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-amber-500/80 hover:bg-amber-500 text-white flex items-center justify-center z-30 opacity-0 hover:opacity-100 transition-opacity shadow-lg"
                                         style={{ pointerEvents: 'auto' }}
+                                        title="Disable Bin"
                                     >
-                                        <X className="w-3 h-3" />
+                                        <Ban className="w-3 h-3" />
                                     </button>
 
                                     {/* ─── Resize Handles (4 edges + 4 corners) ──────────── */}
@@ -699,17 +773,20 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                     <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2"
                         style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.1) transparent' }}>
                         {binBlocks.map((bin) => {
-                            const isPlaced = bin.placed !== false;
+                            const isDisabled = bin.disabled === true || bin.bin_status === false || String(bin.bin_status).toLowerCase() === 'false';
+                            const isPlaced = bin.placed !== false && !isDisabled;
                             return (
                                 <div
                                     key={bin.id}
-                                    draggable
-                                    onDragStart={(e) => handleSidebarDragStart(e, bin)}
+                                    draggable={!isDisabled}
+                                    onDragStart={(e) => !isDisabled && handleSidebarDragStart(e, bin)}
                                     className={cn(
-                                        "flex flex-col gap-1.5 p-2.5 rounded-lg border transition-all cursor-grab active:cursor-grabbing group select-none relative",
-                                        isPlaced
-                                            ? "bg-ot-surface-elev-bottom/80 border-ot-action/40 hover:border-ot-action hover:shadow-md hover:shadow-ot-action/10"
-                                            : "bg-ot-surface-elev-bottom/40 border-amber-500/30 hover:border-amber-500/60"
+                                        "flex flex-col gap-1.5 p-2.5 rounded-lg border transition-all select-none relative",
+                                        isDisabled
+                                            ? "bg-red-500/5 border-red-500/20 opacity-80"
+                                            : (isPlaced
+                                                ? "bg-ot-surface-elev-bottom/80 border-ot-action/40 hover:border-ot-action hover:shadow-md hover:shadow-ot-action/10 cursor-grab active:cursor-grabbing group"
+                                                : "bg-ot-surface-elev-bottom/40 border-amber-500/30 hover:border-amber-500/60 cursor-grab active:cursor-grabbing group")
                                     )}
                                 >
                                     <div className="flex items-center justify-between gap-2">
@@ -720,13 +797,15 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                                             </span>
                                         </div>
 
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); handleDeleteBin(bin); }}
-                                            className="w-4 h-4 rounded flex items-center justify-center text-muted-foreground hover:text-red-400 hover:bg-red-400/10 transition-colors shrink-0"
-                                            title="Delete Bin"
-                                        >
-                                            <X className="w-3 h-3" />
-                                        </button>
+                                        {!isDisabled && (
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handleDisableBin(bin); }}
+                                                className="w-4 h-4 rounded flex items-center justify-center text-muted-foreground hover:text-amber-400 hover:bg-amber-400/10 transition-colors shrink-0"
+                                                title="Disable Bin"
+                                            >
+                                                <Ban className="w-3 h-3" />
+                                            </button>
+                                        )}
                                     </div>
 
                                     <div className="flex items-center justify-between text-[10px] pl-5">
@@ -735,23 +814,40 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                                         </span>
 
                                         <div className="flex items-center gap-1.5">
-                                            {isPlaced ? (
-                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 text-[9px] font-medium border border-emerald-500/20">
-                                                    <Check className="w-2.5 h-2.5" /> Placed
-                                                </span>
+                                            {isDisabled ? (
+                                                <>
+                                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 text-[9px] font-medium border border-red-500/20">
+                                                        <Ban className="w-2.5 h-2.5" /> Disabled
+                                                    </span>
+                                                    <button
+                                                        onClick={() => handleEnableBin(bin)}
+                                                        className="px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500 text-emerald-400 hover:text-white text-[9px] font-medium transition-colors border border-emerald-500/30"
+                                                        title="Enable bin"
+                                                    >
+                                                        Enable
+                                                    </button>
+                                                </>
                                             ) : (
-                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 text-[9px] font-medium border border-amber-500/20">
-                                                    Unplaced
-                                                </span>
-                                            )}
+                                                <>
+                                                    {isPlaced ? (
+                                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 text-[9px] font-medium border border-emerald-500/20">
+                                                            <Check className="w-2.5 h-2.5" /> Placed
+                                                        </span>
+                                                    ) : (
+                                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 text-[9px] font-medium border border-amber-500/20">
+                                                            Unplaced
+                                                        </span>
+                                                    )}
 
-                                            <button
-                                                onClick={() => handlePlaceOnCanvas(bin.id)}
-                                                className="px-1.5 py-0.5 rounded bg-ot-action/20 hover:bg-ot-action text-ot-action hover:text-white text-[9px] font-medium transition-colors border border-ot-action/30"
-                                                title="Place bin on canvas"
-                                            >
-                                                {isPlaced ? "Move" : "+ Place"}
-                                            </button>
+                                                    <button
+                                                        onClick={() => handlePlaceOnCanvas(bin.id)}
+                                                        className="px-1.5 py-0.5 rounded bg-ot-action/20 hover:bg-ot-action text-ot-action hover:text-white text-[9px] font-medium transition-colors border border-ot-action/30"
+                                                        title="Place bin on canvas"
+                                                    >
+                                                        {isPlaced ? "Move" : "+ Place"}
+                                                    </button>
+                                                </>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -768,15 +864,15 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
             </div>
 
             <ConfirmDialog
-                open={deleteDialogOpen}
-                onOpenChange={setDeleteDialogOpen}
-                title="Confirm Deletion"
-                description="Are you sure you want to delete this bin? This action cannot be undone and will remove it permanently."
-                confirmText="Delete"
+                open={disableDialogOpen}
+                onOpenChange={setDisableDialogOpen}
+                title="Confirm Disable Bin"
+                description={`Are you sure you want to disable "${binToDisable?.label || 'this bin'}"? It will be removed from the design page canvas and moved to the side list.`}
+                confirmText="Disable"
                 cancelText="Cancel"
-                variant="destructive"
-                onConfirm={confirmDeleteBin}
-                onCancel={() => setBinToDelete(null)}
+                variant="warning"
+                onConfirm={confirmDisableBin}
+                onCancel={() => setBinToDisable(null)}
             />
         </div>
     );

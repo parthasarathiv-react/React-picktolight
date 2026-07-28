@@ -4,8 +4,18 @@ import { cn } from 'lib/utils';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from 'components/ui/select';
 import LedStripLayoutDesigner from './LedStripLayoutDesigner';
 
-export default function LedStripsTab({ cupboardsData, syncCupboards, wallsData, controllersData }) {
-    const [selectedCupboard, setSelectedCupboard] = useState(null);
+export default function LedStripsTab({
+    cupboardsData,
+    syncCupboards,
+    wallsData,
+    controllersData,
+    selectedCupboard: propSelectedCupboard,
+    onSelectCupboard
+}) {
+    const [internalSelectedCupboard, setInternalSelectedCupboard] = useState(null);
+    const selectedCupboard = propSelectedCupboard !== undefined ? propSelectedCupboard : internalSelectedCupboard;
+    const setSelectedCupboard = onSelectCupboard || setInternalSelectedCupboard;
+
     const [filterController, setFilterController] = useState('all');
     const [filterWall, setFilterWall] = useState('all');
 

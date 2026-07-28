@@ -1,95 +1,232 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from 'components/ui/card';
 import { Button } from 'components/ui/button';
 import { Input } from 'components/ui/input';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from 'components/ui/select';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from 'components/ui/table';
-import { Users as Plus, PenSquare, Trash2, Shield, Search, Eye, EyeOff } from 'lucide-react';
+import { Plus, PenSquare, Trash2, Shield, Search, Eye, EyeOff, RefreshCw, Loader2, UserCheck, ShieldAlert, User } from 'lucide-react';
 import { ConfirmDialog } from 'components/ui/ConfirmDialog';
+import { apiService } from 'lib/apiService';
+import { toast } from 'sonner';
 
-const INITIAL_USERS = [
-    { id: 1, username: 'admin_user', email: 'admin@system.local', full_name: 'Admin User', role: 'admin', is_active: true, password: 'StrongPass@123' },
-    { id: 2, username: 'sarah_sup', email: 'sarah@system.local', full_name: 'Sarah Supervisor', role: 'supervisor', is_active: true, password: 'StrongPass@123' },
-    { id: 3, username: 'john_doe', email: 'john@example.com', full_name: 'John Doe', role: 'employee', is_active: true, password: 'StrongPass@123' },
-    { id: 4, username: 'mike_shift2', email: 'mike@system.local', full_name: 'Mike Shift 2', role: 'employee', is_active: false, password: 'StrongPass@123' },
+const ROLES = [
+    { value: 'ADMIN', label: 'ADMIN' },
+    { value: 'MANAGER', label: 'MANAGER' },
+    { value: 'EMPLOYEE', label: 'EMPLOYEE' },
+    { value: 'VIEWER', label: 'VIEWER' }
 ];
 
 export default function Users() {
-    const [users, setUsers] = useState(INITIAL_USERS);
+    const [users, setUsers] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [submitting, setSubmitting] = useState(false);
+    const [deleting, setDeleting] = useState(false);
     const [showUserForm, setShowUserForm] = useState(false);
     const [editingUser, setEditingUser] = useState(null);
     const [showPassword, setShowPassword] = useState(false);
     const [isActiveToggle, setIsActiveToggle] = useState(true);
+    const [selectedRole, setSelectedRole] = useState('EMPLOYEE');
     const [userToDelete, setUserToDelete] = useState(null);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [fieldErrors, setFieldErrors] = useState({});
+
+    const fetchUsers = async () => {
+        setLoading(true);
+        try {
+            const res = await apiService.getUsers();
+            const userList = Array.isArray(res) ? res : (res?.data || []);
+            setUsers(userList);
+        } catch (err) {
+            toast.error(err.message || 'Failed to load users');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchUsers();
+    }, []);
 
     const handleAddUser = () => {
         setEditingUser(null);
         setIsActiveToggle(true);
+        setSelectedRole('EMPLOYEE');
         setShowPassword(false);
+        setFieldErrors({});
         setShowUserForm(true);
     };
 
     const handleEditUser = (user) => {
         setEditingUser(user);
-        setIsActiveToggle(user.is_active);
+        setIsActiveToggle(user.is_active ?? true);
+        const currentRole = (user.role || 'EMPLOYEE').toUpperCase();
+        setSelectedRole(ROLES.some(r => r.value === currentRole) ? currentRole : 'EMPLOYEE');
         setShowPassword(false);
+        setFieldErrors({});
         setShowUserForm(true);
     };
 
     const handleCancelForm = () => {
         setShowUserForm(false);
         setEditingUser(null);
+        setFieldErrors({});
     };
 
-    const handleUserSubmit = (e) => {
+    const handleUserSubmit = async (e) => {
         e.preventDefault();
+        setFieldErrors({});
         const data = new FormData(e.currentTarget);
         const full_name = data.get('full_name');
-        const username = data.get('username');
         const email = data.get('email');
-        const role = data.get('role');
         const password = data.get('password');
+        const username = full_name; // Automatically use full_name for username field in payload
+        const role = selectedRole ? selectedRole.toLowerCase() : 'employee';
         const is_active = isActiveToggle;
 
-        if (editingUser) {
-            setUsers(users.map(u => u.id === editingUser.id ? { ...u, full_name, username, email, role, password, is_active } : u));
-        } else {
-            setUsers([...users, {
-                id: Date.now(),
-                full_name,
-                username,
-                email,
-                role,
-                password,
-                is_active
-            }]);
+        setSubmitting(true);
+        try {
+            if (editingUser) {
+                const payload = {
+                    username,
+                    email,
+                    full_name,
+                    role,
+                    is_active
+                };
+                if (password) {
+                    payload.password = password;
+                }
+                await apiService.updateUser(editingUser.id, payload);
+                toast.success('User updated successfully');
+            } else {
+                const payload = {
+                    username,
+                    email,
+                    full_name,
+                    role,
+                    is_active,
+                    password
+                };
+                await apiService.createUser(payload);
+                toast.success('User registered successfully');
+            }
+            setShowUserForm(false);
+            setEditingUser(null);
+            fetchUsers();
+        } catch (err) {
+            const errorsObj = {};
+            const rawErrors = err.fieldErrors || err.raw?.errors || err.raw?.detail;
+            if (Array.isArray(rawErrors)) {
+                rawErrors.forEach((e) => {
+                    const field = Array.isArray(e.loc) && e.loc.length > 0 ? e.loc[e.loc.length - 1] : e.field;
+                    const msg = e.msg || e.detail || (typeof e === 'string' ? e : '');
+                    if (field && msg) {
+                        errorsObj[field] = msg;
+                        if (field === 'username') {
+                            errorsObj['full_name'] = msg;
+                        }
+                    }
+                });
+            }
+            setFieldErrors(errorsObj);
+            toast.error(err.message || 'Failed to save user');
+        } finally {
+            setSubmitting(false);
         }
-        setShowUserForm(false);
-        setEditingUser(null);
     };
 
     const handleDeleteUser = (id) => {
         setUserToDelete(id);
     };
 
-    const confirmDeleteUser = () => {
+    const confirmDeleteUser = async () => {
         if (!userToDelete) return;
-        setUsers(users.filter(u => u.id !== userToDelete));
-        setUserToDelete(null);
+        setDeleting(true);
+        try {
+            await apiService.deleteUser(userToDelete);
+            toast.success('User deleted successfully');
+            fetchUsers();
+        } catch (err) {
+            toast.error(err.message || 'Failed to delete user');
+        } finally {
+            setDeleting(false);
+            setUserToDelete(null);
+        }
     };
+
+    const getRoleBadge = (roleStr) => {
+        const r = (roleStr || '').toUpperCase();
+        switch (r) {
+            case 'ADMIN':
+                return (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-semibold rounded-full bg-red-500/10 text-red-400 border border-red-500/20 tracking-wider">
+                        <Shield className="w-3 h-3 text-red-400" />
+                        ADMIN
+                    </span>
+                );
+            case 'MANAGER':
+                return (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-semibold rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20 tracking-wider">
+                        <ShieldAlert className="w-3 h-3 text-purple-400" />
+                        MANAGER
+                    </span>
+                );
+            case 'EMPLOYEE':
+                return (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-semibold rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 tracking-wider">
+                        <UserCheck className="w-3 h-3 text-blue-400" />
+                        EMPLOYEE
+                    </span>
+                );
+            case 'VIEWER':
+                return (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-semibold rounded-full bg-gray-500/10 text-gray-400 border border-gray-500/20 tracking-wider">
+                        <User className="w-3 h-3 text-gray-400" />
+                        VIEWER
+                    </span>
+                );
+            default:
+                return (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-semibold rounded-full bg-slate-500/10 text-slate-300 border border-slate-500/20 tracking-wider">
+                        {r || 'EMPLOYEE'}
+                    </span>
+                );
+        }
+    };
+
+    const filteredUsers = users.filter((u) => {
+        if (!searchQuery) return true;
+        const q = searchQuery.toLowerCase();
+        return (
+            (u.full_name && u.full_name.toLowerCase().includes(q)) ||
+            (u.email && u.email.toLowerCase().includes(q)) ||
+            (u.role && u.role.toLowerCase().includes(q))
+        );
+    });
 
     return (
         <div className="space-y-6 animate-in fade-in">
             <div className="flex justify-between items-center">
                 <div>
                     <h2 className="text-3xl font-bold text-white tracking-tight">User Management</h2>
-                    <p className="text-muted-foreground mt-1">Manage system access, roles, and terminal assignments.</p>
+                    <p className="text-muted-foreground mt-1">Manage system access, roles, and user accounts.</p>
                 </div>
-                {!showUserForm && (
-                    <Button onClick={handleAddUser} className="gap-2 bg-ot-action text-white hover:bg-ot-action-hover">
-                        <Plus className="w-4 h-4" /> Add New User
+                <div className="flex gap-2">
+                    <Button
+                        variant="outline"
+                        onClick={fetchUsers}
+                        disabled={loading}
+                        className="gap-2 border-ot-border text-white hover:bg-ot-surface-elev-bottom"
+                    >
+                        <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                        Refresh
                     </Button>
-                )}
+                    {!showUserForm && (
+                        <Button onClick={handleAddUser} className="gap-2 bg-ot-action text-white hover:bg-ot-action-hover">
+                            <Plus className="w-4 h-4" /> Add New User
+                        </Button>
+                    )}
+                </div>
             </div>
 
             {showUserForm && (
@@ -99,28 +236,56 @@ export default function Users() {
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
                                     <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">Full Name</label>
-                                    <Input name="full_name" defaultValue={editingUser ? editingUser.full_name : ''} placeholder="e.g. John Doe" className="bg-ot-surface-bottom" required />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">Username</label>
-                                    <Input name="username" defaultValue={editingUser ? editingUser.username : ''} placeholder="e.g. john_doe" className="bg-ot-surface-bottom" required />
+                                    <Input
+                                        name="full_name"
+                                        defaultValue={editingUser ? editingUser.full_name : ''}
+                                        placeholder="e.g. John Doe"
+                                        className={`bg-ot-surface-bottom ${fieldErrors.full_name || fieldErrors.username ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
+                                        onChange={() => setFieldErrors(prev => ({ ...prev, full_name: null, username: null }))}
+                                        required
+                                    />
+                                    {(fieldErrors.full_name || fieldErrors.username) && (
+                                        <p className="text-xs text-red-400 mt-1 font-medium">{fieldErrors.full_name || fieldErrors.username}</p>
+                                    )}
                                 </div>
                                 <div className="space-y-2">
                                     <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">Email Address</label>
-                                    <Input type="email" name="email" defaultValue={editingUser ? editingUser.email : ''} placeholder="john@example.com" className="bg-ot-surface-bottom" required />
+                                    <Input
+                                        type="email"
+                                        name="email"
+                                        defaultValue={editingUser ? editingUser.email : ''}
+                                        placeholder="john@example.com"
+                                        className={`bg-ot-surface-bottom ${fieldErrors.email ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
+                                        onChange={() => setFieldErrors(prev => ({ ...prev, email: null }))}
+                                        required
+                                    />
+                                    {fieldErrors.email && (
+                                        <p className="text-xs text-red-400 mt-1 font-medium">{fieldErrors.email}</p>
+                                    )}
                                 </div>
                                 <div className="space-y-2">
                                     <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">Role</label>
-                                    <Select name="role" defaultValue={editingUser ? editingUser.role : 'employee'}>
-                                        <SelectTrigger>
+                                    <Select
+                                        value={selectedRole}
+                                        onValueChange={(val) => {
+                                            setSelectedRole(val);
+                                            setFieldErrors(prev => ({ ...prev, role: null }));
+                                        }}
+                                    >
+                                        <SelectTrigger className={`bg-ot-surface-bottom border-ot-border text-white ${fieldErrors.role ? 'border-red-500' : ''}`}>
                                             <SelectValue placeholder="Select role" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="admin">Admin</SelectItem>
-                                            <SelectItem value="supervisor">Supervisor</SelectItem>
-                                            <SelectItem value="employee">Employee</SelectItem>
+                                            {ROLES.map((roleOpt) => (
+                                                <SelectItem key={roleOpt.value} value={roleOpt.value}>
+                                                    {roleOpt.label}
+                                                </SelectItem>
+                                            ))}
                                         </SelectContent>
                                     </Select>
+                                    {fieldErrors.role && (
+                                        <p className="text-xs text-red-400 mt-1 font-medium">{fieldErrors.role}</p>
+                                    )}
                                 </div>
                                 <div className="space-y-2 relative">
                                     <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">Password</label>
@@ -128,10 +293,11 @@ export default function Users() {
                                         <Input
                                             type={showPassword ? 'text' : 'password'}
                                             name="password"
-                                            defaultValue={editingUser ? editingUser.password : ''}
-                                            placeholder="Password"
-                                            className="bg-ot-surface-bottom pr-10"
-                                            required
+                                            defaultValue=""
+                                            placeholder={editingUser ? 'Leave blank to keep current' : 'StrongPass@123'}
+                                            className={`bg-ot-surface-bottom pr-10 ${fieldErrors.password ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
+                                            onChange={() => setFieldErrors(prev => ({ ...prev, password: null }))}
+                                            required={!editingUser}
                                         />
                                         <Button
                                             variant="ghost"
@@ -143,8 +309,11 @@ export default function Users() {
                                             {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                         </Button>
                                     </div>
+                                    {fieldErrors.password && (
+                                        <p className="text-xs text-red-400 mt-1 font-medium">{fieldErrors.password}</p>
+                                    )}
                                 </div>
-                                <div className="space-y-2">
+                                <div className="space-y-2 col-span-2">
                                     <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase block mb-2">Status</label>
                                     <label className="flex items-center cursor-pointer w-max">
                                         <div className="relative">
@@ -162,8 +331,11 @@ export default function Users() {
                                 </div>
                             </div>
                             <div className="flex justify-end gap-3 mt-6">
-                                <Button type="button" onClick={handleCancelForm} variant="outline" className="border-ot-border hover:bg-ot-surface-elev-bottom text-white">CANCEL</Button>
-                                <Button type="submit" className="bg-ot-action text-white hover:bg-ot-action-hover">
+                                <Button type="button" onClick={handleCancelForm} disabled={submitting} variant="outline" className="border-ot-border hover:bg-ot-surface-elev-bottom text-white">
+                                    CANCEL
+                                </Button>
+                                <Button type="submit" disabled={submitting} className="bg-ot-action text-white hover:bg-ot-action-hover gap-2">
+                                    {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                                     {editingUser ? 'SAVE CHANGES' : 'ADD USER'}
                                 </Button>
                             </div>
@@ -181,60 +353,76 @@ export default function Users() {
                         </div>
                         <div className="relative w-64">
                             <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
-                            <Input placeholder="Search users..." className="pl-9 h-9" />
+                            <Input
+                                placeholder="Search users..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="pl-9 h-9 bg-ot-surface-bottom border-ot-border"
+                            />
                         </div>
                     </div>
                 </CardHeader>
                 <CardContent className="p-0">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>User Details</TableHead>
-                                <TableHead>Username</TableHead>
-                                <TableHead>Role</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead className="text-right">Actions</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody className="bg-ot-bg-top/30">
-                            {users.map((user) => (
-                                <TableRow key={user.id}>
-                                    <TableCell>
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-8 h-8 rounded bg-ot-surface-elev-top border border-ot-border flex items-center justify-center text-ot-action font-bold">
-                                                {user.full_name.charAt(0).toUpperCase()}
-                                            </div>
-                                            <div>
-                                                <div className="font-medium text-white">{user.full_name}</div>
-                                                <div className="text-xs text-muted-foreground">{user.email}</div>
-                                            </div>
-                                        </div>
-                                    </TableCell>
-                                    <TableCell className="text-muted-foreground">
-                                        {user.username}
-                                    </TableCell>
-                                    <TableCell>
-                                        <span className="flex items-center gap-1.5 text-muted-foreground capitalize">
-                                            {user.role === 'admin' && <Shield className="w-3.5 h-3.5 text-ot-action" />}
-                                            {user.role}
-                                        </span>
-                                    </TableCell>
-                                    <TableCell>
-                                        <span className={`px-2 py-1 text-xs rounded-full border ${user.is_active
-                                                ? 'bg-green-500/10 text-green-400 border-green-500/20'
-                                                : 'bg-red-500/10 text-red-400 border-red-500/20'
-                                            }`}>
-                                            {user.is_active ? 'Active' : 'Inactive'}
-                                        </span>
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                        <Button variant="ghost" onClick={() => handleEditUser(user)} className="text-ot-action hover:text-ot-action-hover mr-4 transition-colors"><PenSquare className="w-4 h-4" /></Button>
-                                        <Button variant="ghost" onClick={() => handleDeleteUser(user.id)} className="text-red-400 hover:text-red-300 transition-colors"><Trash2 className="w-4 h-4" /></Button>
-                                    </TableCell>
+                    {loading ? (
+                        <div className="flex items-center justify-center p-12 text-muted-foreground gap-3">
+                            <Loader2 className="w-5 h-5 animate-spin text-ot-action" />
+                            <span>Loading users...</span>
+                        </div>
+                    ) : filteredUsers.length === 0 ? (
+                        <div className="flex items-center justify-center p-12 text-muted-foreground">
+                            <span>No users found.</span>
+                        </div>
+                    ) : (
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Full Name</TableHead>
+                                    <TableHead>Email</TableHead>
+                                    <TableHead>Role</TableHead>
+                                    <TableHead>Status</TableHead>
+                                    <TableHead className="text-right">Actions</TableHead>
                                 </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
+                            </TableHeader>
+                            <TableBody className="bg-ot-bg-top/30">
+                                {filteredUsers.map((user) => (
+                                    <TableRow key={user.id || user.email}>
+                                        <TableCell>
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded bg-ot-surface-elev-top border border-ot-border flex items-center justify-center text-ot-action font-bold">
+                                                    {(user.full_name || user.username || 'U').charAt(0).toUpperCase()}
+                                                </div>
+                                                <div className="font-medium text-white">
+                                                    {user.full_name || user.username}
+                                                </div>
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="text-muted-foreground text-sm">
+                                            {user.email}
+                                        </TableCell>
+                                        <TableCell>
+                                            {getRoleBadge(user.role)}
+                                        </TableCell>
+                                        <TableCell>
+                                            <span className={`px-2 py-1 text-xs rounded-full border ${user.is_active
+                                                    ? 'bg-green-500/10 text-green-400 border-green-500/20'
+                                                    : 'bg-red-500/10 text-red-400 border-red-500/20'
+                                                }`}>
+                                                {user.is_active ? 'Active' : 'Inactive'}
+                                            </span>
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <Button variant="ghost" onClick={() => handleEditUser(user)} className="text-ot-action hover:text-ot-action-hover mr-2 transition-colors">
+                                                <PenSquare className="w-4 h-4" />
+                                            </Button>
+                                            <Button variant="ghost" onClick={() => handleDeleteUser(user.id)} className="text-red-400 hover:text-red-300 transition-colors">
+                                                <Trash2 className="w-4 h-4" />
+                                            </Button>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    )}
                 </CardContent>
             </Card>
 
@@ -243,7 +431,7 @@ export default function Users() {
                 onOpenChange={(open) => !open && setUserToDelete(null)}
                 title="Confirm Deletion"
                 description="Are you sure you want to delete this user? This action cannot be undone."
-                confirmText="Delete"
+                confirmText={deleting ? 'Deleting...' : 'Delete'}
                 cancelText="Cancel"
                 variant="destructive"
                 onConfirm={confirmDeleteUser}

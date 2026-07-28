@@ -33,6 +33,8 @@ export default function Settings() {
         setSelectedController(null);
         setSelectedWallForCupboards(null);
         setSelectedCupboardForShelves(null);
+        setSelectedShelfForBins(null);
+        setSelectedCupboardForLeds(null);
     };
 
     const [controllersData, setControllersData] = useState([]);
@@ -280,6 +282,8 @@ export default function Settings() {
     // Cupboard/Shelf layout designer: which wall was selected
     const [selectedWallForCupboards, setSelectedWallForCupboards] = useState(null);
     const [selectedCupboardForShelves, setSelectedCupboardForShelves] = useState(null);
+    const [selectedShelfForBins, setSelectedShelfForBins] = useState(null);
+    const [selectedCupboardForLeds, setSelectedCupboardForLeds] = useState(null);
 
     // ── Sync helpers ─────────────────────────────────────────────────────────
     const syncControllers = (newData) => {
@@ -342,7 +346,9 @@ export default function Settings() {
     const isWallDesignerMode = activeTab === 'walls' && selectedController !== null;
     const isCupboardDesignerMode = activeTab === 'cupboards' && selectedWallForCupboards !== null;
     const isShelfDesignerMode = activeTab === 'shelves' && selectedCupboardForShelves !== null;
-    const isInDesignerMode = isWallDesignerMode || isCupboardDesignerMode || isShelfDesignerMode;
+    const isBinDesignerMode = activeTab === 'bins' && selectedShelfForBins !== null;
+    const isLedDesignerMode = activeTab === 'leds' && selectedCupboardForLeds !== null;
+    const isInDesignerMode = isWallDesignerMode || isCupboardDesignerMode || isShelfDesignerMode || isBinDesignerMode || isLedDesignerMode;
 
     // Close main nav sidebar when entering designer, restore on exit
     useEffect(() => {
@@ -453,6 +459,8 @@ export default function Settings() {
                         <BinsTab
                             cupboardsData={cupboardsData}
                             syncCupboards={syncCupboards}
+                            selectedShelfContext={selectedShelfForBins}
+                            onSelectShelfContext={setSelectedShelfForBins}
                             wallsData={wallsData}
                             controllersData={controllersData}
                             refetchBins={refetchBins}
@@ -464,6 +472,8 @@ export default function Settings() {
                         <LedStripsTab
                             cupboardsData={cupboardsData}
                             syncCupboards={syncCupboards}
+                            selectedCupboard={selectedCupboardForLeds}
+                            onSelectCupboard={setSelectedCupboardForLeds}
                             wallsData={wallsData}
                             controllersData={controllersData}
                         />

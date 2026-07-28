@@ -91,6 +91,17 @@ export default function Monitoring() {
         enabled: !!locId,
     });
 
+    const { data: rawBins, isFetching: isFetchingBins } = useQuery({
+        queryKey: ['bins', locId],
+        queryFn: async () => {
+            if (!locId) return [];
+            const data = await apiService.getBins(locId, 'All');
+            if (!data.success || !data.data) throw new Error("Failed to fetch bins");
+            return data.data;
+        },
+        enabled: !!locId,
+    });
+
     const [controllersData, setControllersData] = useState([...CONTROLLERS_CONFIG]);
     const [wallsData, setWallsData] = useState([...WALLS_CONFIG]);
     const [cupboardsData, setCupboardsData] = useState([...CUPBOARDS_CONFIG]);
@@ -134,12 +145,88 @@ export default function Monitoring() {
                 let shelfLayout = [];
                 if (rawShelves && Array.isArray(rawShelves)) {
                     const matchingShelves = rawShelves.filter(s =>
-                        String(s.shelf_cupboard_id) === String(c.cupboard_id) ||
-                        String(s.shelf_cupboard_id) === String(c.cupboard_name)
+                        String(s.shelf_cupboard_id || '').trim() === String(c.cupboard_id || '').trim() ||
+                        String(s.shelf_cupboard_id || '').trim() === String(c.cupboard_name || '').trim()
                     );
                     if (matchingShelves.length > 0) {
                         shelfLayout = matchingShelves.map((s, idx) => {
                             const realId = (s.shelf_id !== undefined && s.shelf_id !== null) ? String(s.shelf_id) : ((s.id !== undefined && s.id !== null) ? String(s.id) : `shelf-${idx}`);
+                            
+                            let bins = [];
+                            if (rawBins && Array.isArray(rawBins)) {
+                                const matchingBins = rawBins.filter(b => {
+                                    const bShelfId = String(b.bin_shelf_id || '').trim();
+                                    const bPhrId = String(b.bin_phr_id || '').trim();
+                                    const sPhrId = String(s.shelf_phr_id || '').trim();
+                                    const sShelfId = String(s.shelf_id || s.id || '').trim();
+                                    const sRealId = String(realId || '').trim();
+                                    const sName = String(s.shelf_name || '').trim();
+
+                                    const isShelfMatch = (
+                                        (bShelfId !== '' && (
+                                            bShelfId === sPhrId ||
+                                            bShelfId === sShelfId ||
+                                            bShelfId === sRealId ||
+                                            bShelfId === sName
+                                        )) ||
+                                        (sPhrId !== '' && bPhrId !== '' && bPhrId === sPhrId)
+                                    );
+
+                                    const hasGridAndSize = (
+                                        b.bin_gridx !== undefined && b.bin_gridx !== null && String(b.bin_gridx).trim() !== '' &&
+                                        b.bin_gridy !== undefined && b.bin_gridy !== null && String(b.bin_gridy).trim() !== '' &&
+                                        b.bin_width !== undefined && b.bin_width !== null && String(b.bin_width).trim() !== '' &&
+                                        b.bin_height !== undefined && b.bin_height !== null && String(b.bin_height).trim() !== ''
+                                    );
+
+                                    const isPlaced = b.placed !== false && b.bin_status !== false && String(b.bin_status).toLowerCase() !== 'false';
+
+                                    return isShelfMatch && hasGridAndSize && isPlaced;
+                                });
+
+                                if (matchingBins.length > 0) {
+                                    bins = matchingBins.map((b, bIdx) => ({
+                                        id: String(b.bin_id || `bin-${bIdx}`),
+                                        bin_id: b.bin_id,
+                                        label: b.bin_name || `Bin ${bIdx + 1}`,
+                                        x: parseFloat(b.bin_gridx) || 0,
+                                        y: parseFloat(b.bin_gridy) || 0,
+                                        width: parseFloat(b.bin_width) || 80,
+                                        height: parseFloat(b.bin_height) || 48,
+                                        placed: true,
+                                        bin_order: b.bin_order,
+                                        bin_phr_id: b.bin_phr_id || "122",
+                                        bin_org_id: b.bin_org_id || "skshospital",
+                                        bin_branch_id: b.bin_branch_id || "Salem",
+                                        bin_status: b.bin_status,
+                                        bin_shelf_id: b.bin_shelf_id
+                                    }));
+                                }
+                            }
+
+                            if (bins.length === 0) {
+                                try {
+                                    const layouts = JSON.parse(localStorage.getItem('cupboardLayouts') || '{}');
+                                    if (layouts[c.cupboard_id]) {
+                                        const lsShelf = layouts[c.cupboard_id].shelfLayout?.find(ls =>
+                                            String(ls.id) === realId ||
+                                            String(ls.shelf_id) === realId ||
+                                            String(ls.shelf_phr_id || '') === String(s.shelf_phr_id || '') ||
+                                            String(ls.label || ls.shelf_name || '') === String(s.shelf_name || '')
+                                        );
+                                        if (lsShelf && lsShelf.bins && Array.isArray(lsShelf.bins)) {
+                                            bins = lsShelf.bins.filter(b =>
+                                                b.placed !== false &&
+                                                b.x !== undefined && b.x !== null &&
+                                                b.y !== undefined && b.y !== null &&
+                                                b.width !== undefined && b.width !== null &&
+                                                b.height !== undefined && b.height !== null
+                                            );
+                                        }
+                                    }
+                                } catch (e) { }
+                            }
+
                             return {
                                 id: realId,
                                 shelf_id: s.shelf_id || s.id || realId,
@@ -152,10 +239,20 @@ export default function Monitoring() {
                                 shelf_phr_id: s.shelf_phr_id,
                                 shelf_org_id: s.shelf_org_id,
                                 shelf_branch_id: s.shelf_branch_id,
-                                shelf_status: s.shelf_status
+                                shelf_status: s.shelf_status,
+                                bins: bins
                             };
                         });
                     }
+                }
+
+                if (shelfLayout.length === 0) {
+                    try {
+                        const layouts = JSON.parse(localStorage.getItem('cupboardLayouts') || '{}');
+                        if (layouts[c.cupboard_id] && layouts[c.cupboard_id].shelfLayout) {
+                            shelfLayout = layouts[c.cupboard_id].shelfLayout;
+                        }
+                    } catch (e) { }
                 }
 
                 const shelvesCount = shelfLayout.length;
@@ -182,6 +279,7 @@ export default function Monitoring() {
                     if (layouts[cupboardObj.id]) {
                         cupboardObj.columns = layouts[cupboardObj.id].columns || cupboardObj.columns;
                         cupboardObj.ledsPerDrawer = layouts[cupboardObj.id].ledsPerDrawer || cupboardObj.ledsPerDrawer;
+                        cupboardObj.ledStrips = layouts[cupboardObj.id].ledStrips || [];
                     }
                 } catch (e) { }
 
@@ -191,9 +289,9 @@ export default function Monitoring() {
             CUPBOARDS_CONFIG.length = 0;
             mapped.forEach(c => CUPBOARDS_CONFIG.push(c));
         }
-    }, [rawCupboards, rawWalls, fetchedControllers, rawShelves]);
+    }, [rawCupboards, rawWalls, fetchedControllers, rawShelves, rawBins]);
 
-    const isFetchingAny = isFetchingControllers || isFetchingWalls || isFetchingCupboards || isFetchingShelves;
+    const isFetchingAny = isFetchingControllers || isFetchingWalls || isFetchingCupboards || isFetchingShelves || isFetchingBins;
 
     const hierarchy = useMemo(() => {
         const controllersMap = new Map();
@@ -279,7 +377,6 @@ export default function Monitoring() {
     const selectedWall = selectedController.walls?.find(w => w.name === selectedWallName) || selectedController.walls?.[0] || { cupboards: [] };
 
     const cupboards = selectedWall.cupboards || [];
-    const totalCupboards = cupboards.length;
     const selectedCupboard = cupboards[activeCupboardIdx] || null;
 
     const eanCountFor = useCallback((cbId) => getCupboardAssignments(cbId).length, []);
