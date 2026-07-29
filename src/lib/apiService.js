@@ -240,13 +240,13 @@ export const apiService = {
 
     // Users
     getUsers: async () => {
-        const response = await fetch(`${API_URL}/users/getusers`, {
+        const response = await fetch(`${API_URL}/users/get-users`, {
             headers: getHeaders()
         });
         return handleResponse(response);
     },
     createUser: async (payload) => {
-        const response = await fetch(`${API_URL}/users/`, {
+        const response = await fetch(`${API_URL}/users/create-user`, {
             method: 'POST',
             headers: getHeaders(),
             body: JSON.stringify(payload)
@@ -254,7 +254,7 @@ export const apiService = {
         return handleResponse(response);
     },
     updateUser: async (id, payload) => {
-        const response = await fetch(`${API_URL}/users/${id}`, {
+        const response = await fetch(`${API_URL}/users/update-user/${id}`, {
             method: 'PUT',
             headers: getHeaders(),
             body: JSON.stringify(payload)
@@ -262,7 +262,7 @@ export const apiService = {
         return handleResponse(response);
     },
     deleteUser: async (id) => {
-        const response = await fetch(`${API_URL}/users/${id}`, {
+        const response = await fetch(`${API_URL}/users/delete-user/${id}`, {
             method: 'DELETE',
             headers: getHeaders()
         });

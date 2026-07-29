@@ -135,28 +135,43 @@ function getCupboard3DSize(cupboard) {
 }
 
 function LedStrip3D({ strip, canvasWidth, canvasHeight, upperHeight, depth, scale3D }) {
+    let savedColors = ['#ef4444', '#22c55e', '#3b82f6', '#facc15', '#f97316', '#a855f7'];
+    let savedLedCount = 6;
+    try {
+        const saved = localStorage.getItem('ledSetupConfig');
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            if (parsed.ledCount) savedLedCount = parsed.ledCount;
+            if (Array.isArray(parsed.ledColors) && parsed.ledColors.length > 0) {
+                savedColors = parsed.ledColors.map(c => c.hex);
+            }
+        }
+    } catch (e) { }
+
+    const count = strip.ledCount || savedLedCount;
+    const colors = (strip.colors && strip.colors.length > 0) ? strip.colors : savedColors;
+
     const stripWidth = strip.width * scale3D;
     const stripHeight = strip.height * scale3D;
     const x = (strip.x + strip.width / 2 - canvasWidth / 2) * scale3D;
     const y = upperHeight - (strip.y + strip.height / 2) * scale3D;
-    const renderCount = Math.min(strip.ledCount || 30, 200);
+    const renderCount = Math.min(count, 200);
     const ledGap = stripWidth / (renderCount + 1);
 
     return (
         <group position={[x, y, depth / 2 + 0.1]}>
             <mesh>
                 <boxGeometry args={[stripWidth, stripHeight, 0.02]} />
-                <meshStandardMaterial color="#eab308" transparent opacity={0.3} />
+                <meshStandardMaterial color="#1e293b" transparent opacity={0.8} />
             </mesh>
             {Array.from({ length: renderCount }).map((_, i) => {
                 const ledX = -stripWidth / 2 + ledGap * (i + 1);
+                const colorHex = colors[i % colors.length] || '#facc15';
                 return (
                     <mesh key={i} position={[ledX, 0, 0.015]}>
-                        <sphereGeometry args={[0.01, 8, 8]} />
-                        <meshBasicMaterial color="#fef08a" />
-                        {i % Math.ceil(renderCount / 10) === 0 && (
-                            <pointLight color="#facc15" intensity={0.2} distance={0.5} />
-                        )}
+                        <sphereGeometry args={[0.012, 12, 12]} />
+                        <meshBasicMaterial color={colorHex} />
+                        <pointLight color={colorHex} intensity={0.4} distance={0.6} />
                     </mesh>
                 );
             })}

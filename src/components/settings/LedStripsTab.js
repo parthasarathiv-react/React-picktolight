@@ -126,11 +126,27 @@ export default function LedStripsTab({
                                 </div>
                             </div>
                             
-                            <div className="mt-4 pt-4 border-t border-ot-border/50 flex items-center justify-between text-xs text-muted-foreground w-full">
-                                <span className="flex items-center gap-1.5">
-                                    <Lightbulb className="w-3.5 h-3.5" />
-                                    {stripCount} LED Strips
-                                </span>
+                            <div className="mt-4 pt-3 border-t border-ot-border/50 flex flex-col gap-2 text-xs text-muted-foreground w-full">
+                                <div className="flex items-center justify-between font-medium text-slate-300">
+                                    <span className="flex items-center gap-1.5">
+                                        <Lightbulb className="w-3.5 h-3.5 text-ot-action" />
+                                        {stripCount} LED {stripCount === 1 ? 'Strip' : 'Strips'}
+                                    </span>
+                                    <span className="text-[11px] font-mono text-muted-foreground">
+                                        {cupboard.shelfLayout ? cupboard.shelfLayout.length : (cupboard.shelves || 0)} Shelves
+                                    </span>
+                                </div>
+
+                                {cupboard.ledStrips && cupboard.ledStrips.length > 0 && (
+                                    <div className="flex flex-wrap gap-1.5 mt-1">
+                                        {cupboard.ledStrips.map((strip, idx) => (
+                                            <span key={strip.id || idx} className="px-2 py-0.5 rounded bg-ot-surface-top border border-ot-border/50 text-[10px] font-mono text-slate-300 flex items-center gap-1">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-ot-action" />
+                                                {strip.label}: {strip.linkedBins?.length || 0} Bins
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
 
                             {/* Subtle active glow strip */}

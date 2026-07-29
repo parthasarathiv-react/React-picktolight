@@ -15,12 +15,29 @@ const calculateLedWidth = (count) => {
 export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData, syncCupboards }) {
     const [saveFlash, setSaveFlash] = useState(false);
 
+    // Helper to get saved LED setup colors and count
+    const savedLedConfig = React.useMemo(() => {
+        try {
+            const saved = localStorage.getItem('ledSetupConfig');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                return {
+                    ledCount: parsed.ledCount || 6,
+                    colors: (parsed.ledColors && Array.isArray(parsed.ledColors)) ? parsed.ledColors.map(c => c.hex) : []
+                };
+            }
+        } catch (e) {}
+        return { ledCount: 6, colors: ['#ef4444', '#22c55e', '#3b82f6', '#facc15', '#f97316', '#a855f7'] };
+    }, []);
+
     // Load LED strips from cupboard data, or empty array
     const [ledStrips, setLedStrips] = useState(() => {
         if (cupboard.ledStrips && cupboard.ledStrips.length > 0) {
             return cupboard.ledStrips.map(s => ({
                 ...s,
-                width: s.width || calculateLedWidth(s.ledCount)
+                ledCount: savedLedConfig.ledCount || s.ledCount || 6,
+                colors: (savedLedConfig.colors && savedLedConfig.colors.length > 0) ? savedLedConfig.colors : (s.colors || []),
+                width: s.width || calculateLedWidth(savedLedConfig.ledCount || s.ledCount || 6)
             }));
         }
         return [];
@@ -43,17 +60,21 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
         moved: false,
     });
 
-    // Only include shelves that have valid non-empty controller, wall, and cupboard IDs and placed === true
-    const shelves = (cupboard.shelfLayout || []).filter(shelf => {
-        const ctlId = shelf.shelf_ctl_id !== undefined ? String(shelf.shelf_ctl_id).trim() : String(cupboard.controller_id || cupboard.controller || '').trim();
-        const wallId = shelf.shelf_wall_id !== undefined ? String(shelf.shelf_wall_id).trim() : String(cupboard.wall_id || cupboard.wall || '').trim();
-        const cupboardId = shelf.shelf_cupboard_id !== undefined ? String(shelf.shelf_cupboard_id).trim() : String(cupboard.id || cupboard.name || '').trim();
-
-        return ctlId !== '' && wallId !== '' && cupboardId !== '' && shelf.placed !== false;
-    });
+    // Include all placed shelves from the cupboard layout
+    const shelves = (cupboard.shelfLayout || []).filter(shelf => shelf.placed !== false);
 
     const addStrip = () => {
-        const defaultLedCount = 6;
+        let defaultLedCount = 6;
+        let defaultColors = [];
+        try {
+            const saved = localStorage.getItem('ledSetupConfig');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (parsed.ledCount) defaultLedCount = parsed.ledCount;
+                if (Array.isArray(parsed.ledColors)) defaultColors = parsed.ledColors.map(c => c.hex);
+            }
+        } catch (e) {}
+
         const newStrip = {
             id: `strip-${Date.now()}`,
             label: `Strip ${ledStrips.length + 1}`,
@@ -61,7 +82,8 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
             y: 20,
             width: calculateLedWidth(defaultLedCount),
             height: 14, // Fixed height for LED strips
-            ledCount: defaultLedCount, // Default LED count
+            ledCount: defaultLedCount,
+            colors: defaultColors,
             linkedBins: [], // Array of bin IDs: "shelfId_binId"
         };
         setLedStrips(prev => [...prev, newStrip]);
@@ -142,13 +164,14 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
         }
     }, [dragging, onMouseMove, onMouseUp]);
 
-    const handleBinClick = (shelfId, binId) => {
-        if (!selectedStripId) return;
+    const handleBinClick = (shelfId, binId, targetStripId = selectedStripId) => {
+        const stripIdToUse = targetStripId || selectedStripId;
+        if (!stripIdToUse) return;
 
         const compositeId = `${shelfId}_${binId}`;
 
         setLedStrips(prev => prev.map(strip => {
-            if (strip.id !== selectedStripId) return strip;
+            if (strip.id !== stripIdToUse) return strip;
 
             const isLinked = strip.linkedBins.includes(compositeId);
             return {
@@ -157,6 +180,33 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
                     ? strip.linkedBins.filter(id => id !== compositeId)
                     : [...strip.linkedBins, compositeId]
             };
+        }));
+    };
+
+    const handleLinkAllBinsInShelf = (shelf, targetStripId = selectedStripId) => {
+        const stripIdToUse = targetStripId || selectedStripId;
+        if (!stripIdToUse || !shelf || !shelf.bins || shelf.bins.length === 0) return;
+        const shelfBinIds = shelf.bins.map(b => `${shelf.id}_${b.id}`);
+
+        setLedStrips(prev => prev.map(strip => {
+            if (strip.id !== stripIdToUse) return strip;
+            const existingSet = new Set(strip.linkedBins);
+            const allAlreadyLinked = shelfBinIds.every(id => existingSet.has(id));
+
+            if (allAlreadyLinked) {
+                // Unlink all bins of this shelf
+                return {
+                    ...strip,
+                    linkedBins: strip.linkedBins.filter(id => !shelfBinIds.includes(id))
+                };
+            } else {
+                // Link all bins of this shelf
+                const nextSet = new Set([...strip.linkedBins, ...shelfBinIds]);
+                return {
+                    ...strip,
+                    linkedBins: Array.from(nextSet)
+                };
+            }
         }));
     };
 
@@ -426,13 +476,25 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
                                         onMouseDown={(e) => handleMouseDown(e, strip.id, 'move')}
                                     />
 
-                                    {/* Visual LED dots inside the strip */}
-                                    <div className="flex items-center justify-around w-full px-1 pointer-events-none opacity-80 overflow-hidden">
-                                        {Array.from({ length: Math.min(strip.ledCount, 200) }).map((_, i) => {
-                                            const renderCount = Math.min(strip.ledCount, 200);
-                                            const dotSize = Math.max(1, Math.min(4, (strip.width - 8) / renderCount));
+                                    {/* Visual LED dots inside the strip using setup colors */}
+                                    <div className="flex items-center justify-around w-full px-1.5 pointer-events-none overflow-hidden">
+                                        {Array.from({ length: Math.min(strip.ledCount || savedLedConfig.ledCount, 200) }).map((_, i) => {
+                                            const count = Math.min(strip.ledCount || savedLedConfig.ledCount, 200);
+                                            const dotSize = Math.max(4, Math.min(8, (strip.width - 8) / count));
+                                            const colorHex = (strip.colors && strip.colors[i])
+                                                ? strip.colors[i]
+                                                : (savedLedConfig.colors[i % savedLedConfig.colors.length] || '#facc15');
                                             return (
-                                                <div key={i} className={cn("rounded-full shrink-0", isSelected ? "bg-yellow-300" : "bg-yellow-500/50")} style={{ width: dotSize, height: dotSize }} />
+                                                <div
+                                                    key={i}
+                                                    className="rounded-full shrink-0 border border-white/20 transition-all"
+                                                    style={{
+                                                        width: dotSize,
+                                                        height: dotSize,
+                                                        backgroundColor: colorHex,
+                                                        boxShadow: `0 0 6px ${colorHex}`
+                                                    }}
+                                                />
                                             );
                                         })}
                                     </div>
@@ -483,6 +545,13 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
                         const strip = ledStrips.find(s => s.id === editingStripId);
                         if (!strip) return null;
 
+                        const detectedShelf = shelves.find(s => {
+                            const stripCenterY = strip.y + strip.height / 2;
+                            return stripCenterY >= s.y && stripCenterY <= (s.y + s.height);
+                        }) || shelves[0];
+
+                        const detectedShelfBins = detectedShelf?.bins || [];
+
                         const allBins = [];
                         shelves.forEach(s => {
                             if (s.bins) {
@@ -522,45 +591,63 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
                                             className="h-8 text-xs bg-ot-surface-bottom border-ot-border/50"
                                         />
                                     </div>
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest block">Number of LEDs</label>
-                                        <Input
-                                            type="number"
-                                            min={1}
-                                            max={200}
-                                            value={strip.ledCount}
-                                            onChange={(e) => {
-                                                const newVal = Number(e.target.value) || 1;
-                                                const newW = calculateLedWidth(newVal);
-                                                setLedStrips(prev => prev.map(s => s.id === strip.id ? { ...s, ledCount: newVal, width: newW } : s));
-                                            }}
-                                            className="h-8 text-xs bg-ot-surface-bottom border-ot-border/50"
-                                        />
-                                    </div>
 
-                                    <div className="space-y-3 pt-2 border-t border-ot-border/50">
-                                        <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest block">Link Bins</label>
-                                        <Select onValueChange={(val) => {
-                                            if (val) {
-                                                const [sId, bId] = val.split('_');
-                                                handleBinClick(sId, bId);
-                                            }
-                                        }}>
-                                            <SelectTrigger className="h-8 text-xs bg-ot-surface-bottom border-ot-border/50">
-                                                <SelectValue placeholder="Select a bin to link..." />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {unlinkedBins.length === 0 && (
-                                                    <SelectItem value="none" disabled>No available bins</SelectItem>
+                                    {/* Positioned Shelf Bins Section */}
+                                    {detectedShelf && (
+                                        <div className="space-y-3 pt-2 border-t border-ot-border/50">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <label className="text-[10px] font-semibold text-ot-action uppercase tracking-widest block">
+                                                        Shelf Location Bins
+                                                    </label>
+                                                    <span className="text-xs font-bold text-white">
+                                                        {detectedShelf.label}
+                                                    </span>
+                                                </div>
+                                                {detectedShelfBins.length > 0 && (
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() => handleLinkAllBinsInShelf(detectedShelf, strip.id)}
+                                                        className="h-6 text-[10px] px-2 text-ot-action border-ot-action/40 hover:bg-ot-action/10"
+                                                    >
+                                                        Link All
+                                                    </Button>
                                                 )}
-                                                {unlinkedBins.map(b => (
-                                                    <SelectItem key={b.compositeId} value={b.compositeId}>{b.label}</SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
+                                            </div>
 
-                                        <div className="space-y-1 mt-3">
-                                            <div className="text-[10px] text-muted-foreground mb-2">Currently Linked ({strip.linkedBins.length})</div>
+                                            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                                                {detectedShelfBins.length === 0 ? (
+                                                    <div className="text-[10px] text-muted-foreground italic py-1">No bins on this shelf</div>
+                                                ) : (
+                                                    detectedShelfBins.map(bin => {
+                                                        const compositeId = `${detectedShelf.id}_${bin.id}`;
+                                                        const isLinked = strip.linkedBins.includes(compositeId);
+                                                        return (
+                                                            <button
+                                                                key={bin.id}
+                                                                type="button"
+                                                                onClick={() => handleBinClick(detectedShelf.id, bin.id, strip.id)}
+                                                                className={cn(
+                                                                    "w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg border text-xs text-left transition-all",
+                                                                    isLinked
+                                                                        ? "bg-ot-action/20 border-ot-action text-white font-semibold"
+                                                                        : "bg-ot-surface-bottom/40 border-ot-border/50 text-slate-300 hover:border-ot-action/40"
+                                                                )}
+                                                            >
+                                                                <span>{bin.label}</span>
+                                                                {isLinked ? <CheckCircle2 className="w-3.5 h-3.5 text-ot-action" /> : <Plus className="w-3.5 h-3.5 text-muted-foreground" />}
+                                                            </button>
+                                                        );
+                                                    })
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="space-y-1 pt-2 border-t border-ot-border/50">
+                                        <div className="text-[10px] text-muted-foreground mb-2">Total Linked Bins ({strip.linkedBins.length})</div>
                                             {strip.linkedBins.length === 0 ? (
                                                 <div className="text-[10px] text-muted-foreground/60 italic text-center py-2 bg-ot-surface-bottom/30 rounded border border-ot-border/20">No bins linked</div>
                                             ) : (
@@ -573,7 +660,7 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
                                                         <div key={linkedId} className="flex items-center justify-between px-2 py-1.5 rounded bg-ot-surface-bottom border border-ot-border/40 group">
                                                             <span className="text-[10px] text-white truncate pr-2">{shelf.label} - {bin.label}</span>
                                                             <button
-                                                                onClick={() => handleBinClick(sId, bId)}
+                                                                onClick={() => handleBinClick(sId, bId, strip.id)}
                                                                 className="opacity-0 group-hover:opacity-100 w-4 h-4 flex items-center justify-center text-muted-foreground hover:text-red-400 transition-all shrink-0"
                                                             >
                                                                 <X className="w-3 h-3" />
@@ -582,10 +669,7 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
                                                     );
                                                 })
                                             )}
-                                        </div>
                                     </div>
-
-
                                 </div>
                             </>
                         );
@@ -622,12 +706,26 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
 
                                             </div>
 
+                                            {/* Mini Color Swatches Bar */}
+                                            <div className="flex items-center gap-1 my-1 overflow-x-auto py-0.5">
+                                                {((strip.colors && strip.colors.length > 0) ? strip.colors : savedLedConfig.colors).slice(0, 16).map((hex, cIdx) => (
+                                                    <div
+                                                        key={cIdx}
+                                                        className="w-3 h-3 rounded-full border border-white/20 shrink-0 shadow-sm"
+                                                        style={{
+                                                            backgroundColor: hex,
+                                                            boxShadow: `0 0 4px ${hex}`
+                                                        }}
+                                                    />
+                                                ))}
+                                            </div>
+
                                             <div className="flex items-center justify-between mt-1 pt-2 border-t border-ot-border/50 z-10">
                                                 <span className="text-[10px] text-muted-foreground flex items-center gap-1">
                                                     <LinkIcon className="w-3 h-3" /> {strip.linkedBins.length} Bins Linked
                                                 </span>
                                                 <span className="text-[10px] text-muted-foreground font-mono bg-ot-surface-top px-1.5 py-0.5 rounded border border-ot-border/30">
-                                                    {strip.ledCount} LEDs
+                                                    {strip.ledCount || savedLedConfig.ledCount} LEDs
                                                 </span>
                                             </div>
 

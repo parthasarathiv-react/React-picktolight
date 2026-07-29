@@ -16,6 +16,19 @@ const ROLES = [
     { value: 'VIEWER', label: 'VIEWER' }
 ];
 
+const decodeBase64Password = (str) => {
+    if (!str) return '';
+    try {
+        const decoded = atob(str);
+        if (btoa(decoded) === str) {
+            return decoded;
+        }
+        return str;
+    } catch (e) {
+        return str;
+    }
+};
+
 export default function Users() {
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -231,7 +244,7 @@ export default function Users() {
 
             {showUserForm && (
                 <Card className="border-ot-border/50 bg-ot-bg-top/30 animate-in fade-in slide-in-from-top-4">
-                    <form onSubmit={handleUserSubmit}>
+                    <form onSubmit={handleUserSubmit} key={editingUser ? editingUser.id : 'new'}>
                         <CardContent className="pt-6">
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
@@ -293,8 +306,8 @@ export default function Users() {
                                         <Input
                                             type={showPassword ? 'text' : 'password'}
                                             name="password"
-                                            defaultValue=""
-                                            placeholder={editingUser ? 'Leave blank to keep current' : 'StrongPass@123'}
+                                            defaultValue={editingUser ? decodeBase64Password(editingUser.password) : ''}
+                                            placeholder={editingUser ? 'Enter password' : 'StrongPass@123'}
                                             className={`bg-ot-surface-bottom pr-10 ${fieldErrors.password ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
                                             onChange={() => setFieldErrors(prev => ({ ...prev, password: null }))}
                                             required={!editingUser}

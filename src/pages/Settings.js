@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from 'components/ui/card';
 import { Button } from 'components/ui/button';
-import { Server, Box, LayoutGrid, Layers, Archive, Lightbulb, Loader2 } from 'lucide-react';
+import { Server, Box, LayoutGrid, Layers, Archive, Lightbulb, Loader2, Palette } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { useOutletContext } from 'react-router-dom';
 import { apiService } from 'lib/apiService';
@@ -19,6 +19,7 @@ import WallLayoutDesigner from 'components/settings/WallLayoutDesigner';
 import CupboardsTab from 'components/settings/CupboardsTab';
 import ShelvesTab from 'components/settings/ShelvesTab';
 import BinsTab from 'components/settings/BinsTab';
+import LedSetupTab from 'components/settings/LedSetupTab';
 import LedStripsTab from 'components/settings/LedStripsTab';
 
 export default function Settings() {
@@ -68,7 +69,7 @@ export default function Settings() {
         enabled: !!locId,
     });
 
-    const shouldFetchWalls = ['walls', 'cupboards', 'shelves', 'bins', 'leds'].includes(activeTab);
+    const shouldFetchWalls = ['walls', 'cupboards', 'shelves', 'bins', 'led-setup', 'leds'].includes(activeTab);
     const { data: rawWalls, isFetching: isFetchingWalls, error: errorWalls } = useQuery({
         queryKey: ['walls', locId],
         queryFn: async () => {
@@ -80,7 +81,7 @@ export default function Settings() {
         enabled: !!locId && shouldFetchWalls,
     });
 
-    const shouldFetchCupboards = ['cupboards', 'shelves', 'bins', 'leds'].includes(activeTab);
+    const shouldFetchCupboards = ['cupboards', 'shelves', 'bins', 'led-setup', 'leds'].includes(activeTab);
     const { data: rawCupboards, isFetching: isFetchingCupboards, error: errorCupboards } = useQuery({
         queryKey: ['cupboards', locId],
         queryFn: async () => {
@@ -173,13 +174,40 @@ export default function Settings() {
                             const hasWidth = s.shelf_width !== undefined && s.shelf_width !== null && s.shelf_width !== '' && !isNaN(parseFloat(s.shelf_width));
                             const hasHeight = s.shelf_height !== undefined && s.shelf_height !== null && s.shelf_height !== '' && !isNaN(parseFloat(s.shelf_height));
 
-                            const isPlaced = isAssigned && hasGridX && hasGridY;
+                            const isPlaced = isAssigned;
 
                             let bins = [];
                             if (rawBins && Array.isArray(rawBins)) {
-                                const matchingBins = rawBins.filter(b => 
-                                    String(b.bin_shelf_id || '').trim() === String(s.shelf_phr_id || '').trim()
-                                );
+                                const matchingBins = rawBins.filter(b => {
+                                    const bShelfId = String(b.bin_shelf_id || '').trim();
+                                    const bPhrId = String(b.bin_phr_id || '').trim();
+                                    const sPhrId = String(s.shelf_phr_id || '').trim();
+                                    const sShelfId = String(s.shelf_id || s.id || '').trim();
+                                    const sRealId = String(realId || '').trim();
+                                    const sName = String(s.shelf_name || '').trim();
+
+                                    const isShelfMatch = (
+                                        (bShelfId !== '' && (
+                                            bShelfId === sPhrId ||
+                                            bShelfId === sShelfId ||
+                                            bShelfId === sRealId ||
+                                            bShelfId === sName
+                                        )) ||
+                                        (sPhrId !== '' && bPhrId !== '' && bPhrId === sPhrId)
+                                    );
+
+                                    const hasGridAndSize = (
+                                        b.bin_gridx !== undefined && b.bin_gridx !== null && String(b.bin_gridx).trim() !== '' &&
+                                        b.bin_gridy !== undefined && b.bin_gridy !== null && String(b.bin_gridy).trim() !== '' &&
+                                        b.bin_width !== undefined && b.bin_width !== null && String(b.bin_width).trim() !== '' &&
+                                        b.bin_height !== undefined && b.bin_height !== null && String(b.bin_height).trim() !== ''
+                                    );
+
+                                    const isPlacedBin = b.placed !== false && b.bin_status !== false && String(b.bin_status).toLowerCase() !== 'false';
+
+                                    return isShelfMatch && hasGridAndSize && isPlacedBin;
+                                });
+
                                 if (matchingBins.length > 0) {
                                     bins = matchingBins.map((b, bIdx) => ({
                                         id: String(b.bin_id || `bin-${bIdx}`),
@@ -189,7 +217,7 @@ export default function Settings() {
                                         y: parseFloat(b.bin_gridy) || 10,
                                         width: parseFloat(b.bin_width) || 80,
                                         height: parseFloat(b.bin_height) || 48,
-                                        placed: b.bin_status !== false && b.bin_status !== 'False',
+                                        placed: true,
                                         bin_order: b.bin_order,
                                         bin_phr_id: b.bin_phr_id || "122",
                                         bin_org_id: b.bin_org_id || "skshospital",
@@ -204,9 +232,20 @@ export default function Settings() {
                                 try {
                                     const layouts = JSON.parse(localStorage.getItem('cupboardLayouts') || '{}');
                                     if (layouts[c.cupboard_id]) {
-                                        const lsShelf = layouts[c.cupboard_id].shelfLayout?.find(ls => String(ls.id) === realId || String(ls.shelf_id) === realId);
+                                        const lsShelf = layouts[c.cupboard_id].shelfLayout?.find(ls =>
+                                            String(ls.id) === realId ||
+                                            String(ls.shelf_id) === realId ||
+                                            String(ls.shelf_phr_id || '') === String(s.shelf_phr_id || '') ||
+                                            String(ls.label || ls.shelf_name || '') === String(s.shelf_name || '')
+                                        );
                                         if (lsShelf && lsShelf.bins && Array.isArray(lsShelf.bins)) {
-                                            bins = lsShelf.bins;
+                                            bins = lsShelf.bins.filter(b =>
+                                                b.placed !== false &&
+                                                b.x !== undefined && b.x !== null &&
+                                                b.y !== undefined && b.y !== null &&
+                                                b.width !== undefined && b.width !== null &&
+                                                b.height !== undefined && b.height !== null
+                                            );
                                         }
                                     }
                                 } catch (e) { }
@@ -230,6 +269,15 @@ export default function Settings() {
                             };
                         });
                     }
+                }
+
+                if (shelfLayout.length === 0) {
+                    try {
+                        const layouts = JSON.parse(localStorage.getItem('cupboardLayouts') || '{}');
+                        if (layouts[c.cupboard_id] && layouts[c.cupboard_id].shelfLayout) {
+                            shelfLayout = layouts[c.cupboard_id].shelfLayout;
+                        }
+                    } catch (e) { }
                 }
 
                 const shelvesCount = shelfLayout.length;
@@ -257,6 +305,9 @@ export default function Settings() {
                     if (layouts[cupboardObj.id]) {
                         cupboardObj.columns = layouts[cupboardObj.id].columns || cupboardObj.columns;
                         cupboardObj.ledsPerDrawer = layouts[cupboardObj.id].ledsPerDrawer || cupboardObj.ledsPerDrawer;
+                        if (layouts[cupboardObj.id].ledStrips) {
+                            cupboardObj.ledStrips = layouts[cupboardObj.id].ledStrips;
+                        }
                     }
                 } catch (e) { }
 
@@ -322,6 +373,7 @@ export default function Settings() {
         { id: 'cupboards', label: 'Cupboards', icon: Box },
         { id: 'shelves', label: 'Shelves', icon: Layers },
         { id: 'bins', label: 'Bins', icon: Archive },
+        { id: 'led-setup', label: 'LED Setup', icon: Palette },
         { id: 'leds', label: 'LED Strips', icon: Lightbulb },
     ];
 
@@ -464,6 +516,14 @@ export default function Settings() {
                             wallsData={wallsData}
                             controllersData={controllersData}
                             refetchBins={refetchBins}
+                        />
+                    )}
+
+                    {/* LED Setup tab */}
+                    {activeTab === 'led-setup' && (
+                        <LedSetupTab
+                            cupboardsData={cupboardsData}
+                            syncCupboards={syncCupboards}
                         />
                     )}
 
