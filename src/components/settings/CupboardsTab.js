@@ -4,8 +4,19 @@ import { cn } from 'lib/utils';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from 'components/ui/select';
 import CupboardLayoutDesigner from './CupboardLayoutDesigner';
 
-export default function CupboardsTab({ cupboardsData, syncCupboards, wallsData, selectedWall, onSelectWall, controllersData }) {
-    const [filterController, setFilterController] = useState('all');
+export default function CupboardsTab({
+    cupboardsData,
+    syncCupboards,
+    wallsData,
+    selectedWall,
+    onSelectWall,
+    controllersData,
+    filterController: propFilterController,
+    onFilterControllerChange
+}) {
+    const [internalFilterController, setInternalFilterController] = useState('all');
+    const filterController = propFilterController !== undefined ? propFilterController : internalFilterController;
+    const setFilterController = onFilterControllerChange || setInternalFilterController;
 
     // If a wall is selected, show the layout designer for cupboards
     if (selectedWall) {
@@ -76,11 +87,15 @@ export default function CupboardsTab({ cupboardsData, syncCupboards, wallsData, 
                                         <LayoutGrid className="w-5 h-5 text-ot-action" />
                                     </div>
                                     <div>
-                                        <div className="font-semibold text-white group-hover:text-ot-action transition-colors text-sm">
-                                            {wall.name}
+                                        <div className="font-semibold text-white group-hover:text-ot-action transition-colors text-sm flex items-center gap-1.5">
+                                            <span className="text-xs font-normal text-muted-foreground uppercase tracking-wider">Wall:</span>
+                                            <span className="text-base font-bold text-white">{wall.name}</span>
                                         </div>
-                                        <div className="text-xs text-muted-foreground font-mono mt-0.5">
-                                            {wall.controller}
+                                        <div className="text-xs text-muted-foreground mt-1.5 flex items-center gap-2 flex-wrap">
+                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-ot-surface-top border border-ot-border/60 text-[11px]">
+                                                <span className="text-muted-foreground/70">Controller:</span>
+                                                <span className="font-medium text-gray-200">{wall.controller}</span>
+                                            </span>
                                         </div>
                                     </div>
                                 </div>

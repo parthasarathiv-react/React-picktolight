@@ -21,7 +21,8 @@ export default function Login() {
         const token = localStorage.getItem('token');
         if (token) {
             const lastPath = localStorage.getItem('last_active_path');
-            navigate(lastPath, { replace: true });
+            const targetPath = (lastPath && lastPath !== '/login' && lastPath !== '/') ? lastPath : '/monitoring';
+            navigate(targetPath, { replace: true });
         }
     }, [navigate]);
 
@@ -47,6 +48,12 @@ export default function Login() {
                     localStorage.setItem('token', token);
                 }
 
+                // Extract and save user details and role
+                const user = data.user || data.userData || data;
+                const role = (user?.role || user?.user_role || data.role || data.user_role || 'admin').toLowerCase();
+                localStorage.setItem('user', JSON.stringify(user));
+                localStorage.setItem('user_role', role);
+
                 setShowLocationDialog(true);
             } else {
                 let errorMsg = 'Invalid username or password';
@@ -65,7 +72,8 @@ export default function Login() {
         localStorage.setItem('selectedLocation', JSON.stringify(location));
         setShowLocationDialog(false);
         const lastPath = localStorage.getItem('last_active_path');
-        navigate(lastPath);
+        const targetPath = (lastPath && lastPath !== '/login' && lastPath !== '/') ? lastPath : '/monitoring';
+        navigate(targetPath, { replace: true });
     };
 
     return (

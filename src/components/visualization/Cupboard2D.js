@@ -20,8 +20,119 @@ function getShelfCount(cupboard) {
     return Number(cupboard.shelves || cupboard.rows || 0);
 }
 
+const STRIP_COLORS = [
+    {
+        name: 'cyan',
+        border: 'border-cyan-400',
+        bgLight: 'bg-cyan-500/25',
+        text: 'text-cyan-400',
+        shadowBin: 'shadow-[0_0_12px_rgba(34,211,238,0.35)]',
+        hex: '#22d3ee'
+    },
+    {
+        name: 'purple',
+        border: 'border-purple-400',
+        bgLight: 'bg-purple-500/25',
+        text: 'text-purple-400',
+        shadowBin: 'shadow-[0_0_12px_rgba(192,132,252,0.35)]',
+        hex: '#c084fc'
+    },
+    {
+        name: 'amber',
+        border: 'border-amber-400',
+        bgLight: 'bg-amber-500/25',
+        text: 'text-amber-400',
+        shadowBin: 'shadow-[0_0_12px_rgba(251,191,36,0.35)]',
+        hex: '#fbbf24'
+    },
+    {
+        name: 'emerald',
+        border: 'border-emerald-400',
+        bgLight: 'bg-emerald-500/25',
+        text: 'text-emerald-400',
+        shadowBin: 'shadow-[0_0_12px_rgba(52,211,153,0.35)]',
+        hex: '#34d399'
+    },
+    {
+        name: 'rose',
+        border: 'border-rose-400',
+        bgLight: 'bg-rose-500/25',
+        text: 'text-rose-400',
+        shadowBin: 'shadow-[0_0_12px_rgba(251,113,133,0.35)]',
+        hex: '#fb7185'
+    },
+    {
+        name: 'blue',
+        border: 'border-blue-400',
+        bgLight: 'bg-blue-500/25',
+        text: 'text-blue-400',
+        shadowBin: 'shadow-[0_0_12px_rgba(96,165,250,0.35)]',
+        hex: '#60a5fa'
+    },
+    {
+        name: 'orange',
+        border: 'border-orange-400',
+        bgLight: 'bg-orange-500/25',
+        text: 'text-orange-400',
+        shadowBin: 'shadow-[0_0_12px_rgba(251,146,60,0.35)]',
+        hex: '#fb923c'
+    },
+    {
+        name: 'lime',
+        border: 'border-lime-400',
+        bgLight: 'bg-lime-500/25',
+        text: 'text-lime-400',
+        shadowBin: 'shadow-[0_0_12px_rgba(163,230,53,0.35)]',
+        hex: '#a3e635'
+    },
+    {
+        name: 'fuchsia',
+        border: 'border-fuchsia-400',
+        bgLight: 'bg-fuchsia-500/25',
+        text: 'text-fuchsia-400',
+        shadowBin: 'shadow-[0_0_12px_rgba(232,121,249,0.35)]',
+        hex: '#e879f9'
+    }
+];
+
+function getStripColor(index) {
+    if (index < 0 || isNaN(index)) return STRIP_COLORS[0];
+    return STRIP_COLORS[index % STRIP_COLORS.length];
+}
+
+function findStripForBin(ledStrips, shelf, bin) {
+    if (!ledStrips || !Array.isArray(ledStrips) || !bin) return null;
+
+    const compositeId = `${shelf?.id || ''}_${bin?.id || ''}`;
+    const binIdStr = String(bin.bin_id || bin.id || '').trim();
+    const binLabelStr = String(bin.label || bin.bin_name || '').trim();
+
+    for (let idx = 0; idx < ledStrips.length; idx++) {
+        const strip = ledStrips[idx];
+        if (!strip.linkedBins || !Array.isArray(strip.linkedBins)) continue;
+
+        const isMatch = strip.linkedBins.some(lb => {
+            const lbStr = String(lb).trim();
+            if (lbStr === compositeId) return true;
+            if (binIdStr && lbStr === binIdStr) return true;
+            if (binLabelStr && lbStr === binLabelStr) return true;
+            if (lbStr.includes('_')) {
+                const parts = lbStr.split('_');
+                const lastPart = parts[parts.length - 1];
+                if (lastPart === binIdStr || lastPart === binLabelStr) return true;
+            }
+            return false;
+        });
+
+        if (isMatch) {
+            return { strip, index: idx, theme: getStripColor(idx) };
+        }
+    }
+    return null;
+}
+
 // Memoized: only re-renders when its own props change (cupboardId/row/col rarely change)
-const DrawerCell = React.memo(function DrawerCell({ cupboardId, row, col, ledsPerDrawer, dense, shelfLabel, shelfColumns, absoluteLayout }) {
+const DrawerCell = React.memo(function DrawerCell({ cupboardId, row, col, ledsPerDrawer, dense, shelfLabel, shelfColumns, absoluteLayout, stripTheme }) {
     const assignment = getDrawerAssignment(cupboardId, row, col);
     const defaultCellId = `${row}${String.fromCharCode(64 + col)}`;
     const isCustom = shelfLabel && !shelfLabel.toLowerCase().startsWith('shelf');
@@ -48,12 +159,14 @@ const DrawerCell = React.memo(function DrawerCell({ cupboardId, row, col, ledsPe
     if (absoluteLayout) {
         return (
             <div className={cn(
-                "h-full w-full flex flex-col items-center justify-center relative group overflow-hidden transition-all duration-200 cursor-pointer p-0.5",
-                !assignment ? "bg-ot-surface-bottom/60 border border-ot-border/40 opacity-80" : "bg-ot-surface-bottom border border-ot-border/80 hover:border-ot-action/60"
+                "h-full w-full flex flex-col items-center justify-center relative group overflow-hidden transition-all duration-200 cursor-pointer p-0.5 rounded-md border",
+                stripTheme
+                    ? `${stripTheme.bgLight} ${stripTheme.border} ${stripTheme.shadowBin}`
+                    : (!assignment ? "bg-ot-surface-bottom/60 border-ot-border/40 opacity-80" : "bg-ot-surface-bottom border-ot-border/80 hover:border-ot-action/60")
             )}>
                 <div className={cn(
                     "flex-none font-semibold text-[10px] whitespace-nowrap overflow-hidden text-ellipsis max-w-[95%] transition-colors leading-none",
-                    !assignment ? "text-muted-foreground" : "text-white"
+                    stripTheme ? `${stripTheme.text} font-bold` : (!assignment ? "text-muted-foreground" : "text-white")
                 )} title={cellId}>
                     {cellId}
                 </div>
@@ -69,8 +182,11 @@ const DrawerCell = React.memo(function DrawerCell({ cupboardId, row, col, ledsPe
                                     "rounded-full transition-all w-1 h-1 sm:w-1.5 sm:h-1.5 shrink-0",
                                     isActive
                                         ? cn(activeColorMeta.tailwind, "scale-110 shadow-sm")
-                                        : "bg-ot-surface-elev-bottom border border-ot-border/40 opacity-40"
+                                        : stripTheme
+                                            ? "border border-white/20"
+                                            : "bg-ot-surface-elev-bottom border border-ot-border/40 opacity-40"
                                 )}
+                                style={!isActive && stripTheme ? { backgroundColor: stripTheme.hex, opacity: 0.9, boxShadow: `0 0 5px ${stripTheme.hex}` } : {}}
                             />
                         );
                     })}
@@ -81,11 +197,30 @@ const DrawerCell = React.memo(function DrawerCell({ cupboardId, row, col, ledsPe
 
     if (!assignment) {
         return (
-            <div className="h-full w-full min-h-0 min-w-0 bg-ot-bg-top/60 border border-ot-border/30 flex flex-col items-center justify-center relative opacity-45 group overflow-hidden">
-                <div className={cn("absolute font-mono text-muted-foreground/50 whitespace-nowrap overflow-hidden text-ellipsis max-w-[95%]", labelClass)} title={cellId}>{cellId}</div>
+            <div className={cn(
+                "h-full w-full min-h-0 min-w-0 flex flex-col items-center justify-center relative group overflow-hidden border transition-all duration-200 rounded-md",
+                stripTheme
+                    ? `${stripTheme.bgLight} ${stripTheme.border} ${stripTheme.shadowBin}`
+                    : "bg-ot-bg-top/60 border-ot-border/30 opacity-45"
+            )}>
+                <div className={cn(
+                    "absolute font-mono whitespace-nowrap overflow-hidden text-ellipsis max-w-[95%]",
+                    labelClass,
+                    stripTheme ? `${stripTheme.text} font-bold` : "text-muted-foreground/50"
+                )} title={cellId}>
+                    {cellId}
+                </div>
                 <div className={cn("flex", ledStripClass)}>
                     {Array.from({ length: ledsPerDrawer }).map((_, i) => (
-                        <div key={i} className={cn("rounded-full bg-ot-surface-elev-bottom border border-ot-border/20", ledSizeClass)} />
+                        <div
+                            key={i}
+                            className={cn(
+                                "rounded-full transition-all",
+                                ledSizeClass,
+                                stripTheme ? "border border-white/20" : "bg-ot-surface-elev-bottom border border-ot-border/20"
+                            )}
+                            style={stripTheme ? { backgroundColor: stripTheme.hex, opacity: 0.9, boxShadow: `0 0 5px ${stripTheme.hex}` } : {}}
+                        />
                     ))}
                 </div>
             </div>
@@ -94,9 +229,16 @@ const DrawerCell = React.memo(function DrawerCell({ cupboardId, row, col, ledsPe
 
     return (
         <div
-            className="h-full w-full min-h-0 min-w-0 bg-ot-surface-bottom border border-ot-border/80 flex flex-col items-center justify-between relative group hover:border-ot-action/60 transition-all duration-200 overflow-hidden cursor-pointer"
+            className={cn(
+                "h-full w-full min-h-0 min-w-0 border flex flex-col items-center justify-between relative group hover:border-ot-action/60 transition-all duration-200 overflow-hidden cursor-pointer rounded-md",
+                stripTheme ? `${stripTheme.bgLight} ${stripTheme.border}` : "bg-ot-surface-bottom border-ot-border/80"
+            )}
         >
-            <div className={cn("absolute font-mono font-bold text-muted-foreground group-hover:text-white transition-colors z-10 whitespace-nowrap overflow-hidden text-ellipsis max-w-[95%]", labelClass)} title={cellId}>
+            <div className={cn(
+                "absolute font-mono font-bold transition-colors z-10 whitespace-nowrap overflow-hidden text-ellipsis max-w-[95%]",
+                labelClass,
+                stripTheme ? `${stripTheme.text}` : "text-muted-foreground group-hover:text-white"
+            )} title={cellId}>
                 {cellId}
             </div>
             <div className={cn("flex items-center w-full justify-center z-10", ledStripClass)}>
@@ -112,8 +254,11 @@ const DrawerCell = React.memo(function DrawerCell({ cupboardId, row, col, ledsPe
                                 ledSizeClass,
                                 isActive
                                     ? cn(activeColorMeta.tailwind, "scale-110")
-                                    : "bg-ot-surface-elev-bottom border border-ot-border/40 opacity-25"
+                                    : stripTheme
+                                        ? "border border-white/20"
+                                        : "bg-ot-surface-elev-bottom border border-ot-border/40 opacity-25"
                             )}
+                            style={!isActive && stripTheme ? { backgroundColor: stripTheme.hex, opacity: 0.9, boxShadow: `0 0 5px ${stripTheme.hex}` } : {}}
                         />
                     );
                 })}
@@ -211,29 +356,35 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                                             {/* Bins */}
                                             <div className="absolute inset-0" style={{ transform: `scale(${binScale})`, transformOrigin: 'top left' }}>
                                                 {shelf.bins && shelf.bins.length > 0 ? (
-                                                    shelf.bins.map((bin, binIdx) => (
-                                                        <div
-                                                            key={bin.id}
-                                                            className="absolute"
-                                                            style={{
-                                                                left: bin.x,
-                                                                top: bin.y,
-                                                                width: bin.width,
-                                                                height: bin.height
-                                                            }}
-                                                        >
-                                                            <DrawerCell
-                                                                cupboardId={id}
-                                                                row={sortedIdx + 1}
-                                                                col={binIdx + 1}
-                                                                ledsPerDrawer={shelf.ledsPerBin || cupboard.ledsPerDrawer || 6}
-                                                                dense={false}
-                                                                absoluteLayout={true}
-                                                                shelfLabel={bin.label}
-                                                                shelfColumns={1}
-                                                            />
-                                                        </div>
-                                                    ))
+                                                    shelf.bins.map((bin, binIdx) => {
+                                                        const stripMatch = findStripForBin(cupboard.ledStrips, shelf, bin);
+                                                        const stripTheme = stripMatch ? stripMatch.theme : null;
+
+                                                        return (
+                                                            <div
+                                                                key={bin.id}
+                                                                className="absolute"
+                                                                style={{
+                                                                    left: bin.x,
+                                                                    top: bin.y,
+                                                                    width: bin.width,
+                                                                    height: bin.height
+                                                                }}
+                                                            >
+                                                                <DrawerCell
+                                                                    cupboardId={id}
+                                                                    row={sortedIdx + 1}
+                                                                    col={binIdx + 1}
+                                                                    ledsPerDrawer={shelf.ledsPerBin || cupboard.ledsPerDrawer || 6}
+                                                                    dense={false}
+                                                                    absoluteLayout={true}
+                                                                    shelfLabel={bin.label}
+                                                                    shelfColumns={1}
+                                                                    stripTheme={stripTheme}
+                                                                />
+                                                            </div>
+                                                        );
+                                                    })
                                                 ) : (
                                                     <div className="absolute inset-0 flex items-center justify-center text-[10px] text-muted-foreground/50 font-mono">
                                                         No bins
@@ -245,7 +396,7 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                                 })}
 
                                  {/* Render LED Strips */}
-                                 {cupboard.ledStrips && cupboard.ledStrips.map(strip => {
+                                 {cupboard.ledStrips && cupboard.ledStrips.map((strip, stripIdx) => {
                                      let savedColors = ['#ef4444', '#22c55e', '#3b82f6', '#facc15', '#f97316', '#a855f7'];
                                      let savedLedCount = 6;
                                      try {
@@ -261,11 +412,17 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
 
                                      const count = strip.ledCount || savedLedCount;
                                      const colors = (strip.colors && strip.colors.length > 0) ? strip.colors : savedColors;
+                                     const colorTheme = getStripColor(stripIdx);
 
                                      return (
                                          <div
                                              key={strip.id}
-                                             className="absolute rounded-full border border-slate-700 bg-slate-900/80 flex items-center overflow-hidden z-20 pointer-events-none shadow-md"
+                                             className={cn(
+                                                 "absolute rounded-full border-2 flex items-center overflow-visible z-20 pointer-events-none transition-all",
+                                                 colorTheme.border,
+                                                 colorTheme.bgLight,
+                                                 colorTheme.shadow
+                                             )}
                                              style={{
                                                  left: strip.x,
                                                  top: strip.y,
@@ -273,7 +430,7 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                                                  height: strip.height,
                                              }}
                                          >
-                                             <div className="absolute -top-3.5 left-1 text-[9px] font-mono text-slate-300 font-semibold">{strip.label}</div>
+                                             <div className={cn("absolute -top-4 left-1 text-[9px] font-mono font-bold whitespace-nowrap px-1 rounded bg-slate-950/90 border shadow-sm", colorTheme.border, colorTheme.text)}>{strip.label}</div>
                                              <div className="flex items-center justify-around w-full px-1">
                                                  {Array.from({ length: Math.min(count, 200) }).map((_, i) => {
                                                      const renderCount = Math.min(count, 200);

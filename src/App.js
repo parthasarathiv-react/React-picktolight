@@ -43,8 +43,9 @@ function PageLoader() {
 
 function RootRedirect() {
     const token = localStorage.getItem('token');
-    const lastPath = localStorage.getItem('last_active_path') || '/monitoring';
-    return token ? <Navigate to={lastPath} replace /> : <Navigate to="/login" replace />;
+    const lastPath = localStorage.getItem('last_active_path');
+    const targetPath = (lastPath && lastPath !== '/login' && lastPath !== '/') ? lastPath : '/monitoring';
+    return token ? <Navigate to={targetPath} replace /> : <Navigate to="/login" replace />;
 }
 
 function App() {

@@ -10,14 +10,26 @@ export default function LedStripsTab({
     wallsData,
     controllersData,
     selectedCupboard: propSelectedCupboard,
-    onSelectCupboard
+    onSelectCupboard,
+    refetchStrips,
+    filterController: propFilterController,
+    onFilterControllerChange,
+    filterWall: propFilterWall,
+    onFilterWallChange,
+    onGoToBins,
+    onDirtyChange
 }) {
     const [internalSelectedCupboard, setInternalSelectedCupboard] = useState(null);
     const selectedCupboard = propSelectedCupboard !== undefined ? propSelectedCupboard : internalSelectedCupboard;
     const setSelectedCupboard = onSelectCupboard || setInternalSelectedCupboard;
 
-    const [filterController, setFilterController] = useState('all');
-    const [filterWall, setFilterWall] = useState('all');
+    const [internalFilterController, setInternalFilterController] = useState('all');
+    const filterController = propFilterController !== undefined ? propFilterController : internalFilterController;
+    const setFilterController = onFilterControllerChange || setInternalFilterController;
+
+    const [internalFilterWall, setInternalFilterWall] = useState('all');
+    const filterWall = propFilterWall !== undefined ? propFilterWall : internalFilterWall;
+    const setFilterWall = onFilterWallChange || setInternalFilterWall;
 
     if (selectedCupboard) {
         return (
@@ -26,6 +38,9 @@ export default function LedStripsTab({
                 onBack={() => setSelectedCupboard(null)}
                 cupboardsData={cupboardsData}
                 syncCupboards={syncCupboards}
+                refetchStrips={refetchStrips}
+                onGoToBins={onGoToBins}
+                onDirtyChange={onDirtyChange}
             />
         );
     }
@@ -113,11 +128,15 @@ export default function LedStripsTab({
                                         <Lightbulb className="w-5 h-5 text-ot-action" />
                                     </div>
                                     <div>
-                                        <div className="font-semibold text-white group-hover:text-ot-action transition-colors text-sm">
-                                            {cupboard.name}
+                                        <div className="font-semibold text-white group-hover:text-ot-action transition-colors text-sm flex items-center gap-1.5">
+                                            <span className="text-xs font-normal text-muted-foreground uppercase tracking-wider">Cupboard:</span>
+                                            <span className="text-base font-bold text-white">{cupboard.name}</span>
                                         </div>
-                                        <div className="text-xs text-muted-foreground font-mono mt-0.5">
-                                            {cupboard.wall}
+                                        <div className="text-xs text-muted-foreground mt-1.5 flex items-center gap-2 flex-wrap">
+                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-ot-surface-top border border-ot-border/60 text-[11px]">
+                                                <span className="text-muted-foreground/70">Wall:</span>
+                                                <span className="font-medium text-gray-200">{cupboard.wall}</span>
+                                            </span>
                                         </div>
                                     </div>
                                 </div>

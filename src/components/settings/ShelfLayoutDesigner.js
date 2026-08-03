@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Button } from 'components/ui/button';
-import { ArrowLeft, Save, CheckCircle2, Box, GripVertical, Server, ChevronRight, LayoutGrid, Layers, Check, Sparkles, Ban } from 'lucide-react';
+import { ArrowLeft, Save, CheckCircle2, Box, GripVertical, Server, ChevronRight, LayoutGrid, Layers, Check, Sparkles, Ban, ZoomIn, ZoomOut } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { Input } from 'components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from 'components/ui/dialog';
@@ -8,19 +8,27 @@ import { ConfirmDialog } from 'components/ui/ConfirmDialog';
 import { apiService } from 'lib/apiService';
 import { toast } from 'sonner';
 
-const SHELF_W = 140;
-const SHELF_H = 48;
-const CANVAS_W = 600;
-const CANVAS_H = 500;
-const MIN_SHELF_W = 120;
-const MIN_SHELF_H = 40;
+const SHELF_W = 200;
+const SHELF_H = 56;
+const CANVAS_W = 1000;
+const CANVAS_H = 700;
+const MIN_SHELF_W = 140;
+const MIN_SHELF_H = 44;
 
-export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, syncCupboards, refetchShelves }) {
+export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, syncCupboards, refetchShelves, onDirtyChange }) {
     const [saveFlash, setSaveFlash] = useState(false);
     const [disableDialogOpen, setDisableDialogOpen] = useState(false);
     const [shelfToDisable, setShelfToDisable] = useState(null);
     const [isCanvasOver, setIsCanvasOver] = useState(false);
     const sidebarDragItemRef = useRef(null);
+    const [isDirty, setIsDirty] = useState(false);
+    const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+
+    useEffect(() => {
+        if (onDirtyChange) {
+            onDirtyChange(isDirty);
+        }
+    }, [isDirty, onDirtyChange]);
 
     const [shelfBlocks, setShelfBlocks] = useState(() => {
         if (cupboard.shelfLayout && Array.isArray(cupboard.shelfLayout)) {
@@ -147,6 +155,7 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
             return s;
         }));
 
+        setIsDirty(true);
         sidebarDragItemRef.current = null;
         toast.success(`Placed "${targetShelf.label}" on canvas`);
     };
@@ -165,6 +174,7 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
             }
             return s;
         }));
+        setIsDirty(true);
     };
 
     const handleDisableShelf = (shelf) => {
@@ -200,6 +210,7 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
 
             // 1. Immediately update local state in canvas & sidebar
             setShelfBlocks(updatedBlocks);
+            setIsDirty(true);
 
             // 2. Immediately update parent cupboardsData state
             const shelves = updatedBlocks.length;
@@ -248,6 +259,7 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
             });
 
             setShelfBlocks(updatedBlocks);
+            setIsDirty(true);
 
             const shelves = updatedBlocks.length;
             const updatedCupboards = cupboardsData.map(c =>
@@ -287,10 +299,13 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
         });
     };
 
+    const [zoom, setZoom] = useState(1.25);
+    const [hoveredItem, setHoveredItem] = useState(null);
+
     const onMouseMove = useCallback((e) => {
         if (!dragging) return;
-        const dx = e.clientX - dragging.startMouseX;
-        const dy = e.clientY - dragging.startMouseY;
+        const dx = (e.clientX - dragging.startMouseX) / zoom;
+        const dy = (e.clientY - dragging.startMouseY) / zoom;
 
         const currentMinW = MIN_SHELF_W;
 
@@ -334,7 +349,8 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                     return s;
             }
         }));
-    }, [dragging]);
+        setIsDirty(true);
+    }, [dragging, zoom]);
 
     const onMouseUp = useCallback(() => setDragging(null), []);
 
@@ -456,6 +472,7 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
             }
 
             setSaveFlash(true);
+            setIsDirty(false);
             setTimeout(() => {
                 setSaveFlash(false);
                 onBack();
@@ -466,11 +483,20 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
         }
     };
 
+    const handleBackClick = () => {
+        if (isDirty) {
+            setShowUnsavedDialog(true);
+        } else {
+            onBack();
+        }
+    };
+
     const canvasBlocks = shelfBlocks.filter(s => s.placed === true && s.disabled !== true && s.shelf_status !== false && String(s.shelf_status).toLowerCase() !== 'false');
 
-    // Compute canvas size dynamically based on PLACED shelf positions only
-    const canvasWidth = Math.max(CANVAS_W, ...canvasBlocks.map(s => (s.x || 0) + (s.width || SHELF_W) + 40));
-    const canvasHeight = Math.max(CANVAS_H, ...canvasBlocks.map(s => (s.y || 0) + (s.height || SHELF_H) + 40));
+    const baseCanvasWidth = Math.max(CANVAS_W, ...canvasBlocks.map(s => (s.x || 0) + (s.width || SHELF_W) + 40));
+    const baseCanvasHeight = Math.max(CANVAS_H, ...canvasBlocks.map(s => (s.y || 0) + (s.height || SHELF_H) + 40));
+    const canvasWidth = baseCanvasWidth * zoom;
+    const canvasHeight = baseCanvasHeight * zoom;
 
     // Edge handle component
     const ResizeHandle = ({ type, cursor, className, style }) => (
@@ -537,7 +563,7 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
             {/* Top Bar */}
             <div className="flex items-center justify-between px-5 py-3 border-b border-ot-border bg-ot-surface-top shrink-0 gap-4 flex-wrap">
                 <div className="flex items-center gap-3">
-                    <Button variant="ghost" onClick={onBack}
+                    <Button variant="ghost" onClick={handleBackClick}
                         className="text-muted-foreground hover:text-white gap-2 h-8 px-3">
                         <ArrowLeft className="w-4 h-4" /> Back to Cupboards
                     </Button>
@@ -545,17 +571,17 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                     <div className="flex items-center gap-1.5 text-xs">
                         <div className="flex items-center gap-1.5 text-ot-action bg-ot-action/10 px-2 py-1 rounded-md font-medium border border-ot-action/20">
                             <Server className="w-3.5 h-3.5" />
-                            <span>{cupboard.controller}</span>
+                            <span>Controller: {cupboard.controller}</span>
                         </div>
                         <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
                         <div className="flex items-center gap-1.5 text-muted-foreground hover:text-white bg-ot-surface-elev-bottom px-2 py-1 rounded-md border border-ot-border transition-colors">
                             <LayoutGrid className="w-3.5 h-3.5" />
-                            <span>{cupboard.wall}</span>
+                            <span>Wall: {cupboard.wall}</span>
                         </div>
                         <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
                         <div className="flex items-center gap-1.5 text-white bg-ot-surface-elev-bottom px-2 py-1 rounded-md border border-ot-border">
                             <Box className="w-3.5 h-3.5 text-ot-action" />
-                            <span className="font-semibold">{cupboard.name}</span>
+                            <span className="font-semibold">Cupboard: {cupboard.name}</span>
                         </div>
                     </div>
 
@@ -564,6 +590,37 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                 </div>
 
                 <div className="flex items-center gap-3">
+                    {/* Zoom Scale Controls */}
+                    <div className="flex items-center gap-1 bg-ot-surface-elev-bottom border border-ot-border rounded-lg p-0.5">
+                        <Button
+                            variant="ghost" size="sm"
+                            onClick={() => setZoom(z => Math.max(0.75, z - 0.25))}
+                            className="h-7 w-7 p-0 text-muted-foreground hover:text-white"
+                            title="Zoom Out"
+                        >
+                            <ZoomOut className="w-3.5 h-3.5" />
+                        </Button>
+                        <span className="text-[11px] font-mono font-semibold px-1.5 min-w-[42px] text-center text-white">
+                            {Math.round(zoom * 100)}%
+                        </span>
+                        <Button
+                            variant="ghost" size="sm"
+                            onClick={() => setZoom(z => Math.min(2.5, z + 0.25))}
+                            className="h-7 w-7 p-0 text-muted-foreground hover:text-white"
+                            title="Zoom In"
+                        >
+                            <ZoomIn className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                            variant="ghost" size="sm"
+                            onClick={() => setZoom(1.25)}
+                            className="h-7 px-1.5 text-[10px] text-muted-foreground hover:text-white"
+                            title="Reset Zoom"
+                        >
+                            Reset
+                        </Button>
+                    </div>
+
                     <Button
                         onClick={handleSave}
                         disabled={shelfBlocks.filter(s => s.placed === true && s.disabled !== true && s.shelf_status !== false).length === 0}
@@ -612,55 +669,75 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                             cursor: dragging?.type === 'move' ? 'grabbing' : 'default',
                         }}
                     >
-                        {/* Cupboard frame label */}
-                        <div className="absolute top-3 left-4 text-xs text-muted-foreground/40 font-semibold uppercase tracking-widest pointer-events-none">
-                            {cupboard.name} — Drag & resize shelves
-                        </div>
-
-                        {canvasBlocks.length === 0 && (
-                            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-muted-foreground/50 text-xs gap-2">
-                                <Sparkles className="w-8 h-8 text-ot-action/50 animate-pulse" />
-                                <span className="font-medium text-white/80">No active shelves placed on canvas yet.</span>
-                                <span>Drag a shelf from the right sidebar to place & align it here.</span>
+                        <div
+                            style={{
+                                width: baseCanvasWidth,
+                                height: baseCanvasHeight,
+                                transform: `scale(${zoom})`,
+                                transformOrigin: 'top left',
+                                position: 'relative',
+                            }}
+                        >
+                            {/* Cupboard frame label */}
+                            <div className="absolute top-3 left-4 text-xs text-muted-foreground/40 font-semibold uppercase tracking-widest pointer-events-none">
+                                {cupboard.name} — Drag & resize shelves
                             </div>
-                        )}
 
-                        {/* Shelf blocks */}
-                        {canvasBlocks.map((shelf, idx) => {
-                            const isActive = dragging?.id === shelf.id;
-                            return (
-                                <div
-                                    key={shelf.id}
-                                    className={cn(
-                                        'absolute rounded-lg border-2 flex items-center overflow-visible transition-shadow',
-                                        isActive
-                                            ? 'border-ot-action bg-ot-action/15 shadow-xl shadow-ot-action/30 z-20'
-                                            : 'border-ot-action/40 bg-ot-surface-bottom hover:border-ot-action/70 z-10'
-                                    )}
-                                    style={{
-                                        left: shelf.x,
-                                        top: shelf.y,
-                                        width: shelf.width,
-                                        height: shelf.height,
-                                    }}
-                                >
-                                    {/* Move handle (drag the shelf body) */}
+                            {canvasBlocks.length === 0 && (
+                                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-muted-foreground/50 text-xs gap-2">
+                                    <Sparkles className="w-8 h-8 text-ot-action/50 animate-pulse" />
+                                    <span className="font-medium text-white/80">No active shelves placed on canvas yet.</span>
+                                    <span>Drag a shelf from the right sidebar to place & align it here.</span>
+                                </div>
+                            )}
+
+                            {/* Shelf blocks */}
+                            {canvasBlocks.map((shelf, idx) => {
+                                const isActive = dragging?.id === shelf.id;
+                                const isHovered = hoveredItem?.type === 'shelf' && hoveredItem?.id === shelf.id;
+                                return (
                                     <div
-                                        className="absolute inset-0 cursor-grab active:cursor-grabbing z-10"
-                                        onPointerDown={(e) => e.stopPropagation()}
-                                        onMouseDown={(e) => handleMouseDown(e, shelf.id, 'move')}
-                                    />
+                                        key={shelf.id}
+                                        className={cn(
+                                            'absolute rounded-lg border-2 flex items-center overflow-visible transition-shadow',
+                                            isActive
+                                                ? 'border-ot-action bg-ot-action/15 shadow-xl shadow-ot-action/30 z-20'
+                                                : 'border-ot-action/40 bg-ot-surface-bottom hover:border-ot-action/70 z-10'
+                                        )}
+                                        style={{
+                                            left: shelf.x,
+                                            top: shelf.y,
+                                            width: shelf.width,
+                                            height: shelf.height,
+                                        }}
+                                        onMouseEnter={() => setHoveredItem({ type: 'shelf', id: shelf.id, label: shelf.label })}
+                                        onMouseLeave={() => setHoveredItem(prev => prev?.id === shelf.id ? null : prev)}
+                                    >
+                                        {/* Shelf Hover Badge */}
+                                        {isHovered && (
+                                            <div className="absolute -top-7 left-2 z-40 px-2.5 py-1 rounded-md bg-slate-900/95 border border-slate-600 text-white text-[11px] font-semibold shadow-xl flex items-center gap-1.5 pointer-events-none whitespace-nowrap animate-in fade-in">
+                                                <Layers className="w-3.5 h-3.5 text-ot-action" />
+                                                <span>Shelf: {shelf.label}</span>
+                                            </div>
+                                        )}
 
-                                    {/* Shelf content */}
-                                    <div className="flex items-center gap-1.5 px-1.5 z-20 shrink-0">
-                                        <GripVertical className="w-3 h-3 text-muted-foreground/40 pointer-events-none shrink-0" />
-                                        <span className="text-xs font-semibold text-white whitespace-nowrap px-0.5 py-0.5 rounded shrink-0 truncate pointer-events-none select-none">
-                                            {shelf.label}
-                                        </span>
-                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-ot-action/20 text-ot-action border border-ot-action/30 shrink-0 shadow-sm pointer-events-none whitespace-nowrap">
-                                            #{shelf.shelf_order !== undefined && shelf.shelf_order !== null && shelf.shelf_order !== '' ? shelf.shelf_order : (idx + 1)}
-                                        </span>
-                                    </div>
+                                        {/* Move handle (drag the shelf body) */}
+                                        <div
+                                            className="absolute inset-0 cursor-grab active:cursor-grabbing z-10"
+                                            onPointerDown={(e) => e.stopPropagation()}
+                                            onMouseDown={(e) => handleMouseDown(e, shelf.id, 'move')}
+                                        />
+
+                                        {/* Shelf content */}
+                                        <div className="flex items-center gap-1.5 px-1.5 z-20 shrink-0">
+                                            <GripVertical className="w-3 h-3 text-muted-foreground/40 pointer-events-none shrink-0" />
+                                            <span className="text-xs font-semibold text-white whitespace-nowrap px-0.5 py-0.5 rounded shrink-0 truncate pointer-events-none select-none">
+                                                {shelf.label}
+                                            </span>
+                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-ot-action/20 text-ot-action border border-ot-action/30 shrink-0 shadow-sm pointer-events-none whitespace-nowrap">
+                                                #{shelf.shelf_order !== undefined && shelf.shelf_order !== null && shelf.shelf_order !== '' ? shelf.shelf_order : (idx + 1)}
+                                            </span>
+                                        </div>
 
                                     {/* Disable button */}
                                     <button
@@ -727,6 +804,7 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                                 </div>
                             );
                         })}
+                        </div>
                     </div>
                 </div>
 
@@ -852,6 +930,23 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                 variant="warning"
                 onConfirm={confirmDisableShelf}
                 onCancel={() => setShelfToDisable(null)}
+            />
+
+            {/* Unsaved Changes Warning Dialog */}
+            <ConfirmDialog
+                open={showUnsavedDialog}
+                onOpenChange={setShowUnsavedDialog}
+                title="Unsaved Changes"
+                description="You have unsaved changes. Do you want to go back without saving these changes?"
+                confirmText="Leave Without Saving"
+                cancelText="Cancel"
+                variant="warning"
+                onConfirm={() => {
+                    setShowUnsavedDialog(false);
+                    setIsDirty(false);
+                    onBack();
+                }}
+                onCancel={() => setShowUnsavedDialog(false)}
             />
         </div>
     );

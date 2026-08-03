@@ -1,15 +1,14 @@
 const getApiUrl = () => {
-    if (process.env.NODE_ENV === "development") {
-        return process.env.REACT_APP_API_URL;
+    if (import.meta.env.DEV) {
+        return import.meta.env.VITE_API_URL || 'http://172.17.3.174:8000/api/v1';
     }
 
     // Fallbacks for production build
     const protocol = window.location.protocol === 'file:' ? 'http:' : window.location.protocol;
     const hostname = window.location.hostname;
-    const port = process.env.REACT_APP_API_PORT;
+    const port = import.meta.env.VITE_API_PORT || '8000';
 
     return `${protocol}//${hostname}:${port}/api/v1`;
 };
 
 export const API_URL = getApiUrl();
-

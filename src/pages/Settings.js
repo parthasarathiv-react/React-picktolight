@@ -117,6 +117,17 @@ export default function Settings() {
         enabled: !!locId && shouldFetchBins,
     });
 
+    const shouldFetchStrips = ['leds'].includes(activeTab);
+    const { data: rawStrips, isFetching: isFetchingStrips, error: errorStrips, refetch: refetchStrips } = useQuery({
+        queryKey: ['strips', locId],
+        queryFn: async () => {
+            const data = await apiService.getStrips(locId || 'All');
+            if (!data.success || !data.data) throw new Error("Failed to fetch strips");
+            return data.data;
+        },
+        enabled: shouldFetchStrips,
+    });
+
     useEffect(() => {
         if (fetchedControllers) {
             syncControllers(fetchedControllers);
@@ -282,6 +293,78 @@ export default function Settings() {
 
                 const shelvesCount = shelfLayout.length;
 
+                let ledStrips = [];
+                if (rawStrips && Array.isArray(rawStrips)) {
+                    const cId = String(c.cupboard_id || c.id || '');
+                    const cName = String(c.cupboard_name || c.name || '');
+
+                    const matchingStrips = rawStrips.filter(s => {
+                        const sCupId = String(s.strip_cupboard_id || '').trim();
+                        if (sCupId) {
+                            return (
+                                sCupId === cId ||
+                                sCupId === cName ||
+                                (c.cupboard_id !== undefined && sCupId === String(c.cupboard_id).trim()) ||
+                                (c.id !== undefined && sCupId === String(c.id).trim()) ||
+                                (c.name !== undefined && sCupId === String(c.name).trim()) ||
+                                (c.cupboard_name !== undefined && sCupId === String(c.cupboard_name).trim())
+                            );
+                        }
+
+                        // Fallback when strip_cupboard_id is missing from GET API:
+                        const sShelfId = String(s.strip_shelf_id || '').trim();
+                        if (sShelfId && shelfLayout && shelfLayout.length > 0) {
+                            const matchesShelf = shelfLayout.some(sh => {
+                                const shId = String(sh.shelf_id || sh.id || '').trim();
+                                const shPhrId = String(sh.shelf_phr_id || '').trim();
+                                const shName = String(sh.label || sh.shelf_name || '').trim();
+                                return sShelfId === shId || sShelfId === shPhrId || sShelfId === shName;
+                            });
+                            if (matchesShelf) return true;
+                        }
+
+                        if (Array.isArray(s.bin_list) && s.bin_list.length > 0 && shelfLayout && shelfLayout.length > 0) {
+                            const matchesBin = s.bin_list.some(b => {
+                                const bId = String(b.bin_id || b.bin_name || '').trim();
+                                return shelfLayout.some(sh =>
+                                    Array.isArray(sh.bins) && sh.bins.some(bn =>
+                                        String(bn.bin_id || bn.id || bn.label || '').trim() === bId
+                                    )
+                                );
+                            });
+                            if (matchesBin) return true;
+                        }
+
+                        if (rawCupboards && rawCupboards.length === 1) {
+                            return true;
+                        }
+
+                        return false;
+                    });
+
+                    if (matchingStrips.length > 0) {
+                        ledStrips = matchingStrips.map((s, idx) => {
+                            const realId = (s.strip_id !== undefined && s.strip_id !== null) ? String(s.strip_id) : ((s.id !== undefined && s.id !== null) ? String(s.id) : `strip-${idx}`);
+                            return {
+                                id: realId,
+                                strip_id: s.strip_id || s.id || realId,
+                                label: s.strip_name || `Strip ${idx + 1}`,
+                                x: (s.strip_gridx !== undefined && s.strip_gridx !== null && !isNaN(parseFloat(s.strip_gridx))) ? parseFloat(s.strip_gridx) : 20,
+                                y: (s.strip_gridy !== undefined && s.strip_gridy !== null && !isNaN(parseFloat(s.strip_gridy))) ? parseFloat(s.strip_gridy) : (20 + idx * 30),
+                                width: (s.strip_width !== undefined && s.strip_width !== null && !isNaN(parseFloat(s.strip_width))) ? parseFloat(s.strip_width) : 100,
+                                height: (s.strip_height !== undefined && s.strip_height !== null && !isNaN(parseFloat(s.strip_height))) ? parseFloat(s.strip_height) : 22,
+                                strip_loc_id: s.strip_loc_id,
+                                strip_cupboard_id: s.strip_cupboard_id,
+                                strip_shelf_id: s.strip_shelf_id,
+                                strip_org_id: s.strip_org_id,
+                                strip_branch_id: s.strip_branch_id,
+                                strip_status: s.strip_status,
+                                linkedBins: Array.isArray(s.bin_list) ? s.bin_list.map(b => b.bin_name || String(b.bin_id)) : []
+                            };
+                        });
+                    }
+                }
+
                 const cupboardObj = {
                     id: c.cupboard_id,
                     name: c.cupboard_name,
@@ -297,7 +380,8 @@ export default function Settings() {
                     rows: shelvesCount,
                     columns: 4,
                     ledsPerDrawer: 6,
-                    shelfLayout: shelfLayout
+                    shelfLayout: shelfLayout,
+                    ledStrips: ledStrips
                 };
                 
                 try {
@@ -305,9 +389,6 @@ export default function Settings() {
                     if (layouts[cupboardObj.id]) {
                         cupboardObj.columns = layouts[cupboardObj.id].columns || cupboardObj.columns;
                         cupboardObj.ledsPerDrawer = layouts[cupboardObj.id].ledsPerDrawer || cupboardObj.ledsPerDrawer;
-                        if (layouts[cupboardObj.id].ledStrips) {
-                            cupboardObj.ledStrips = layouts[cupboardObj.id].ledStrips;
-                        }
                     }
                 } catch (e) { }
 
@@ -316,7 +397,7 @@ export default function Settings() {
 
             syncCupboards(mapped);
         }
-    }, [rawCupboards, rawWalls, fetchedControllers, rawShelves, rawBins]);
+    }, [rawCupboards, rawWalls, fetchedControllers, rawShelves, rawBins, rawStrips]);
 
     useEffect(() => {
         if (errorControllers) toast.error(`Failed to fetch controllers: ${errorControllers.message}`);
@@ -324,9 +405,10 @@ export default function Settings() {
         if (errorCupboards) toast.error(`Failed to fetch cupboards: ${errorCupboards.message}`);
         if (errorShelves) toast.error(`Failed to fetch shelves: ${errorShelves.message}`);
         if (errorBins) toast.error(`Failed to fetch bins: ${errorBins.message}`);
-    }, [errorControllers, errorWalls, errorCupboards, errorShelves, errorBins]);
+        if (errorStrips) toast.error(`Failed to fetch strips: ${errorStrips.message}`);
+    }, [errorControllers, errorWalls, errorCupboards, errorShelves, errorBins, errorStrips]);
 
-    const isFetchingAny = isFetchingControllers || isFetchingWalls || isFetchingCupboards || isFetchingShelves || isFetchingBins;
+    const isFetchingAny = isFetchingControllers || isFetchingWalls || isFetchingCupboards || isFetchingShelves || isFetchingBins || isFetchingStrips;
 
     // Wall layout designer: which controller was selected
     const [selectedController, setSelectedController] = useState(null);
@@ -335,6 +417,71 @@ export default function Settings() {
     const [selectedCupboardForShelves, setSelectedCupboardForShelves] = useState(null);
     const [selectedShelfForBins, setSelectedShelfForBins] = useState(null);
     const [selectedCupboardForLeds, setSelectedCupboardForLeds] = useState(null);
+
+    // Persistent filter states across navigation
+    const [cupboardFilterController, setCupboardFilterController] = useState(() => {
+        return localStorage.getItem('settings_cupboard_filter_controller') || 'all';
+    });
+
+    const [shelfFilterController, setShelfFilterController] = useState(() => {
+        return localStorage.getItem('settings_shelf_filter_controller') || 'all';
+    });
+    const [shelfFilterWall, setShelfFilterWall] = useState(() => {
+        return localStorage.getItem('settings_shelf_filter_wall') || 'all';
+    });
+
+    const [binFilterController, setBinFilterController] = useState(() => {
+        return localStorage.getItem('settings_bin_filter_controller') || 'all';
+    });
+    const [binFilterWall, setBinFilterWall] = useState(() => {
+        return localStorage.getItem('settings_bin_filter_wall') || 'all';
+    });
+    const [binFilterCupboard, setBinFilterCupboard] = useState(() => {
+        return localStorage.getItem('settings_bin_filter_cupboard') || 'all';
+    });
+
+    const [ledFilterController, setLedFilterController] = useState(() => {
+        return localStorage.getItem('settings_led_filter_controller') || 'all';
+    });
+    const [ledFilterWall, setLedFilterWall] = useState(() => {
+        return localStorage.getItem('settings_led_filter_wall') || 'all';
+    });
+
+    const handleCupboardFilterControllerChange = (val) => {
+        setCupboardFilterController(val);
+        localStorage.setItem('settings_cupboard_filter_controller', val);
+    };
+
+    const handleShelfFilterControllerChange = (val) => {
+        setShelfFilterController(val);
+        localStorage.setItem('settings_shelf_filter_controller', val);
+    };
+    const handleShelfFilterWallChange = (val) => {
+        setShelfFilterWall(val);
+        localStorage.setItem('settings_shelf_filter_wall', val);
+    };
+
+    const handleBinFilterControllerChange = (val) => {
+        setBinFilterController(val);
+        localStorage.setItem('settings_bin_filter_controller', val);
+    };
+    const handleBinFilterWallChange = (val) => {
+        setBinFilterWall(val);
+        localStorage.setItem('settings_bin_filter_wall', val);
+    };
+    const handleBinFilterCupboardChange = (val) => {
+        setBinFilterCupboard(val);
+        localStorage.setItem('settings_bin_filter_cupboard', val);
+    };
+
+    const handleLedFilterControllerChange = (val) => {
+        setLedFilterController(val);
+        localStorage.setItem('settings_led_filter_controller', val);
+    };
+    const handleLedFilterWallChange = (val) => {
+        setLedFilterWall(val);
+        localStorage.setItem('settings_led_filter_wall', val);
+    };
 
     // ── Sync helpers ─────────────────────────────────────────────────────────
     const syncControllers = (newData) => {
@@ -490,6 +637,8 @@ export default function Settings() {
                             wallsData={wallsData}
                             selectedWall={selectedWallForCupboards}
                             onSelectWall={handleSelectWallForCupboards}
+                            filterController={cupboardFilterController}
+                            onFilterControllerChange={handleCupboardFilterControllerChange}
                         />
                     )}
 
@@ -503,6 +652,10 @@ export default function Settings() {
                             wallsData={wallsData}
                             controllersData={controllersData}
                             refetchShelves={refetchShelves}
+                            filterController={shelfFilterController}
+                            onFilterControllerChange={handleShelfFilterControllerChange}
+                            filterWall={shelfFilterWall}
+                            onFilterWallChange={handleShelfFilterWallChange}
                         />
                     )}
 
@@ -516,6 +669,12 @@ export default function Settings() {
                             wallsData={wallsData}
                             controllersData={controllersData}
                             refetchBins={refetchBins}
+                            filterController={binFilterController}
+                            onFilterControllerChange={handleBinFilterControllerChange}
+                            filterWall={binFilterWall}
+                            onFilterWallChange={handleBinFilterWallChange}
+                            filterCupboard={binFilterCupboard}
+                            onFilterCupboardChange={handleBinFilterCupboardChange}
                         />
                     )}
 
@@ -524,6 +683,7 @@ export default function Settings() {
                         <LedSetupTab
                             cupboardsData={cupboardsData}
                             syncCupboards={syncCupboards}
+                            locId={locId}
                         />
                     )}
 
@@ -536,6 +696,18 @@ export default function Settings() {
                             onSelectCupboard={setSelectedCupboardForLeds}
                             wallsData={wallsData}
                             controllersData={controllersData}
+                            refetchStrips={refetchStrips}
+                            filterController={ledFilterController}
+                            onFilterControllerChange={handleLedFilterControllerChange}
+                            filterWall={ledFilterWall}
+                            onFilterWallChange={handleLedFilterWallChange}
+                            onGoToBins={(targetCupboard) => {
+                                handleTabChange('bins');
+                                if (targetCupboard) {
+                                    const cupName = targetCupboard.name || targetCupboard.cupboard_name || 'all';
+                                    handleBinFilterCupboardChange(cupName);
+                                }
+                            }}
                         />
                     )}
                         </>

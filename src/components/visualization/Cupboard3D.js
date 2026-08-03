@@ -134,7 +134,7 @@ function getCupboard3DSize(cupboard) {
     return { width, height, upperHeight, depth, scale3D, canvasWidth, canvasHeight, hasCustomLayout };
 }
 
-function LedStrip3D({ strip, canvasWidth, canvasHeight, upperHeight, depth, scale3D }) {
+function LedStrip3D({ strip, stripIdx = 0, canvasWidth, canvasHeight, upperHeight, depth, scale3D }) {
     let savedColors = ['#ef4444', '#22c55e', '#3b82f6', '#facc15', '#f97316', '#a855f7'];
     let savedLedCount = 6;
     try {
@@ -150,6 +150,7 @@ function LedStrip3D({ strip, canvasWidth, canvasHeight, upperHeight, depth, scal
 
     const count = strip.ledCount || savedLedCount;
     const colors = (strip.colors && strip.colors.length > 0) ? strip.colors : savedColors;
+    const colorTheme = getStripColor(stripIdx);
 
     const stripWidth = strip.width * scale3D;
     const stripHeight = strip.height * scale3D;
@@ -162,7 +163,8 @@ function LedStrip3D({ strip, canvasWidth, canvasHeight, upperHeight, depth, scal
         <group position={[x, y, depth / 2 + 0.1]}>
             <mesh>
                 <boxGeometry args={[stripWidth, stripHeight, 0.02]} />
-                <meshStandardMaterial color="#1e293b" transparent opacity={0.8} />
+                <meshStandardMaterial color={colorTheme ? colorTheme.hex : '#1e293b'} transparent opacity={0.45} />
+                <Edges threshold={10} color={colorTheme ? colorTheme.hex : '#38bdf8'} opacity={0.9} transparent />
             </mesh>
             {Array.from({ length: renderCount }).map((_, i) => {
                 const ledX = -stripWidth / 2 + ledGap * (i + 1);
@@ -179,7 +181,55 @@ function LedStrip3D({ strip, canvasWidth, canvasHeight, upperHeight, depth, scal
     );
 }
 
-function ShelfCell({ cupboardId, row, col, ledsPerDrawer, position, size, cellIdOverride }) {
+const STRIP_COLORS = [
+    { name: 'cyan', hex: '#22d3ee' },
+    { name: 'purple', hex: '#c084fc' },
+    { name: 'amber', hex: '#fbbf24' },
+    { name: 'emerald', hex: '#34d399' },
+    { name: 'rose', hex: '#fb7185' },
+    { name: 'blue', hex: '#60a5fa' },
+    { name: 'orange', hex: '#fb923c' },
+    { name: 'lime', hex: '#a3e635' },
+    { name: 'fuchsia', hex: '#e879f9' }
+];
+
+function getStripColor(index) {
+    if (index < 0 || isNaN(index)) return STRIP_COLORS[0];
+    return STRIP_COLORS[index % STRIP_COLORS.length];
+}
+
+function findStripForBin(ledStrips, shelf, bin) {
+    if (!ledStrips || !Array.isArray(ledStrips) || !bin) return null;
+
+    const compositeId = `${shelf?.id || ''}_${bin?.id || ''}`;
+    const binIdStr = String(bin.bin_id || bin.id || '').trim();
+    const binLabelStr = String(bin.label || bin.bin_name || '').trim();
+
+    for (let idx = 0; idx < ledStrips.length; idx++) {
+        const strip = ledStrips[idx];
+        if (!strip.linkedBins || !Array.isArray(strip.linkedBins)) continue;
+
+        const isMatch = strip.linkedBins.some(lb => {
+            const lbStr = String(lb).trim();
+            if (lbStr === compositeId) return true;
+            if (binIdStr && lbStr === binIdStr) return true;
+            if (binLabelStr && lbStr === binLabelStr) return true;
+            if (lbStr.includes('_')) {
+                const parts = lbStr.split('_');
+                const lastPart = parts[parts.length - 1];
+                if (lastPart === binIdStr || lastPart === binLabelStr) return true;
+            }
+            return false;
+        });
+
+        if (isMatch) {
+            return { strip, index: idx, theme: getStripColor(idx) };
+        }
+    }
+    return null;
+}
+
+function ShelfCell({ cupboardId, row, col, ledsPerDrawer, position, size, cellIdOverride, stripTheme }) {
     const [hovered, setHovered] = useState(false);
     const assignment = getDrawerAssignment(cupboardId, row, col);
     const cellId = cellIdOverride || `${row}${String.fromCharCode(64 + col)}`;
@@ -200,6 +250,14 @@ function ShelfCell({ cupboardId, row, col, ledsPerDrawer, position, size, cellId
         }
     }
 
+    const binMeshColor = hovered
+        ? '#425679'
+        : assignment
+            ? '#203250'
+            : stripTheme
+                ? stripTheme.hex
+                : '#03132e';
+
     return (
         <group position={position}>
             <mesh
@@ -207,13 +265,24 @@ function ShelfCell({ cupboardId, row, col, ledsPerDrawer, position, size, cellId
                 onPointerOut={() => setHovered(false)}
             >
                 <boxGeometry args={size} />
-                <meshStandardMaterial color={hovered ? '#425679' : assignment ? '#203250' : '#03132e'} roughness={0.6} metalness={0.2} />
-                <Edges threshold={12} color={assignment ? BORDER : '#234f7d'} opacity={assignment ? 0.35 : 0.18} transparent />
+                <meshStandardMaterial
+                    color={binMeshColor}
+                    roughness={stripTheme ? 0.3 : 0.6}
+                    metalness={stripTheme ? 0.4 : 0.2}
+                    transparent={!!stripTheme}
+                    opacity={stripTheme ? 0.55 : 1}
+                />
+                <Edges
+                    threshold={12}
+                    color={stripTheme ? stripTheme.hex : (assignment ? BORDER : '#234f7d')}
+                    opacity={stripTheme ? 0.9 : (assignment ? 0.35 : 0.18)}
+                    transparent
+                />
             </mesh>
 
             <FlatText
                 text={cellId}
-                color="#8ba3c4"
+                color={stripTheme ? '#ffffff' : '#8ba3c4'}
                 position={[0, -size[1] * 0.22, size[2] / 2 + 0.021]}
                 planeHeight={Math.min(0.08, size[1] * 0.35)}
                 maxPlaneWidth={size[0] - 0.05}
@@ -225,13 +294,13 @@ function ShelfCell({ cupboardId, row, col, ledsPerDrawer, position, size, cellId
                 const isActive = !!activeColorMeta;
                 const ledGap = size[0] / (ledsPerDrawer + 1);
                 const x = -size[0] / 2 + ledGap * (ledIndex + 1);
-                const ledColor = isActive ? activeColorMeta.hex : '#0e2e54';
+                const ledColor = isActive ? activeColorMeta.hex : (stripTheme ? stripTheme.hex : '#0e2e54');
 
                 return (
                     <mesh key={ledIndex} position={[x, size[1] * 0.22, size[2] / 2 + 0.04]}>
-                        <sphereGeometry args={[Math.min(0.035, ledGap*0.3), 12, 12]} />
+                        <sphereGeometry args={[Math.min(0.035, ledGap * 0.3), 12, 12]} />
                         <meshBasicMaterial color={ledColor} />
-                        {isActive && <pointLight color={ledColor} intensity={0.35} distance={0.8} />}
+                        {(isActive || stripTheme) && <pointLight color={ledColor} intensity={isActive ? 0.35 : 0.25} distance={0.8} />}
                     </mesh>
                 );
             })}
@@ -327,6 +396,9 @@ function CupboardModel({ cupboard, position, isActive, onSelect }) {
                                     const isCustom = bin.label && !bin.label.toLowerCase().startsWith('shelf');
                                     const cellId = isCustom ? (shelf.bins.length === 1 ? bin.label : `${bin.label}-${String.fromCharCode(64 + binIdx + 1)}`) : undefined;
 
+                                    const stripMatch = findStripForBin(cupboard.ledStrips, shelf, bin);
+                                    const stripTheme = stripMatch ? stripMatch.theme : null;
+
                                     return (
                                         <ShelfCell
                                             key={bin.id}
@@ -337,6 +409,7 @@ function CupboardModel({ cupboard, position, isActive, onSelect }) {
                                             position={[bin3Dx, bin3Dy, depth / 2 + 0.09]}
                                             size={[binGlobalW * scale3D, binGlobalH * scale3D, 0.18]}
                                             cellIdOverride={cellId}
+                                            stripTheme={stripTheme}
                                         />
                                     );
                                 })}
@@ -345,10 +418,11 @@ function CupboardModel({ cupboard, position, isActive, onSelect }) {
                     })}
 
                     {/* Render LED Strips */}
-                    {cupboard.ledStrips && cupboard.ledStrips.map(strip => (
+                    {cupboard.ledStrips && cupboard.ledStrips.map((strip, stripIdx) => (
                         <LedStrip3D 
                             key={strip.id} 
                             strip={strip} 
+                            stripIdx={stripIdx}
                             canvasWidth={canvasWidth}
                             canvasHeight={canvasHeight}
                             upperHeight={upperHeight}

@@ -27,8 +27,9 @@ export function ConfirmDialog({
     const renderIcon = () => {
         switch (variant) {
             case "destructive":
-            case "warning":
                 return <AlertTriangle className="w-6 h-6 text-red-500" />;
+            case "warning":
+                return <AlertTriangle className="w-6 h-6 text-amber-500" />;
             case "info":
                 return <Info className="w-6 h-6 text-blue-500" />;
             case "success":
@@ -41,8 +42,9 @@ export function ConfirmDialog({
     const getIconBg = () => {
         switch (variant) {
             case "destructive":
-            case "warning":
                 return "bg-red-500/10 border-red-500/20";
+            case "warning":
+                return "bg-amber-500/10 border-amber-500/20";
             case "info":
                 return "bg-blue-500/10 border-blue-500/20";
             case "success":
@@ -56,6 +58,8 @@ export function ConfirmDialog({
         switch (variant) {
             case "destructive":
                 return "bg-red-600 hover:bg-red-700 text-white min-w-[100px] shadow-lg shadow-red-900/20";
+            case "warning":
+                return "bg-amber-600 hover:bg-amber-700 text-white min-w-[100px] shadow-lg shadow-amber-900/20";
             case "info":
                 return "bg-blue-600 hover:bg-blue-700 text-white min-w-[100px]";
             default:

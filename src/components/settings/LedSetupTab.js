@@ -1,167 +1,209 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from 'components/ui/card';
 import { Button } from 'components/ui/button';
 import { Input } from 'components/ui/input';
-import { Save, CheckCircle2, RefreshCw, Palette, Lightbulb, Sliders } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from 'components/ui/dialog';
+import { RefreshCw, Palette, MapPin, Plus, Pencil, Loader2, Sparkles, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from 'lib/utils';
+import { apiService } from 'lib/apiService';
 
-const DEFAULT_PRESET_COLORS = [
-    { name: 'Red', hex: '#ef4444' },
-    { name: 'Green', hex: '#22c55e' },
-    { name: 'Blue', hex: '#3b82f6' },
-    { name: 'Yellow', hex: '#facc15' },
-    { name: 'Orange', hex: '#f97316' },
-    { name: 'Purple', hex: '#a855f7' },
-    { name: 'Cyan', hex: '#06b6d4' },
-    { name: 'White', hex: '#ffffff' },
-];
-
-export default function LedSetupTab({ cupboardsData, syncCupboards }) {
-    const [ledCount, setLedCount] = useState(6);
-    const [ledColors, setLedColors] = useState([]);
-    const [savedFlash, setSavedFlash] = useState(false);
-
-    // Load initial LED setup from localStorage or defaults
-    useEffect(() => {
-        try {
-            const saved = localStorage.getItem('ledSetupConfig');
-            if (saved) {
-                const parsed = JSON.parse(saved);
-                if (parsed.ledCount && Array.isArray(parsed.ledColors)) {
-                    setLedCount(parsed.ledCount);
-                    setLedColors(parsed.ledColors);
-                    return;
-                }
-            }
-        } catch (e) {
-            console.error('Error reading ledSetupConfig from localStorage', e);
+/**
+ * Helper to match and resolve a display color hex/name for the UI.
+ * Handles invalid hex codes (like 5-digit #24518), color names ("red", "rosse", etc.),
+ * and falls back gracefully to standard CSS colors.
+ */
+function resolveColorDisplay(hex, name) {
+    // 1. Check hex if it's a valid 3, 6, or 8 digit hex
+    if (hex && typeof hex === 'string') {
+        let cleanHex = hex.trim();
+        if (!cleanHex.startsWith('#') && /^[0-9A-Fa-f]{3,8}$/.test(cleanHex)) {
+            cleanHex = `#${cleanHex}`;
         }
+        if (/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/.test(cleanHex)) {
+            return cleanHex;
+        }
+        if (typeof window !== 'undefined' && window.CSS && CSS.supports && CSS.supports('color', cleanHex)) {
+            return cleanHex;
+        }
+    }
 
-        // Initial default fallback
-        const initialCount = 6;
-        const initialColors = Array.from({ length: initialCount }, (_, idx) => {
-            const preset = DEFAULT_PRESET_COLORS[idx % DEFAULT_PRESET_COLORS.length];
-            return {
-                id: idx + 1,
-                hex: preset.hex,
-                label: `LED ${idx + 1}`
-            };
-        });
-        setLedCount(initialCount);
-        setLedColors(initialColors);
+    // 2. Check color name mapping
+    if (name && typeof name === 'string') {
+        const lowerName = name.trim().toLowerCase();
+        const KNOWN_COLORS = {
+            red: '#ef4444',
+            rosse: '#f43f5e',
+            rose: '#f43f5e',
+            pink: '#ec4899',
+            green: '#22c55e',
+            blue: '#3b82f6',
+            orange: '#f97316',
+            yellow: '#facc15',
+            purple: '#a855f7',
+            white: '#ffffff',
+            cyan: '#06b6d4',
+            lime: '#84cc16',
+            amber: '#f59e0b',
+            emerald: '#10b981',
+            violet: '#8b5cf6',
+            indigo: '#6366f1'
+        };
+        if (KNOWN_COLORS[lowerName]) {
+            return KNOWN_COLORS[lowerName];
+        }
+        if (typeof window !== 'undefined' && window.CSS && CSS.supports && CSS.supports('color', lowerName)) {
+            return lowerName;
+        }
+    }
+
+    return '#3b82f6';
+}
+
+export default function LedSetupTab({ locId: propLocId }) {
+    // Location state
+    const [selectedLocation, setSelectedLocation] = useState(() => {
+        try {
+            const saved = localStorage.getItem('selectedLocation');
+            if (saved) return JSON.parse(saved);
+        } catch (e) { }
+        return null;
+    });
+
+    const activeLocId = propLocId || selectedLocation?.pick_location_id || 'All';
+    const activeLocName = selectedLocation?.pick_location_name || 'Selected Location';
+
+    // API Colors state
+    const [apiColors, setApiColors] = useState([]);
+    const [isLoadingColors, setIsLoadingColors] = useState(false);
+
+    // Color Modal state
+    const [isColorModalOpen, setIsColorModalOpen] = useState(false);
+    const [editingColor, setEditingColor] = useState(null);
+    const [formColorName, setFormColorName] = useState('');
+    const [formColorHex, setFormColorHex] = useState('#3b82f6');
+    const [formColorLocId, setFormColorLocId] = useState(String(activeLocId));
+    const [isSubmittingColor, setIsSubmittingColor] = useState(false);
+
+    // Update location from localStorage when changed
+    useEffect(() => {
+        const handleStorage = () => {
+            try {
+                const saved = localStorage.getItem('selectedLocation');
+                if (saved) setSelectedLocation(JSON.parse(saved));
+            } catch (e) { }
+        };
+        window.addEventListener('storage', handleStorage);
+        return () => window.removeEventListener('storage', handleStorage);
     }, []);
 
-    // Sync ledColors array when ledCount changes
-    const handleLedCountChange = (newCountRaw) => {
-        const newCount = Math.max(1, Math.min(100, parseInt(newCountRaw, 10) || 1));
-        setLedCount(newCount);
-
-        setLedColors(prev => {
-            if (newCount === prev.length) return prev;
-
-            if (newCount > prev.length) {
-                const added = Array.from({ length: newCount - prev.length }, (_, idx) => {
-                    const actualIdx = prev.length + idx;
-                    const preset = DEFAULT_PRESET_COLORS[actualIdx % DEFAULT_PRESET_COLORS.length];
-                    return {
-                        id: actualIdx + 1,
-                        hex: preset.hex,
-                        label: `LED ${actualIdx + 1}`
-                    };
-                });
-                return [...prev, ...added];
-            } else {
-                return prev.slice(0, newCount);
+    // Fetch colors from API based on location (GET /api/v1/picklight/colors?location=...)
+    const fetchColors = useCallback(async () => {
+        setIsLoadingColors(true);
+        try {
+            const res = await apiService.getColors(activeLocId);
+            let colorsList = [];
+            if (Array.isArray(res)) {
+                colorsList = res;
+            } else if (res?.data && Array.isArray(res.data)) {
+                colorsList = res.data;
+            } else if (res?.colors && Array.isArray(res.colors)) {
+                colorsList = res.colors;
+            } else if (res && typeof res === 'object') {
+                colorsList = Object.keys(res)
+                    .map(key => typeof res[key] === 'object' ? { id: key, ...res[key] } : null)
+                    .filter(Boolean);
             }
-        });
+            setApiColors(colorsList);
+        } catch (err) {
+            console.error('Error fetching location colors:', err);
+            toast.error(`Failed to load location colors: ${err.message}`);
+        } finally {
+            setIsLoadingColors(false);
+        }
+    }, [activeLocId]);
+
+    useEffect(() => {
+        fetchColors();
+    }, [fetchColors]);
+
+    // Color Modal handlers (Create / Update)
+    const handleOpenCreateColorModal = () => {
+        setEditingColor(null);
+        setFormColorName('');
+        setFormColorHex('#3b82f6');
+        setFormColorLocId(String(activeLocId));
+        setIsColorModalOpen(true);
     };
 
-    // Update single LED color
-    const handleColorChange = (index, newHex) => {
-        setLedColors(prev => {
-            const next = [...prev];
-            next[index] = {
-                ...next[index],
-                hex: newHex
-            };
-            return next;
-        });
+    const handleOpenEditColorModal = (color) => {
+        setEditingColor(color);
+        setFormColorName(color.pick_color_name || color.name || '');
+        setFormColorHex(color.pick_color_hexcode || color.hex || '#3b82f6');
+        setFormColorLocId(String(color.pick_color_loc_id || activeLocId));
+        setIsColorModalOpen(true);
     };
 
-    // Reset to defaults
-    const handleReset = () => {
-        const count = 6;
-        setLedCount(count);
-        setLedColors(Array.from({ length: count }, (_, idx) => ({
-            id: idx + 1,
-            hex: DEFAULT_PRESET_COLORS[idx % DEFAULT_PRESET_COLORS.length].hex,
-            label: `LED ${idx + 1}`
-        })));
-        toast.info("Reset to default LED Setup");
-    };
+    const handleColorFormSubmit = async (e) => {
+        e.preventDefault();
+        if (!formColorName.trim()) {
+            toast.error("Color name is required");
+            return;
+        }
+        if (!formColorHex.trim()) {
+            toast.error("Color hexcode is required");
+            return;
+        }
 
-    // Save configuration and directly apply to LED strips
-    const handleSave = () => {
-        const configPayload = {
-            ledCount,
-            ledColors,
-            updatedAt: new Date().toISOString()
+        const formattedHex = formColorHex.startsWith('#') ? formColorHex : `#${formColorHex}`;
+        const payload = {
+            pick_color_name: formColorName.trim(),
+            pick_color_hexcode: formattedHex,
+            pick_color_loc_id: String(formColorLocId || activeLocId)
         };
 
+        setIsSubmittingColor(true);
         try {
-            // Save to localStorage
-            localStorage.setItem('ledSetupConfig', JSON.stringify(configPayload));
-
-            // Directly apply to cupboards data and cupboardLayouts in localStorage
-            if (cupboardsData && syncCupboards) {
-                const updatedCupboards = cupboardsData.map(cupboard => {
-                    if (!cupboard.ledStrips || cupboard.ledStrips.length === 0) return cupboard;
-                    const newStrips = cupboard.ledStrips.map(strip => ({
-                        ...strip,
-                        ledCount: ledCount,
-                        colors: ledColors.map(c => c.hex)
-                    }));
-                    return { ...cupboard, ledStrips: newStrips };
-                });
-                syncCupboards(updatedCupboards);
+            if (editingColor) {
+                const colorId = editingColor.pick_color_id || editingColor.color_id || editingColor.id;
+                await apiService.updateColor(colorId, payload);
+                toast.success(`Color "${formColorName}" updated successfully!`);
+            } else {
+                await apiService.createColor(payload);
+                toast.success(`Color "${formColorName}" created successfully!`);
             }
-
-            // Update cupboardLayouts stored in localStorage
-            try {
-                const layouts = JSON.parse(localStorage.getItem('cupboardLayouts') || '{}');
-                Object.keys(layouts).forEach(cId => {
-                    if (layouts[cId].ledStrips) {
-                        layouts[cId].ledStrips = layouts[cId].ledStrips.map(strip => ({
-                            ...strip,
-                            ledCount: ledCount,
-                            colors: ledColors.map(c => c.hex)
-                        }));
-                    }
-                });
-                localStorage.setItem('cupboardLayouts', JSON.stringify(layouts));
-            } catch (e) { }
-
-            setSavedFlash(true);
-            toast.success("LED Setup saved and applied directly to LED strips!");
-            setTimeout(() => setSavedFlash(false), 1500);
+            setIsColorModalOpen(false);
+            fetchColors();
         } catch (err) {
-            toast.error("Failed to save LED Setup: " + err.message);
+            console.error('Error saving color:', err);
+            toast.error(`Failed to save color: ${err.message}`);
+        } finally {
+            setIsSubmittingColor(false);
         }
     };
+
+    const modalPreviewColor = resolveColorDisplay(formColorHex, formColorName);
 
     return (
         <div className="flex flex-col space-y-6 animate-in fade-in p-2 md:p-4 max-w-6xl mx-auto w-full">
             {/* Header & Title */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-ot-border/60 pb-5">
-                <div className="flex items-center gap-2.5">
-                    <div className="w-10 h-10 rounded-xl bg-ot-action/15 border border-ot-action/30 flex items-center justify-center text-ot-action">
-                        <Palette className="w-5 h-5" />
+                <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-xl bg-ot-action/15 border border-ot-action/30 flex items-center justify-center text-ot-action shadow-md">
+                        <Palette className="w-6 h-6" />
                     </div>
                     <div>
-                        <h3 className="text-2xl font-bold text-white tracking-tight">LED Setup & Color Configuration</h3>
+                        <div className="flex items-center gap-2.5">
+                            <h3 className="text-2xl font-bold text-white tracking-tight">Location LED Colors</h3>
+                            {activeLocId && (
+                                <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-medium bg-ot-action/15 border border-ot-action/30 text-ot-action">
+                                    <MapPin className="w-3.5 h-3.5" />
+                                    {activeLocName} (ID: {activeLocId})
+                                </span>
+                            )}
+                        </div>
                         <p className="text-sm text-muted-foreground mt-0.5">
-                            Set the number of LEDs, per-LED color picker, and color codes for LED strips.
+                            Manage location-specific LED colors directly synced with backend APIs.
                         </p>
                     </div>
                 </div>
@@ -169,223 +211,231 @@ export default function LedSetupTab({ cupboardsData, syncCupboards }) {
                 <div className="flex items-center gap-3 shrink-0">
                     <Button
                         variant="outline"
-                        onClick={handleReset}
-                        className="border-ot-border text-muted-foreground hover:text-white gap-2"
+                        onClick={fetchColors}
+                        disabled={isLoadingColors}
+                        className="border-ot-border text-slate-300 hover:text-white gap-2"
                     >
-                        <RefreshCw className="w-4 h-4" />
-                        Reset
+                        <RefreshCw className={cn("w-4 h-4", isLoadingColors && "animate-spin")} />
+                        Refresh
                     </Button>
 
-                    <Button
-                        onClick={handleSave}
-                        className={cn(
-                            'gap-2 text-white font-medium transition-all shadow-md',
-                            savedFlash ? 'bg-green-600 hover:bg-green-600' : 'bg-ot-action hover:bg-ot-action-hover'
-                        )}
-                    >
-                        {savedFlash ? (
-                            <>
-                                <CheckCircle2 className="w-4 h-4 text-white" />
-                                Saved & Applied!
-                            </>
-                        ) : (
-                            <>
-                                <Save className="w-4 h-4" />
-                                Save & Apply Setup
-                            </>
-                        )}
-                    </Button>
+
                 </div>
             </div>
 
-            {/* Live Strip Visualizer Banner */}
-            <Card className="border-ot-border/80 bg-ot-surface-elev-bottom/70 overflow-hidden shadow-lg">
-                <CardHeader className="py-3 px-5 border-b border-ot-border/40 bg-ot-surface-top/50 flex flex-row items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <Lightbulb className="w-4 h-4 text-amber-400" />
-                        <CardTitle className="text-sm font-semibold text-white">Live LED Strip Visual Preview</CardTitle>
-                    </div>
-                    <span className="text-xs text-muted-foreground font-mono bg-ot-surface-top px-2.5 py-1 rounded-full border border-ot-border/40">
-                        {ledCount} {ledCount === 1 ? 'LED' : 'LEDs'} Configured
-                    </span>
-                </CardHeader>
-                <CardContent className="p-6">
-                    <div className="w-full bg-slate-950/90 border border-slate-800 rounded-2xl p-6 flex items-center justify-center min-h-[100px] overflow-x-auto">
-                        <div className="flex items-center gap-3 sm:gap-4 flex-wrap justify-center py-2">
-                            {ledColors.map((led, idx) => (
-                                <div key={led.id || idx} className="flex flex-col items-center gap-2 group">
-                                    <div
-                                        className="w-8 h-8 md:w-10 md:h-10 rounded-full border-2 border-white/20 transition-all duration-300 transform group-hover:scale-110 flex items-center justify-center text-[10px] font-bold font-mono text-white/90 shadow-md"
-                                        style={{
-                                            backgroundColor: led.hex || '#ffffff',
-                                            boxShadow: `0 0 16px ${led.hex || '#ffffff'}, 0 0 4px ${led.hex || '#ffffff'}`
-                                        }}
-                                    >
-                                        {idx + 1}
-                                    </div>
-                                    <span className="text-[10px] font-mono uppercase text-slate-400">
-                                        {led.hex}
-                                    </span>
-                                </div>
-                            ))}
+            {/* Location API Colors Section */}
+            <Card className="border-ot-border bg-ot-surface-elev-bottom/60 shadow-md">
+                <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-ot-border/40 pb-4">
+                    <div>
+                        <div className="flex items-center gap-2">
+                            <Sparkles className="w-5 h-5 text-amber-400" />
+                            <CardTitle className="text-lg text-white">Location LED Colors</CardTitle>
+                            <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300 font-mono">
+                                Location ID: {activeLocId}
+                            </span>
                         </div>
+                        <CardDescription className="mt-1">
+                            LED colors retrieved from backend API for location <span className="text-white font-medium">{activeLocName}</span>.
+                        </CardDescription>
                     </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                        <Button
+                            size="sm"
+                            onClick={handleOpenCreateColorModal}
+                            className="bg-ot-action hover:bg-ot-action-hover text-white gap-1.5 font-medium shadow"
+                        >
+                            <Plus className="w-4 h-4" />
+                            Add Color
+                        </Button>
+                    </div>
+                </CardHeader>
+
+                <CardContent className="p-5">
+                    {isLoadingColors ? (
+                        <div className="flex items-center justify-center py-10 gap-3 text-muted-foreground">
+                            <Loader2 className="w-5 h-5 animate-spin text-ot-action" />
+                            <span>Loading location colors from API...</span>
+                        </div>
+                    ) : apiColors.length === 0 ? (
+                        <div className="text-center py-8 px-4 rounded-xl border border-dashed border-ot-border/60 bg-ot-surface-top/30 space-y-3">
+                            <Palette className="w-8 h-8 mx-auto text-muted-foreground/60" />
+                            <div>
+                                <p className="text-sm font-medium text-slate-300">No LED colors configured for location ID "{activeLocId}"</p>
+                                <p className="text-xs text-muted-foreground mt-1">Create a new color using the button below to add location-based LED colors.</p>
+                            </div>
+                            <Button
+                                size="sm"
+                                onClick={handleOpenCreateColorModal}
+                                className="bg-ot-action hover:bg-ot-action-hover text-white gap-1.5 font-medium shadow mt-2"
+                            >
+                                <Plus className="w-4 h-4" />
+                                Add First Color
+                            </Button>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                            {apiColors.map((color, idx) => {
+                                const name = color.pick_color_name || color.name || `Color #${idx + 1}`;
+                                const rawHex = color.pick_color_hexcode || color.hex || '#3b82f6';
+                                const colorLocId = color.pick_color_loc_id || color.loc_id || activeLocId;
+                                const colorId = color.pick_color_id || color.color_id || color.id;
+                                const displayColor = resolveColorDisplay(rawHex, name);
+
+                                return (
+                                    <div
+                                        key={colorId || idx}
+                                        className="p-3.5 rounded-xl border border-ot-border/80 bg-ot-surface-top/70 flex items-center justify-between gap-3 hover:border-ot-action/60 transition-all shadow-sm group"
+                                    >
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            {/* Visual Color Preview Box */}
+                                            <div
+                                                className="w-9 h-9 rounded-xl border-2 border-white/30 shrink-0 flex items-center justify-center shadow-md transition-transform group-hover:scale-105"
+                                                style={{
+                                                    backgroundColor: displayColor,
+                                                    boxShadow: `0 0 12px ${displayColor}`
+                                                }}
+                                            />
+                                            <div className="min-w-0 flex-1">
+                                                <div className="text-sm font-semibold text-white truncate" title={name}>
+                                                    {name}
+                                                </div>
+                                                <div className="flex items-center gap-2 mt-0.5">
+                                                    <span className="text-[11px] font-mono text-slate-400 uppercase">
+                                                        {rawHex}
+                                                    </span>
+                                                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-900 text-slate-400 border border-slate-800">
+                                                        Loc: {colorLocId}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-1 shrink-0">
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => handleOpenEditColorModal(color)}
+                                                className="h-8 w-8 p-0 text-slate-400 hover:text-white hover:bg-slate-800"
+                                                title="Edit Color"
+                                            >
+                                                <Pencil className="w-3.5 h-3.5" />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </CardContent>
             </Card>
 
-            {/* LED Setup Form Controls */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Left Panel: Number of LEDs */}
-                <Card className="border-ot-border bg-ot-surface-elev-bottom/40 flex flex-col h-full">
-                    <CardHeader>
-                        <div className="flex items-center gap-2">
-                            <Sliders className="w-5 h-5 text-ot-action" />
-                            <CardTitle className="text-base text-white">LED Count</CardTitle>
+            {/* Create / Update Color Dialog */}
+            <Dialog open={isColorModalOpen} onOpenChange={setIsColorModalOpen}>
+                <DialogContent className="sm:max-w-md bg-ot-surface border-ot-border text-white">
+                    <DialogHeader>
+                        <DialogTitle className="text-xl font-bold text-white flex items-center gap-2">
+                            <Palette className="w-5 h-5 text-ot-action" />
+                            {editingColor ? 'Edit Location LED Color' : 'Add New Location LED Color'}
+                        </DialogTitle>
+                        <DialogDescription className="text-muted-foreground text-sm">
+                            {editingColor
+                                ? `Update details for color ID #${editingColor.pick_color_id || editingColor.color_id || editingColor.id}`
+                                : `Add a new color record for location ${activeLocName} (ID: ${activeLocId})`
+                            }
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <form onSubmit={handleColorFormSubmit} className="space-y-4 py-2">
+                        {/* Live Color Preview Banner */}
+                        <div className="p-3 rounded-xl border border-ot-border/60 bg-ot-surface-top/50 flex items-center gap-3">
+                            <div
+                                className="w-10 h-10 rounded-lg border-2 border-white/30 shrink-0 shadow-md"
+                                style={{
+                                    backgroundColor: modalPreviewColor,
+                                    boxShadow: `0 0 12px ${modalPreviewColor}`
+                                }}
+                            />
+                            <div>
+                                <p className="text-xs font-semibold text-white">Matched Color Preview</p>
+                                <p className="text-[11px] font-mono text-slate-400">
+                                    {modalPreviewColor.toUpperCase()} ({formColorName || 'Unnamed'})
+                                </p>
+                            </div>
                         </div>
-                        <CardDescription>Specify how many LEDs exist per LED strip</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-6">
-                        {/* Number of LEDs Input */}
-                        <div className="space-y-3">
-                            <label className="text-sm font-medium text-slate-200 flex items-center justify-between">
-                                <span>How Many LEDs</span>
-                                <span className="text-xs text-ot-action font-mono">{ledCount} LEDs</span>
+
+                        {/* Color Name */}
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-semibold text-slate-200 uppercase tracking-wider">
+                                Color Name <span className="text-red-400">*</span>
                             </label>
-                            <div className="flex items-center gap-2">
-                                <Input
-                                    type="number"
-                                    min={1}
-                                    max={100}
-                                    value={ledCount}
-                                    onChange={(e) => handleLedCountChange(e.target.value)}
-                                    className="bg-ot-surface-top border-ot-border text-white text-base font-semibold"
+                            <Input
+                                type="text"
+                                required
+                                value={formColorName}
+                                placeholder="e.g. Red, Rosse, Emergency Blue, Green Alert"
+                                onChange={(e) => setFormColorName(e.target.value)}
+                                className="bg-ot-surface-top border-ot-border text-white placeholder:text-muted-foreground"
+                            />
+                        </div>
+
+                        {/* Color Hexcode & HTML Color Picker */}
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-semibold text-slate-200 uppercase tracking-wider">
+                                Color Hexcode <span className="text-red-400">*</span>
+                            </label>
+                            <div className="flex items-center gap-3">
+                                <input
+                                    type="color"
+                                    value={modalPreviewColor.startsWith('#') && modalPreviewColor.length === 7 ? modalPreviewColor : '#3b82f6'}
+                                    onChange={(e) => setFormColorHex(e.target.value)}
+                                    className="w-10 h-10 rounded-lg cursor-pointer bg-transparent border-0 p-0 overflow-hidden shadow shrink-0"
                                 />
-                                <div className="flex gap-1 shrink-0">
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => handleLedCountChange(ledCount - 1)}
-                                        className="h-10 px-3 border-ot-border text-white"
-                                    >
-                                        -
-                                    </Button>
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => handleLedCountChange(ledCount + 1)}
-                                        className="h-10 px-3 border-ot-border text-white"
-                                    >
-                                        +
-                                    </Button>
-                                </div>
+                                <Input
+                                    type="text"
+                                    required
+                                    value={formColorHex}
+                                    placeholder="#EF4444"
+                                    onChange={(e) => {
+                                        let val = e.target.value;
+                                        if (val && !val.startsWith('#') && /^[0-9A-Fa-f]{3,8}$/.test(val)) val = `#${val}`;
+                                        setFormColorHex(val);
+                                    }}
+                                    className="font-mono uppercase bg-ot-surface-top border-ot-border text-white flex-1"
+                                />
                             </div>
-                            <p className="text-xs text-muted-foreground leading-relaxed">
-                                Enter the total LED count for your LED strip. All LED strips will automatically use this count.
-                            </p>
                         </div>
-                    </CardContent>
-                </Card>
 
-                {/* Right Panel: Per-LED Color Picker & Color Code Input */}
-                <Card className="border-ot-border bg-ot-surface-elev-bottom/40 lg:col-span-2 flex flex-col h-full">
-                    <CardHeader>
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                                <Palette className="w-5 h-5 text-ot-action" />
-                                <CardTitle className="text-base text-white">Per-LED Colors</CardTitle>
-                            </div>
-                            <span className="text-xs text-muted-foreground font-mono">
-                                {ledColors.length} LEDs
-                            </span>
-                        </div>
-                        <CardDescription>
-                            Configure the color for each LED using the color picker or colour code input.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4 flex-1 overflow-y-auto max-h-[520px] pr-2">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {ledColors.map((led, index) => (
-                                <div
-                                    key={led.id || index}
-                                    className="p-4 rounded-xl border border-ot-border/70 bg-ot-surface-top/60 flex flex-col gap-3 hover:border-ot-action/50 transition-colors shadow-sm"
-                                >
-                                    <div className="flex items-center justify-between border-b border-ot-border/40 pb-2">
-                                        <div className="flex items-center gap-2.5">
-                                            <div
-                                                className="w-5 h-5 rounded-full border border-white/30 shrink-0 shadow-sm"
-                                                style={{
-                                                    backgroundColor: led.hex || '#ffffff',
-                                                    boxShadow: `0 0 8px ${led.hex || '#ffffff'}`
-                                                }}
-                                            />
-                                            <span className="text-sm font-semibold text-white font-mono">
-                                                LED #{index + 1}
-                                            </span>
-                                        </div>
-
-                                        <span className="text-xs font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300">
-                                            {led.hex || '#FFFFFF'}
-                                        </span>
-                                    </div>
-
-                                    {/* Color Picker + Color Code Input Row */}
-                                    <div className="flex items-center gap-3">
-                                        {/* HTML Color Picker */}
-                                        <div className="relative flex items-center shrink-0">
-                                            <input
-                                                type="color"
-                                                id={`color-picker-${index}`}
-                                                value={led.hex || '#ffffff'}
-                                                onChange={(e) => handleColorChange(index, e.target.value)}
-                                                className="w-10 h-10 rounded-lg cursor-pointer bg-transparent border-0 p-0 overflow-hidden shadow-inner"
-                                                style={{ WebkitAppearance: 'square-button' }}
-                                            />
-                                        </div>
-
-                                        {/* Hex Code Input */}
-                                        <div className="flex-1 space-y-1">
-                                            <label htmlFor={`color-picker-${index}`} className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider block">
-                                                Colour Code Input
-                                            </label>
-                                            <Input
-                                                type="text"
-                                                value={led.hex || ''}
-                                                placeholder="#FF0000"
-                                                onChange={(e) => {
-                                                    let val = e.target.value;
-                                                    if (val && !val.startsWith('#')) val = `#${val}`;
-                                                    handleColorChange(index, val);
-                                                }}
-                                                className="font-mono text-sm uppercase bg-ot-surface-top border-ot-border text-white h-9"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    {/* Quick Palette Swatches for this specific LED */}
-                                    <div className="flex items-center gap-1.5 pt-1">
-                                        <span className="text-[10px] text-muted-foreground mr-1">Color:</span>
-                                        {DEFAULT_PRESET_COLORS.map(preset => (
-                                            <button
-                                                key={preset.name}
-                                                type="button"
-                                                title={preset.name}
-                                                onClick={() => handleColorChange(index, preset.hex)}
-                                                className={cn(
-                                                    'w-5 h-5 rounded-full border border-white/20 hover:scale-125 transition-transform shrink-0',
-                                                    led.hex?.toLowerCase() === preset.hex.toLowerCase() ? 'ring-2 ring-white scale-110' : ''
-                                                )}
-                                                style={{ backgroundColor: preset.hex }}
-                                            />
-                                        ))}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
+                        <DialogFooter className="pt-3 gap-2 border-t border-ot-border/40">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => setIsColorModalOpen(false)}
+                                className="border-ot-border text-slate-300 hover:text-white"
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                type="submit"
+                                disabled={isSubmittingColor}
+                                className="bg-ot-action hover:bg-ot-action-hover text-white font-medium gap-2 shadow"
+                            >
+                                {isSubmittingColor ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 animate-spin text-white" />
+                                        Saving...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Check className="w-4 h-4" />
+                                        {editingColor ? 'Update Color' : 'Create Color'}
+                                    </>
+                                )}
+                            </Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

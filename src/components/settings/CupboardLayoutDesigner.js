@@ -1,23 +1,31 @@
 import React, { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
 import { Button } from 'components/ui/button';
-import { ArrowLeft, Save, CheckCircle2, Plus, X, Box, Grid3X3, Server, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Save, CheckCircle2, Plus, X, Box, Grid3X3, Server, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { toast } from 'sonner';
 import { apiService } from 'lib/apiService';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from 'components/ui/dialog';
 import { ConfirmDialog } from 'components/ui/ConfirmDialog';
 
-const CELL = 120;
+const CELL = 150;
 const MIN_ROWS = 4;
 const MIN_COLS = 8;
 const ROW_LABEL_W = 24;
 const DRAG_THRESHOLD = 5; // pixels moved before it counts as a drag
 
-export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, syncCupboards }) {
+export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, syncCupboards, onDirtyChange }) {
     const [canvasCupboards, setCanvasCupboards] = useState([]);
     const [dragging, setDragging] = useState(null);
     const [selectedCanvasId, setSelectedCanvasId] = useState(null);
     const [saveFlash, setSaveFlash] = useState(false);
+    const [isDirty, setIsDirty] = useState(false);
+    const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+
+    useEffect(() => {
+        if (onDirtyChange) {
+            onDirtyChange(isDirty);
+        }
+    }, [isDirty, onDirtyChange]);
 
     // Keyboard Arrow Nudging Listener
     useEffect(() => {
@@ -104,6 +112,7 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
             gridY: Math.floor(canvasCupboards.length / gridCols)
         };
         setCanvasCupboards([...canvasCupboards, newCb]);
+        setIsDirty(true);
     };
 
     const requestRemoveCupboard = (canvasId) => {
@@ -129,6 +138,7 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
         }
 
         setCanvasCupboards(prev => prev.filter(c => c.canvasId !== cupboardToDelete));
+        setIsDirty(true);
         setCupboardToDelete(null);
     };
 
@@ -141,6 +151,9 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
         mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
         setDragging({ canvasId, offsetX: e.clientX - wr.left, offsetY: e.clientY - wr.top });
     };
+
+    const [zoom, setZoom] = useState(1.25);
+    const [hoveredItem, setHoveredItem] = useState(null);
 
     const onMouseMove = useCallback((e) => {
         if (!dragging || !canvasRef.current) return;
@@ -156,8 +169,8 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
         if (!cb) return;
         const cr = canvasRef.current.getBoundingClientRect();
 
-        const rawX = Math.round((e.clientX - cr.left - dragging.offsetX) / CELL);
-        const rawY = Math.round((e.clientY - cr.top - dragging.offsetY) / CELL);
+        const rawX = Math.round(((e.clientX - cr.left) / zoom - dragging.offsetX) / CELL);
+        const rawY = Math.round(((e.clientY - cr.top) / zoom - dragging.offsetY) / CELL);
 
         const gridX = Math.max(0, Math.min(gridCols - 1, rawX));
         const gridY = Math.max(0, rawY);
@@ -165,8 +178,9 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
         setCanvasCupboards(prev =>
             prev.map(c => c.canvasId === dragging.canvasId ? { ...c, gridX, gridY } : c)
         );
+        setIsDirty(true);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dragging, gridCols, canvasCupboards]);
+    }, [dragging, gridCols, canvasCupboards, zoom]);
 
     const onMouseUp = useCallback(() => setDragging(null), []);
 
@@ -273,6 +287,7 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
             const newGlobalState = [...otherCupboards, ...updatedCupboards];
             syncCupboards(newGlobalState);
 
+            setIsDirty(false);
             setSaveFlash(true);
             setTimeout(() => setSaveFlash(false), 2000);
 
@@ -292,14 +307,20 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
         }
     };
 
-
+    const handleBackClick = () => {
+        if (isDirty) {
+            setShowUnsavedDialog(true);
+        } else {
+            onBack();
+        }
+    };
 
     return (
         <div className="flex flex-col h-full animate-in fade-in">
             {/* Top Bar */}
             <div className="flex items-center justify-between px-5 py-3 border-b border-ot-border bg-ot-surface-top shrink-0 gap-4 flex-wrap">
                 <div className="flex items-center gap-3">
-                    <Button variant="ghost" onClick={onBack}
+                    <Button variant="ghost" onClick={handleBackClick}
                         className="text-muted-foreground hover:text-white gap-2 h-8 px-3">
                         <ArrowLeft className="w-4 h-4" /> Back to Walls
                     </Button>
@@ -307,12 +328,12 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
                     <div className="flex items-center gap-1.5 text-xs">
                         <div className="flex items-center gap-1.5 text-ot-action bg-ot-action/10 px-2 py-1 rounded-md font-medium border border-ot-action/20">
                             <Server className="w-3.5 h-3.5" />
-                            <span>{wall.controller}</span>
+                            <span>Controller: {wall.controller}</span>
                         </div>
                         <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
                         <div className="flex items-center gap-1.5 text-white bg-ot-surface-elev-bottom px-2 py-1 rounded-md border border-ot-border">
                             <Box className="w-3.5 h-3.5 text-ot-action" />
-                            <span className="font-semibold">{wall.name}</span>
+                            <span className="font-semibold">Wall: {wall.name}</span>
                         </div>
                     </div>
 
@@ -321,6 +342,37 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
                 </div>
 
                 <div className="flex items-center gap-3">
+                    {/* Zoom Scale Controls */}
+                    <div className="flex items-center gap-1 bg-ot-surface-elev-bottom border border-ot-border rounded-lg p-0.5">
+                        <Button
+                            variant="ghost" size="sm"
+                            onClick={() => setZoom(z => Math.max(0.75, z - 0.25))}
+                            className="h-7 w-7 p-0 text-muted-foreground hover:text-white"
+                            title="Zoom Out"
+                        >
+                            <ZoomOut className="w-3.5 h-3.5" />
+                        </Button>
+                        <span className="text-[11px] font-mono font-semibold px-1.5 min-w-[42px] text-center text-white">
+                            {Math.round(zoom * 100)}%
+                        </span>
+                        <Button
+                            variant="ghost" size="sm"
+                            onClick={() => setZoom(z => Math.min(2.5, z + 0.25))}
+                            className="h-7 w-7 p-0 text-muted-foreground hover:text-white"
+                            title="Zoom In"
+                        >
+                            <ZoomIn className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                            variant="ghost" size="sm"
+                            onClick={() => setZoom(1.25)}
+                            className="h-7 px-1.5 text-[10px] text-muted-foreground hover:text-white"
+                            title="Reset Zoom"
+                        >
+                            Reset
+                        </Button>
+                    </div>
+
                     <Button
                         onClick={addCupboard}
                         className="gap-2 h-8 px-4 bg-ot-surface-elev-bottom border border-ot-border text-white hover:bg-ot-surface-top text-sm"
@@ -352,76 +404,93 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
                     className="flex-1 overflow-auto p-4"
                     style={{ cursor: dragging ? 'grabbing' : 'default' }}
                 >
-                    <div className="flex mb-0.5" style={{ paddingLeft: ROW_LABEL_W }}>
-                        {Array.from({ length: gridCols }).map((_, i) => (
-                            <div key={i} className="text-[9px] text-muted-foreground/40 font-mono text-center flex-shrink-0" style={{ width: CELL }}>
-                                {i + 1}
-                            </div>
-                        ))}
-                    </div>
-
-                    <div className="flex">
-                        <div className="flex flex-col flex-shrink-0" style={{ width: ROW_LABEL_W }}>
-                            {Array.from({ length: gridRows }).map((_, i) => (
-                                <div key={i} className="text-[9px] text-muted-foreground/40 font-mono flex items-center justify-center flex-shrink-0" style={{ height: CELL }}>
-                                    {String.fromCharCode(65 + i)}
+                    <div
+                        style={{
+                            transform: `scale(${zoom})`,
+                            transformOrigin: 'top left',
+                            display: 'inline-block'
+                        }}
+                    >
+                        <div className="flex mb-0.5" style={{ paddingLeft: ROW_LABEL_W }}>
+                            {Array.from({ length: gridCols }).map((_, i) => (
+                                <div key={i} className="text-[9px] text-muted-foreground/40 font-mono text-center flex-shrink-0" style={{ width: CELL }}>
+                                    {i + 1}
                                 </div>
                             ))}
                         </div>
 
-                        <div
-                            ref={canvasRef}
-                            className="relative rounded-xl border border-ot-border bg-ot-surface-top flex-shrink-0"
-                            style={{
-                                width: gridCols * CELL,
-                                height: gridRows * CELL,
-                                userSelect: 'none',
-                            }}
-                        >
-                            {/* Grid lines */}
-                            {Array.from({ length: gridCols + 1 }).map((_, i) => (
-                                <div key={`cl-${i}`} className="absolute top-0 bottom-0 flex-shrink-0" style={{ left: i * CELL, borderLeft: '1px solid rgba(255,255,255,0.05)' }} />
-                            ))}
-                            {Array.from({ length: gridRows + 1 }).map((_, i) => (
-                                <div key={`rl-${i}`} className="absolute left-0 right-0" style={{ top: i * CELL, borderTop: '1px solid rgba(255,255,255,0.05)' }} />
-                            ))}
+                        <div className="flex">
+                            <div className="flex flex-col flex-shrink-0" style={{ width: ROW_LABEL_W }}>
+                                {Array.from({ length: gridRows }).map((_, i) => (
+                                    <div key={i} className="text-[9px] text-muted-foreground/40 font-mono flex items-center justify-center flex-shrink-0" style={{ height: CELL }}>
+                                        {String.fromCharCode(65 + i)}
+                                    </div>
+                                ))}
+                            </div>
 
-                            {/* Empty state */}
-                            {canvasCupboards.length === 0 && (
-                                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 pointer-events-none">
-                                    <Grid3X3 className="w-10 h-10 text-muted-foreground/15" />
-                                    <span className="text-xs text-muted-foreground/25">
-                                        Click "Add Cupboard" to place cupboards on the grid
-                                    </span>
-                                </div>
-                            )}
+                            <div
+                                ref={canvasRef}
+                                className="relative rounded-xl border border-ot-border bg-ot-surface-top flex-shrink-0"
+                                style={{
+                                    width: gridCols * CELL,
+                                    height: gridRows * CELL,
+                                    userSelect: 'none',
+                                }}
+                            >
+                                {/* Grid lines */}
+                                {Array.from({ length: gridCols + 1 }).map((_, i) => (
+                                    <div key={`cl-${i}`} className="absolute top-0 bottom-0 flex-shrink-0" style={{ left: i * CELL, borderLeft: '1px solid rgba(255,255,255,0.05)' }} />
+                                ))}
+                                {Array.from({ length: gridRows + 1 }).map((_, i) => (
+                                    <div key={`rl-${i}`} className="absolute left-0 right-0" style={{ top: i * CELL, borderTop: '1px solid rgba(255,255,255,0.05)' }} />
+                                ))}
 
-                            {/* Placed Cupboards */}
-                            {canvasCupboards.map(cb => {
-                                const isActive = dragging?.canvasId === cb.canvasId;
-                                return (
-                                    <div
-                                        key={cb.canvasId}
-                                        onMouseDown={(e) => startDrag(e, cb.canvasId)}
-                                        onMouseUp={() => {
-                                            // Reset drag state
-                                            setTimeout(() => {
-                                                didDragRef.current = false;
-                                            }, 0);
-                                        }}
-                                        className={cn(
-                                            'absolute rounded-lg border-2 flex flex-col p-2 overflow-hidden transition-colors',
-                                            isActive
-                                                ? 'border-ot-action bg-ot-action/20 shadow-xl shadow-ot-action/30 cursor-grabbing z-20'
-                                                : 'border-ot-action/50 bg-ot-action/8 hover:border-ot-action hover:bg-ot-action/15 cursor-grab z-10'
-                                        )}
-                                        style={{
-                                            left: cb.gridX * CELL + 4,
-                                            top: cb.gridY * CELL + 4,
-                                            width: CELL - 8,
-                                            height: CELL - 8,
-                                        }}
-                                    >
+                                {/* Empty state */}
+                                {canvasCupboards.length === 0 && (
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 pointer-events-none">
+                                        <Grid3X3 className="w-10 h-10 text-muted-foreground/15" />
+                                        <span className="text-xs text-muted-foreground/25">
+                                            Click "Add Cupboard" to place cupboards on the grid
+                                        </span>
+                                    </div>
+                                )}
+
+                                {/* Placed Cupboards */}
+                                {canvasCupboards.map(cb => {
+                                    const isActive = dragging?.canvasId === cb.canvasId;
+                                    const isHovered = hoveredItem?.type === 'cupboard' && hoveredItem?.id === cb.canvasId;
+                                    return (
+                                        <div
+                                            key={cb.canvasId}
+                                            onMouseDown={(e) => startDrag(e, cb.canvasId)}
+                                            onMouseUp={() => {
+                                                // Reset drag state
+                                                setTimeout(() => {
+                                                    didDragRef.current = false;
+                                                }, 0);
+                                            }}
+                                            onMouseEnter={() => setHoveredItem({ type: 'cupboard', id: cb.canvasId, label: cb.name })}
+                                            onMouseLeave={() => setHoveredItem(prev => prev?.id === cb.canvasId ? null : prev)}
+                                            className={cn(
+                                                'absolute rounded-lg border-2 flex flex-col p-2 overflow-visible transition-colors',
+                                                isActive
+                                                    ? 'border-ot-action bg-ot-action/20 shadow-xl shadow-ot-action/30 cursor-grabbing z-20'
+                                                    : 'border-ot-action/50 bg-ot-action/8 hover:border-ot-action hover:bg-ot-action/15 cursor-grab z-10'
+                                            )}
+                                            style={{
+                                                left: cb.gridX * CELL + 4,
+                                                top: cb.gridY * CELL + 4,
+                                                width: CELL - 8,
+                                                height: CELL - 8,
+                                            }}
+                                        >
+                                            {/* Hover Badge */}
+                                            {isHovered && (
+                                                <div className="absolute -top-7 left-1/2 -translate-x-1/2 z-40 px-2.5 py-1 rounded-md bg-slate-900/95 border border-ot-action text-white text-[11px] font-semibold shadow-xl flex items-center gap-1.5 pointer-events-none whitespace-nowrap animate-in fade-in">
+                                                    <Box className="w-3.5 h-3.5 text-ot-action" />
+                                                    <span>Cupboard: {cb.name}</span>
+                                                </div>
+                                            )}
                                         <div className="flex items-center justify-between gap-1 shrink-0">
                                             <input
                                                 value={cb.name}
@@ -455,6 +524,7 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
                         </div>
                     </div>
                 </div>
+            </div>
 
                 {/* Right: placed cupboards list */}
                 <div className="w-44 flex-shrink-0 border-l border-ot-border flex flex-col">
@@ -519,6 +589,23 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
                 variant="destructive"
                 onConfirm={confirmRemoveCupboard}
                 onCancel={() => setCupboardToDelete(null)}
+            />
+
+            {/* Unsaved Changes Warning Dialog */}
+            <ConfirmDialog
+                open={showUnsavedDialog}
+                onOpenChange={setShowUnsavedDialog}
+                title="Unsaved Changes"
+                description="You have unsaved changes. Do you want to go back without saving these changes?"
+                confirmText="Leave Without Saving"
+                cancelText="Cancel"
+                variant="warning"
+                onConfirm={() => {
+                    setShowUnsavedDialog(false);
+                    setIsDirty(false);
+                    onBack();
+                }}
+                onCancel={() => setShowUnsavedDialog(false)}
             />
         </div>
     );

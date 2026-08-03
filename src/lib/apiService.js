@@ -208,6 +208,37 @@ export const apiService = {
         return handleResponse(response);
     },
 
+    // Strips
+    getStrips: async (locId = 'All') => {
+        const response = await fetch(`${API_URL}/config/get-strips?location=${locId}`, {
+            headers: getHeaders()
+        });
+        return handleResponse(response);
+    },
+    createStrip: async (payload) => {
+        const response = await fetch(`${API_URL}/config/create-strip`, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify(payload)
+        });
+        return handleResponse(response);
+    },
+    updateStrip: async (id, payload) => {
+        const response = await fetch(`${API_URL}/config/update-strip/${id}`, {
+            method: 'PUT',
+            headers: getHeaders(),
+            body: JSON.stringify(payload)
+        });
+        return handleResponse(response);
+    },
+    deleteStrip: async (id) => {
+        const response = await fetch(`${API_URL}/config/delete-strip/${id}`, {
+            method: 'DELETE',
+            headers: getHeaders()
+        });
+        return handleResponse(response);
+    },
+
     // Bins
     getBins: async (locId = 'All', shelfId = 'All') => {
         const response = await fetch(`${API_URL}/config/get-bins?location=${locId}&shelf=${shelfId}`, {
@@ -267,5 +298,30 @@ export const apiService = {
             headers: getHeaders()
         });
         return handleResponse(response);
+    },
+
+    // Colors
+    getColors: async (locId = 'All') => {
+        const response = await fetch(`${API_URL}/picklight/colors?location=${encodeURIComponent(locId)}`, {
+            headers: getHeaders()
+        });
+        return handleResponse(response);
+    },
+    createColor: async (payload) => {
+        const response = await fetch(`${API_URL}/picklight/colors/create`, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify(payload)
+        });
+        return handleResponse(response);
+    },
+    updateColor: async (colorId, payload) => {
+        const response = await fetch(`${API_URL}/picklight/colors/update/${colorId}`, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify(payload)
+        });
+        return handleResponse(response);
     }
 };
+

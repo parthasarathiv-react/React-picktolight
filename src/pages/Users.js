@@ -11,8 +11,6 @@ import { toast } from 'sonner';
 
 const ROLES = [
     { value: 'ADMIN', label: 'ADMIN' },
-    { value: 'MANAGER', label: 'MANAGER' },
-    { value: 'EMPLOYEE', label: 'EMPLOYEE' },
     { value: 'VIEWER', label: 'VIEWER' }
 ];
 
@@ -38,7 +36,7 @@ export default function Users() {
     const [editingUser, setEditingUser] = useState(null);
     const [showPassword, setShowPassword] = useState(false);
     const [isActiveToggle, setIsActiveToggle] = useState(true);
-    const [selectedRole, setSelectedRole] = useState('EMPLOYEE');
+    const [selectedRole, setSelectedRole] = useState('VIEWER');
     const [userToDelete, setUserToDelete] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [fieldErrors, setFieldErrors] = useState({});
@@ -63,7 +61,7 @@ export default function Users() {
     const handleAddUser = () => {
         setEditingUser(null);
         setIsActiveToggle(true);
-        setSelectedRole('EMPLOYEE');
+        setSelectedRole('VIEWER');
         setShowPassword(false);
         setFieldErrors({});
         setShowUserForm(true);
@@ -72,8 +70,8 @@ export default function Users() {
     const handleEditUser = (user) => {
         setEditingUser(user);
         setIsActiveToggle(user.is_active ?? true);
-        const currentRole = (user.role || 'EMPLOYEE').toUpperCase();
-        setSelectedRole(ROLES.some(r => r.value === currentRole) ? currentRole : 'EMPLOYEE');
+        const currentRole = (user.role || 'VIEWER').toUpperCase();
+        setSelectedRole(ROLES.some(r => r.value === currentRole) ? currentRole : 'VIEWER');
         setShowPassword(false);
         setFieldErrors({});
         setShowUserForm(true);

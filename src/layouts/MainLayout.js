@@ -6,12 +6,6 @@ import { Button } from 'components/ui/button';
 import LocationSelectionDialog from 'components/LocationSelectionDialog';
 import { API_URL } from 'config/api';
 
-const navItems = [
-    { icon: Activity, label: 'Monitoring', path: '/monitoring' },
-    { icon: Settings, label: 'Configuration', path: '/settings' },
-    { icon: Users, label: 'User Management', path: '/users' },
-];
-
 export default function MainLayout() {
     const navigate = useNavigate();
     const location = useLocation();
@@ -19,8 +13,28 @@ export default function MainLayout() {
     const [showLocationDialog, setShowLocationDialog] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
 
+    const userRole = (localStorage.getItem('user_role') || 'admin').toLowerCase();
+    const isAdmin = userRole === 'admin';
+
+    const currentUser = React.useMemo(() => {
+        try {
+            const u = localStorage.getItem('user');
+            return u ? JSON.parse(u) : null;
+        } catch {
+            return null;
+        }
+    }, []);
+
+    const navItems = [
+        { icon: Activity, label: 'Monitoring', path: '/monitoring' },
+        ...(isAdmin ? [
+            { icon: Settings, label: 'Configuration', path: '/settings' },
+            { icon: Users, label: 'User Management', path: '/users' },
+        ] : [])
+    ];
+
     useEffect(() => {
-        if (location.pathname && location.pathname !== '/login') {
+        if (location.pathname && location.pathname !== '/login' && location.pathname !== '/') {
             localStorage.setItem('last_active_path', location.pathname);
         }
     }, [location]);
@@ -69,8 +83,7 @@ export default function MainLayout() {
     });
 
     const handleLogout = () => {
-        localStorage.removeItem('token');
-        localStorage.removeItem('selectedLocation');
+        localStorage.clear();
         navigate('/login');
     };
 
@@ -223,8 +236,8 @@ export default function MainLayout() {
                                 <Box className="w-4 h-4 text-ot-action" />
                             </div>
                             <div className="text-sm">
-                                <div className="font-semibold text-white">Admin User</div>
-                                <div className="text-xs text-muted-foreground">Administrator</div>
+                                <div className="font-semibold text-white">{currentUser?.full_name || currentUser?.username || 'User'}</div>
+                                <div className="text-xs text-muted-foreground capitalize">{userRole}</div>
                             </div>
                         </div>
                     </div>

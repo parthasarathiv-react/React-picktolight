@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
 import { Button } from 'components/ui/button';
-import { ArrowLeft, Save, CheckCircle2, Plus, RotateCcw, X, Grid3X3, Server } from 'lucide-react';
+import { ArrowLeft, Save, CheckCircle2, Plus, RotateCcw, X, Grid3X3, Server, LayoutGrid } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { toast } from 'sonner';
 
@@ -14,10 +14,19 @@ const MIN_ROWS = 10;
 const ROW_LABEL_W = 24;   // px for A–N labels on the left
 const COL_LABEL_H = 18;   // px for 1–N labels on top
 
-export default function WallLayoutDesigner({ controller, onBack, wallsData, syncWalls }) {
+export default function WallLayoutDesigner({ controller, onBack, wallsData, syncWalls, onDirtyChange }) {
     const [canvasWalls, setCanvasWalls] = useState([]);
     const [dragging, setDragging] = useState(null);
     const [selectedWallId, setSelectedWallId] = useState(null);
+    const [hoveredItem, setHoveredItem] = useState(null);
+    const [isDirty, setIsDirty] = useState(false);
+    const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+
+    useEffect(() => {
+        if (onDirtyChange) {
+            onDirtyChange(isDirty);
+        }
+    }, [isDirty, onDirtyChange]);
 
     // Keyboard Arrow Nudging Listener
     useEffect(() => {
@@ -127,6 +136,7 @@ export default function WallLayoutDesigner({ controller, onBack, wallsData, sync
                 orientation: 'h',
             }];
         });
+        setIsDirty(true);
     };
 
     const requestRemoveWall = (canvasId) => {
@@ -136,7 +146,7 @@ export default function WallLayoutDesigner({ controller, onBack, wallsData, sync
     const confirmRemoveWall = async () => {
         if (!wallToDelete) return;
         const wall = canvasWalls.find(w => w.canvasId === wallToDelete);
-        
+
         if (wall && !wall.isNew) {
             try {
                 await apiService.deleteWall(wall.id);
@@ -151,17 +161,20 @@ export default function WallLayoutDesigner({ controller, onBack, wallsData, sync
                 return;
             }
         }
-        
+
         setCanvasWalls(prev => prev.filter(w => w.canvasId !== wallToDelete));
+        setIsDirty(true);
         setWallToDelete(null);
     };
 
-    const toggleOrientation = (canvasId) =>
+    const toggleOrientation = (canvasId) => {
         setCanvasWalls(prev =>
             prev.map(w => w.canvasId === canvasId
                 ? { ...w, orientation: w.orientation === 'h' ? 'v' : 'h' }
                 : w)
         );
+        setIsDirty(true);
+    };
 
     // ── Drag & Pan ───────────────────────────────────────────────────────────
     const startDrag = (e, canvasId) => {
@@ -214,6 +227,7 @@ export default function WallLayoutDesigner({ controller, onBack, wallsData, sync
         setCanvasWalls(prev =>
             prev.map(w => w.canvasId === dragging.canvasId ? { ...w, gridX, gridY } : w)
         );
+        setIsDirty(true);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dragging, panDragging, gridCols, canvasWalls]);
 
@@ -244,11 +258,11 @@ export default function WallLayoutDesigner({ controller, onBack, wallsData, sync
             }
 
             const currentCtrlWalls = wallsData.filter(w => String(w.controller_id) === String(controller.id));
-            
+
             const updatedWalls = [];
             let createdCount = 0;
             let updatedCount = 0;
-            
+
             // 2. Create or Update walls on canvas
             for (const cw of canvasWalls) {
                 const payload = {
@@ -280,7 +294,7 @@ export default function WallLayoutDesigner({ controller, onBack, wallsData, sync
                     }
                 } else {
                     const originalWall = wallsData.find(w => String(w.id) === String(cw.id));
-                    
+
                     const hasChanged = !originalWall || (
                         originalWall.name !== cw.name ||
                         originalWall.status !== cw.status ||
@@ -319,9 +333,10 @@ export default function WallLayoutDesigner({ controller, onBack, wallsData, sync
                 syncWalls(newWalls);
             }
 
+            setIsDirty(false);
             setSaveFlash(true);
             setTimeout(() => setSaveFlash(false), 2000);
-            
+
             if (createdCount > 0 && updatedCount > 0) {
                 toast.success(`Successfully created ${createdCount} new wall(s) and updated ${updatedCount} wall(s)!`);
             } else if (createdCount > 0) {
@@ -337,13 +352,21 @@ export default function WallLayoutDesigner({ controller, onBack, wallsData, sync
         }
     };
 
+    const handleBackClick = () => {
+        if (isDirty) {
+            setShowUnsavedDialog(true);
+        } else {
+            onBack();
+        }
+    };
+
     return (
         <div className="flex flex-col h-full animate-in fade-in">
 
             {/* ── Top Bar ─────────────────────────────────────────────────── */}
             <div className="flex items-center justify-between px-5 py-3 border-b border-ot-border bg-ot-surface-top shrink-0 gap-4 flex-wrap">
                 <div className="flex items-center gap-3">
-                    <Button variant="ghost" onClick={onBack}
+                    <Button variant="ghost" onClick={handleBackClick}
                         className="text-muted-foreground hover:text-white gap-2 h-8 px-3">
                         <ArrowLeft className="w-4 h-4" /> Back
                     </Button>
@@ -355,7 +378,7 @@ export default function WallLayoutDesigner({ controller, onBack, wallsData, sync
                             <span className="text-muted-foreground ml-1">({controller.ip}:{controller.port})</span>
                         </div>
                     </div>
-                    
+
                     <div className="h-5 w-px bg-ot-border ml-2" />
                     <span className="text-xs text-muted-foreground font-mono ml-1">Wall Designer</span>
                 </div>
@@ -453,10 +476,13 @@ export default function WallLayoutDesigner({ controller, onBack, wallsData, sync
                             {canvasWalls.map(wall => {
                                 const { width, height } = wallPx(wall);
                                 const isActive = dragging?.canvasId === wall.canvasId;
+                                const isHovered = hoveredItem?.type === 'wall' && hoveredItem?.id === wall.canvasId;
                                 return (
                                     <div
                                         key={wall.canvasId}
                                         onMouseDown={(e) => startDrag(e, wall.canvasId)}
+                                        onMouseEnter={() => setHoveredItem({ type: 'wall', id: wall.canvasId, label: wall.name })}
+                                        onMouseLeave={() => setHoveredItem(prev => prev?.id === wall.canvasId ? null : prev)}
                                         className={cn(
                                             'absolute rounded-lg border-2 flex flex-col p-1.5 overflow-hidden transition-colors',
                                             isActive
@@ -470,10 +496,21 @@ export default function WallLayoutDesigner({ controller, onBack, wallsData, sync
                                             height,
                                         }}
                                     >
+                                        {/* Wall Hover Badge */}
+                                        {isHovered && (
+                                            <div className="absolute -top-7 left-1/2 -translate-x-1/2 z-40 px-2.5 py-1 rounded-md bg-slate-900/95 border border-ot-action text-white text-[11px] font-semibold shadow-xl flex items-center gap-1.5 pointer-events-none whitespace-nowrap animate-in fade-in">
+                                                <LayoutGrid className="w-3.5 h-3.5 text-ot-action" />
+                                                <span>Wall: {wall.name}</span>
+                                            </div>
+                                        )}
+
                                         <div className="flex items-center justify-between gap-1 shrink-0">
                                             <input
                                                 value={wall.name}
-                                                onChange={(e) => setCanvasWalls(prev => prev.map(w => w.canvasId === wall.canvasId ? { ...w, name: e.target.value } : w))}
+                                                onChange={(e) => {
+                                                    setCanvasWalls(prev => prev.map(w => w.canvasId === wall.canvasId ? { ...w, name: e.target.value } : w));
+                                                    setIsDirty(true);
+                                                }}
                                                 className="text-[10px] font-bold text-ot-action bg-transparent border border-transparent hover:border-ot-action/30 focus:border-ot-action focus:bg-ot-action/10 rounded outline-none w-full min-w-0 px-0.5 -ml-0.5 transition-all"
                                                 title="Edit wall name"
                                             />
@@ -541,7 +578,10 @@ export default function WallLayoutDesigner({ controller, onBack, wallsData, sync
                                     <div className="flex-1 min-w-0">
                                         <input
                                             value={w.name}
-                                            onChange={(e) => setCanvasWalls(prev => prev.map(cw => cw.canvasId === w.canvasId ? { ...cw, name: e.target.value } : cw))}
+                                            onChange={(e) => {
+                                                setCanvasWalls(prev => prev.map(cw => cw.canvasId === w.canvasId ? { ...cw, name: e.target.value } : cw));
+                                                setIsDirty(true);
+                                            }}
                                             className="text-[11px] font-semibold text-white bg-transparent border border-transparent hover:border-white/20 focus:border-ot-action focus:bg-ot-surface-top rounded outline-none w-full min-w-0 px-1 -ml-1 transition-all"
                                             title="Edit wall name"
                                         />
@@ -572,6 +612,23 @@ export default function WallLayoutDesigner({ controller, onBack, wallsData, sync
                 variant="destructive"
                 onConfirm={confirmRemoveWall}
                 onCancel={() => setWallToDelete(null)}
+            />
+
+            {/* Unsaved Changes Warning Dialog */}
+            <ConfirmDialog
+                open={showUnsavedDialog}
+                onOpenChange={setShowUnsavedDialog}
+                title="Unsaved Changes"
+                description="You have unsaved changes. Do you want to go back without saving these changes?"
+                confirmText="Leave Without Saving"
+                cancelText="Cancel"
+                variant="warning"
+                onConfirm={() => {
+                    setShowUnsavedDialog(false);
+                    setIsDirty(false);
+                    onBack();
+                }}
+                onCancel={() => setShowUnsavedDialog(false)}
             />
         </div>
     );
