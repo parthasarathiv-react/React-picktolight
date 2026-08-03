@@ -26,9 +26,12 @@ export default function Login() {
         }
     }, [navigate]);
 
+    const [isLoggingIn, setIsLoggingIn] = useState(false);
+
     const handleLogin = async (e) => {
         e.preventDefault();
         setError('');
+        setIsLoggingIn(true);
 
         try {
             const response = await fetch(`${API_URL}/auth/login`, {
@@ -65,6 +68,8 @@ export default function Login() {
             }
         } catch (err) {
             setError('Network error. Please try again later.');
+        } finally {
+            setIsLoggingIn(false);
         }
     };
 
@@ -141,6 +146,7 @@ export default function Login() {
                         <CardFooter>
                             <Button
                                 type="submit"
+                                isLoading={isLoggingIn}
                                 className="
       group
       relative

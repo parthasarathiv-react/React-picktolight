@@ -99,8 +99,9 @@ export function ConfirmDialog({
                         className={getConfirmButtonClasses()}
                         onClick={handleConfirm}
                         disabled={isLoading}
+                        isLoading={isLoading}
                     >
-                        {isLoading ? "Processing..." : confirmText}
+                        {confirmText}
                     </Button>
                 </DialogFooter>
             </DialogContent>
