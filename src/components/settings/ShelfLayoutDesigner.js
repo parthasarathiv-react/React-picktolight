@@ -731,7 +731,7 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                                         {/* Shelf content */}
                                         <div className="flex items-center gap-1.5 px-1.5 z-20 shrink-0">
                                             <GripVertical className="w-3 h-3 text-muted-foreground/40 pointer-events-none shrink-0" />
-                                            <span className="text-xs font-semibold text-white whitespace-nowrap px-0.5 py-0.5 rounded shrink-0 truncate pointer-events-none select-none">
+                                            <span className="text-[10px] font-semibold text-white whitespace-nowrap px-0.5 py-0.5 rounded shrink-0 select-none pointer-events-none" title={shelf.label}>
                                                 {shelf.label}
                                             </span>
                                             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-ot-action/20 text-ot-action border border-ot-action/30 shrink-0 shadow-sm pointer-events-none whitespace-nowrap">
@@ -846,9 +846,16 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                                     <div className="flex items-center justify-between gap-2">
                                         <div className="flex items-center gap-1.5 min-w-0">
                                             <GripVertical className="w-3.5 h-3.5 text-muted-foreground/60 group-hover:text-ot-action shrink-0" />
-                                            <span className="text-xs font-semibold text-white whitespace-nowrap px-1 py-0.5 rounded truncate select-none">
-                                                {shelf.label}
-                                            </span>
+                                            <input
+                                                value={shelf.label}
+                                                onChange={(e) => {
+                                                    const newVal = e.target.value;
+                                                    setShelfBlocks(prev => prev.map(s => s.id === shelf.id ? { ...s, label: newVal } : s));
+                                                    setIsDirty(true);
+                                                }}
+                                                className="text-xs font-semibold text-white bg-transparent border border-transparent hover:border-white/20 focus:border-ot-action focus:bg-ot-surface-top rounded outline-none px-1 -ml-1 w-full min-w-0 transition-all"
+                                                title="Edit shelf name"
+                                            />
                                             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-ot-action/20 text-ot-action border border-ot-action/30 shrink-0 whitespace-nowrap">
                                                 #{shelf.shelf_order !== undefined && shelf.shelf_order !== null && shelf.shelf_order !== '' ? shelf.shelf_order : (idx + 1)}
                                             </span>

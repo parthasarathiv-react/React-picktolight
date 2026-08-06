@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Button } from 'components/ui/button';
-import { ArrowLeft, Save, CheckCircle2, Plus, X, Lightbulb, Link as LinkIcon, Server, ChevronRight, LayoutGrid, Box, ZoomIn, ZoomOut, Layers, Trash2, Archive } from 'lucide-react';
+import { ArrowLeft, Save, CheckCircle2, Plus, X, Lightbulb, Link as LinkIcon, Server, ChevronRight, ChevronUp, ChevronDown, LayoutGrid, Box, ZoomIn, ZoomOut, Layers, Trash2, Archive, GripVertical } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { Input } from 'components/ui/input';
 import { ConfirmDialog } from 'components/ui/ConfirmDialog';
@@ -272,6 +272,8 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
     const [unassignedWarningStrip, setUnassignedWarningStrip] = useState(null);
     const [zoom, setZoom] = useState(1.50); // Default 150% zoom for larger view
     const [hoveredItem, setHoveredItem] = useState(null); // { type: 'shelf'|'bin'|'strip', id, label, extra }
+    const [draggedStripIdx, setDraggedStripIdx] = useState(null);
+    const [dragOverStripIdx, setDragOverStripIdx] = useState(null);
     const canvasRef = useRef(null);
 
     // Panning state
@@ -327,6 +329,30 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
         setLedStrips(prev => [...prev, newStrip]);
         setSelectedStripId(newStrip.id);
         setEditingStripId(newStrip.id);
+        setIsDirty(true);
+    };
+
+    const moveStripUp = (index) => {
+        if (index <= 0) return;
+        setLedStrips(prev => {
+            const next = [...prev];
+            const temp = next[index];
+            next[index] = next[index - 1];
+            next[index - 1] = temp;
+            return next;
+        });
+        setIsDirty(true);
+    };
+
+    const moveStripDown = (index) => {
+        if (index >= ledStrips.length - 1) return;
+        setLedStrips(prev => {
+            const next = [...prev];
+            const temp = next[index];
+            next[index] = next[index + 1];
+            next[index + 1] = temp;
+            return next;
+        });
         setIsDirty(true);
     };
 
@@ -821,6 +847,23 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
 
                     <div className="h-5 w-px bg-ot-border ml-2" />
                     <span className="text-xs text-muted-foreground font-mono ml-1">LED Strips Designer</span>
+
+                    {/* Sample Strip IN / OUT Diagram Legend */}
+                    <div className="flex items-center gap-2 ml-2 px-2.5 py-1 rounded-lg bg-ot-surface-elev-bottom/80 border border-ot-border/60 shadow-inner" title="Sample LED Strip orientation: Left = OUT, Right = IN">
+                        <span className="text-[10px] font-black text-rose-400 bg-rose-500/15 px-1.5 py-0.5 rounded border border-rose-500/30 uppercase tracking-wide">
+                            OUT
+                        </span>
+                        <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-slate-950 border border-cyan-500/40 shadow-[0_0_10px_rgba(34,211,238,0.25)]">
+                            <div className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_5px_#22d3ee]" />
+                            <div className="w-2 h-2 rounded-full bg-purple-400 shadow-[0_0_5px_#c084fc]" />
+                            <div className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_5px_#fbbf24]" />
+                            <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_5px_#34d399]" />
+                            <div className="w-2 h-2 rounded-full bg-rose-400 shadow-[0_0_5px_#fb7185]" />
+                        </div>
+                        <span className="text-[10px] font-black text-emerald-400 bg-emerald-500/15 px-1.5 py-0.5 rounded border border-emerald-500/30 uppercase tracking-wide">
+                            IN
+                        </span>
+                    </div>
                 </div>
 
                 <div className="flex items-center gap-3">
@@ -1012,6 +1055,102 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
                                 );
                             })}
 
+                            {/* Render Wire Connections between LED Strips */}
+                            <svg className="absolute inset-0 pointer-events-none z-15 overflow-visible" width={baseCanvasWidth} height={baseCanvasHeight}>
+                                <style>{`
+                                    @keyframes wireFlow {
+                                        from { stroke-dashoffset: 24; }
+                                        to { stroke-dashoffset: 0; }
+                                    }
+                                    .animate-wire-flow {
+                                        animation: wireFlow 1.2s linear infinite;
+                                    }
+                                `}</style>
+                                <defs>
+                                    <filter id="wire-glow" x="-30%" y="-30%" width="160%" height="160%">
+                                        <feGaussianBlur stdDeviation="4" result="blur" />
+                                        <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                                    </filter>
+
+                                    <marker
+                                        id="wire-arrowhead"
+                                        viewBox="0 0 10 10"
+                                        refX="8"
+                                        refY="5"
+                                        markerWidth="8"
+                                        markerHeight="8"
+                                        orient="auto"
+                                    >
+                                        <path d="M 0 1.5 L 9 5 L 0 8.5 Z" fill="#38bdf8" />
+                                    </marker>
+                                </defs>
+
+                                {ledStrips.slice(0, -1).map((strip, idx) => {
+                                    const nextStrip = ledStrips[idx + 1];
+                                    if (!nextStrip) return null;
+
+                                    // OUT Port on current strip (LEFT side)
+                                    const x1 = strip.x;
+                                    const y1 = strip.y + (strip.height || 22) / 2;
+
+                                    // IN Port on next strip (RIGHT side)
+                                    const x2 = nextStrip.x + nextStrip.width;
+                                    const y2 = nextStrip.y + (nextStrip.height || 22) / 2;
+
+                                    // Bezier curve control points
+                                    const dx = Math.max(80, Math.abs(x1 - x2) * 0.5, Math.abs(y1 - y2) * 0.4);
+                                    const cp1X = x1 - dx;
+                                    const cp1Y = y1;
+                                    const cp2X = x2 + dx;
+                                    const cp2Y = y2;
+
+                                    const pathD = `M ${x1} ${y1} C ${cp1X} ${cp1Y}, ${cp2X} ${cp2Y}, ${x2} ${y2}`;
+                                    const themeColor = getStripColor(idx).hex || '#38bdf8';
+
+                                    return (
+                                        <g key={`wire-${strip.id}-${nextStrip.id}`}>
+                                            {/* Outer wire glow */}
+                                            <path
+                                                d={pathD}
+                                                fill="none"
+                                                stroke={themeColor}
+                                                strokeWidth="6"
+                                                strokeOpacity="0.25"
+                                                filter="url(#wire-glow)"
+                                            />
+                                            {/* Main animated wire */}
+                                            <path
+                                                d={pathD}
+                                                fill="none"
+                                                stroke="#38bdf8"
+                                                strokeWidth="2.5"
+                                                strokeDasharray="8 6"
+                                                className="animate-wire-flow"
+                                            />
+                                            {/* Center Arrowhead Marker */}
+                                            {(() => {
+                                                const midX = 0.125 * x1 + 0.375 * cp1X + 0.375 * cp2X + 0.125 * x2;
+                                                const midY = 0.125 * y1 + 0.375 * cp1Y + 0.375 * cp2Y + 0.125 * y2;
+                                                const tanX = 0.75 * (cp1X - x1) + 1.5 * (cp2X - cp1X) + 0.75 * (x2 - cp2X);
+                                                const tanY = 0.75 * (cp1Y - y1) + 1.5 * (cp2Y - cp1Y) + 0.75 * (y2 - cp2Y);
+                                                const angleDeg = Math.atan2(tanY, tanX) * (180 / Math.PI);
+                                                return (
+                                                    <g transform={`translate(${midX}, ${midY}) rotate(${angleDeg})`}>
+                                                        <polygon
+                                                            points="-7,-5 7,0 -7,5"
+                                                            fill="#38bdf8"
+                                                            stroke="#0284c7"
+                                                            strokeWidth="1"
+                                                            className="drop-shadow-[0_0_6px_rgba(56,189,248,0.9)]"
+                                                        />
+                                                    </g>
+                                                );
+                                            })()}
+                                        </g>
+                                    );
+                                })}
+                            </svg>
+
                             {/* Render LED Strips */}
                             {ledStrips.map((strip, stripIdx) => {
                                 const isSelected = selectedStripId === strip.id;
@@ -1158,6 +1297,7 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
                                             onChange={(e) => {
                                                 const newVal = e.target.value;
                                                 setLedStrips(prev => prev.map(s => s.id === strip.id ? { ...s, label: newVal } : s));
+                                                setIsDirty(true);
                                             }}
                                             className="h-8 text-xs bg-ot-surface-bottom border-ot-border/50"
                                         />
@@ -1293,16 +1433,53 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
                                 style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.1) transparent' }}>
                                 {ledStrips.map((strip, stripIdx) => {
                                     const isSelected = selectedStripId === strip.id;
+                                    const isDraggingThis = draggedStripIdx === stripIdx;
+                                    const isDragOverThis = dragOverStripIdx === stripIdx;
                                     const colorTheme = getStripColor(stripIdx);
                                     return (
                                         <div key={strip.id}
+                                            draggable
+                                            onDragStart={(e) => {
+                                                setDraggedStripIdx(stripIdx);
+                                                e.dataTransfer.effectAllowed = 'move';
+                                            }}
+                                            onDragOver={(e) => {
+                                                e.preventDefault();
+                                                e.dataTransfer.dropEffect = 'move';
+                                                if (dragOverStripIdx !== stripIdx) {
+                                                    setDragOverStripIdx(stripIdx);
+                                                }
+                                            }}
+                                            onDragLeave={() => {
+                                                setDragOverStripIdx(null);
+                                            }}
+                                            onDrop={(e) => {
+                                                e.preventDefault();
+                                                if (draggedStripIdx !== null && draggedStripIdx !== stripIdx) {
+                                                    setLedStrips(prev => {
+                                                        const next = [...prev];
+                                                        const [movedItem] = next.splice(draggedStripIdx, 1);
+                                                        next.splice(stripIdx, 0, movedItem);
+                                                        return next;
+                                                    });
+                                                    setIsDirty(true);
+                                                }
+                                                setDraggedStripIdx(null);
+                                                setDragOverStripIdx(null);
+                                            }}
+                                            onDragEnd={() => {
+                                                setDraggedStripIdx(null);
+                                                setDragOverStripIdx(null);
+                                            }}
                                             onClick={() => setSelectedStripId(strip.id)}
                                             onDoubleClick={() => {
                                                 setSelectedStripId(strip.id);
                                                 setEditingStripId(strip.id);
                                             }}
                                             className={cn(
-                                                "flex flex-col gap-2 p-3 rounded-lg border cursor-pointer transition-all relative overflow-hidden group",
+                                                "flex flex-col gap-2 p-3 rounded-lg border cursor-grab active:cursor-grabbing transition-all relative overflow-hidden group",
+                                                isDraggingThis && "opacity-40 border-dashed border-ot-action scale-95",
+                                                isDragOverThis && "ring-2 ring-ot-action ring-offset-2 ring-offset-slate-900",
                                                 isSelected
                                                     ? `${colorTheme.bgLight} ${colorTheme.border} shadow-md`
                                                     : `bg-ot-surface-elev-bottom/60 ${colorTheme.borderFaint} hover:${colorTheme.border}`
@@ -1310,20 +1487,47 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
                                         >
                                             <div className="flex items-center justify-between z-30 relative">
                                                 <div className="flex items-center gap-2 min-w-0 pr-2">
+                                                    <GripVertical className="w-4 h-4 text-muted-foreground/50 hover:text-white shrink-0 cursor-grab" title="Drag to reorder strip" />
                                                     <Lightbulb className={cn("w-4 h-4 shrink-0", colorTheme.text)} />
                                                     <span className="text-sm font-semibold text-white truncate">{strip.label}</span>
                                                 </div>
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        confirmRemoveStrip(strip.id);
-                                                    }}
-                                                    className="w-6 h-6 rounded flex items-center justify-center text-muted-foreground/60 hover:text-red-400 hover:bg-red-500/20 transition-colors shrink-0 z-30 pointer-events-auto"
-                                                    title="Delete Strip"
-                                                >
-                                                    <Trash2 className="w-3.5 h-3.5" />
-                                                </button>
+                                                <div className="flex items-center gap-1 shrink-0 z-30 pointer-events-auto">
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            moveStripUp(stripIdx);
+                                                        }}
+                                                        disabled={stripIdx === 0}
+                                                        className="w-5 h-5 rounded flex items-center justify-center text-muted-foreground/60 hover:text-white hover:bg-white/10 disabled:opacity-20 disabled:hover:bg-transparent transition-colors"
+                                                        title="Move Up in Chain"
+                                                    >
+                                                        <ChevronUp className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            moveStripDown(stripIdx);
+                                                        }}
+                                                        disabled={stripIdx === ledStrips.length - 1}
+                                                        className="w-5 h-5 rounded flex items-center justify-center text-muted-foreground/60 hover:text-white hover:bg-white/10 disabled:opacity-20 disabled:hover:bg-transparent transition-colors"
+                                                        title="Move Down in Chain"
+                                                    >
+                                                        <ChevronDown className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            confirmRemoveStrip(strip.id);
+                                                        }}
+                                                        className="w-6 h-6 rounded flex items-center justify-center text-muted-foreground/60 hover:text-red-400 hover:bg-red-500/20 transition-colors"
+                                                        title="Delete Strip"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
                                             </div>
 
                                             {/* Mini Color Swatches Bar */}

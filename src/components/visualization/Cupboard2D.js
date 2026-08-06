@@ -395,6 +395,91 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                                     );
                                 })}
 
+                                 {/* Render Wire Connections between LED Strips */}
+                                 {cupboard.ledStrips && cupboard.ledStrips.length > 1 && (
+                                     <svg className="absolute inset-0 pointer-events-none z-15 overflow-visible" width={canvasWidth} height={canvasHeight}>
+                                         <style>{`
+                                             @keyframes wireFlowMonitoring {
+                                                 from { stroke-dashoffset: 24; }
+                                                 to { stroke-dashoffset: 0; }
+                                             }
+                                             .animate-wire-flow-monitoring {
+                                                 animation: wireFlowMonitoring 1.2s linear infinite;
+                                             }
+                                         `}</style>
+                                         <defs>
+                                             <filter id="wire-glow-monitoring" x="-30%" y="-30%" width="160%" height="160%">
+                                                 <feGaussianBlur stdDeviation="4" result="blur" />
+                                                 <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                                             </filter>
+                                         </defs>
+
+                                         {cupboard.ledStrips.slice(0, -1).map((strip, idx) => {
+                                             const nextStrip = cupboard.ledStrips[idx + 1];
+                                             if (!nextStrip) return null;
+
+                                             // OUT Port on current strip (LEFT side)
+                                             const x1 = Number(strip.x || 0);
+                                             const y1 = Number(strip.y || 0) + (Number(strip.height) || 22) / 2;
+
+                                             // IN Port on next strip (RIGHT side)
+                                             const x2 = Number(nextStrip.x || 0) + Number(nextStrip.width || 100);
+                                             const y2 = Number(nextStrip.y || 0) + (Number(nextStrip.height) || 22) / 2;
+
+                                             // Bezier curve control points
+                                             const dx = Math.max(80, Math.abs(x1 - x2) * 0.5, Math.abs(y1 - y2) * 0.4);
+                                             const cp1X = x1 - dx;
+                                             const cp1Y = y1;
+                                             const cp2X = x2 + dx;
+                                             const cp2Y = y2;
+
+                                             const pathD = `M ${x1} ${y1} C ${cp1X} ${cp1Y}, ${cp2X} ${cp2Y}, ${x2} ${y2}`;
+                                             const themeColor = getStripColor(idx).hex || '#38bdf8';
+
+                                             // Midpoint & tangent angle calculation at t = 0.5 for cubic Bezier
+                                             const midX = 0.125 * x1 + 0.375 * cp1X + 0.375 * cp2X + 0.125 * x2;
+                                             const midY = 0.125 * y1 + 0.375 * cp1Y + 0.375 * cp2Y + 0.125 * y2;
+
+                                             const tanX = 0.75 * (cp1X - x1) + 1.5 * (cp2X - cp1X) + 0.75 * (x2 - cp2X);
+                                             const tanY = 0.75 * (cp1Y - y1) + 1.5 * (cp2Y - cp1Y) + 0.75 * (y2 - cp2Y);
+                                             const angleDeg = Math.atan2(tanY, tanX) * (180 / Math.PI);
+
+                                             return (
+                                                 <g key={`wire-${strip.id || idx}-${nextStrip.id || idx + 1}`}>
+                                                     {/* Outer wire glow */}
+                                                     <path
+                                                         d={pathD}
+                                                         fill="none"
+                                                         stroke={themeColor}
+                                                         strokeWidth="6"
+                                                         strokeOpacity="0.25"
+                                                         filter="url(#wire-glow-monitoring)"
+                                                     />
+                                                     {/* Main animated wire */}
+                                                     <path
+                                                         d={pathD}
+                                                         fill="none"
+                                                         stroke="#38bdf8"
+                                                         strokeWidth="2.5"
+                                                         strokeDasharray="8 6"
+                                                         className="animate-wire-flow-monitoring"
+                                                     />
+                                                     {/* Center Arrowhead Marker */}
+                                                     <g transform={`translate(${midX}, ${midY}) rotate(${angleDeg})`}>
+                                                         <polygon
+                                                             points="-7,-5 7,0 -7,5"
+                                                             fill="#38bdf8"
+                                                             stroke="#0284c7"
+                                                             strokeWidth="1"
+                                                             className="drop-shadow-[0_0_6px_rgba(56,189,248,0.9)]"
+                                                         />
+                                                     </g>
+                                                 </g>
+                                             );
+                                         })}
+                                     </svg>
+                                 )}
+
                                  {/* Render LED Strips */}
                                  {cupboard.ledStrips && cupboard.ledStrips.map((strip, stripIdx) => {
                                      let savedColors = ['#ef4444', '#22c55e', '#3b82f6', '#facc15', '#f97316', '#a855f7'];

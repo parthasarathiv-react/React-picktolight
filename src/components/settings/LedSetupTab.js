@@ -264,14 +264,7 @@ export default function LedSetupTab({ locId: propLocId }) {
                                 <p className="text-sm font-medium text-slate-300">No LED colors configured for location ID "{activeLocId}"</p>
                                 <p className="text-xs text-muted-foreground mt-1">Create a new color using the button below to add location-based LED colors.</p>
                             </div>
-                            <Button
-                                size="sm"
-                                onClick={handleOpenCreateColorModal}
-                                className="bg-ot-action hover:bg-ot-action-hover text-white gap-1.5 font-medium shadow mt-2"
-                            >
-                                <Plus className="w-4 h-4" />
-                                Add First Color
-                            </Button>
+
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">

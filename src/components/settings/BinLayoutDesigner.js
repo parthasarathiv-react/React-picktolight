@@ -2,8 +2,6 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Button } from 'components/ui/button';
 import { ArrowLeft, Save, CheckCircle2, Plus, X, Layers, GripVertical, Server, ChevronRight, LayoutGrid, Box, Sparkles, Check, AlertTriangle, Ban, ZoomIn, ZoomOut, Archive } from 'lucide-react';
 import { cn } from 'lib/utils';
-import { Input } from 'components/ui/input';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from 'components/ui/dialog';
 import { ConfirmDialog } from 'components/ui/ConfirmDialog';
 import { toast } from 'sonner';
 import { apiService } from 'lib/apiService';
@@ -758,74 +756,74 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                                         <div className="flex flex-col items-center justify-center gap-1 z-20 shrink-0 h-full w-full pointer-events-none">
                                             <div className="flex items-center w-full justify-center relative">
                                                 <GripVertical className="absolute left-1 w-3 h-3 text-muted-foreground/40 pointer-events-none" />
-                                                <span className="text-xs font-semibold text-white text-center px-1 py-0.5 rounded w-full max-w-[80%] truncate pointer-events-none select-none">
+                                                <span className="text-[10px] font-semibold text-white text-center px-1 leading-tight select-none pointer-events-none max-w-[90%] truncate" title={bin.label}>
                                                     {bin.label}
                                                 </span>
                                             </div>
                                         </div>
 
-                                    {/* Size label */}
-                                    <div className="absolute bottom-0.5 right-2 text-[8px] text-muted-foreground/40 font-mono pointer-events-none z-20">
-                                        {Math.round(bin.width)}×{Math.round(bin.height)}
-                                    </div>
+                                        {/* Size label */}
+                                        <div className="absolute bottom-0.5 right-2 text-[8px] text-muted-foreground/40 font-mono pointer-events-none z-20">
+                                            {Math.round(bin.width)}×{Math.round(bin.height)}
+                                        </div>
 
-                                    {/* Disable button */}
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); handleDisableBin(bin); }}
-                                        onPointerDown={(e) => e.stopPropagation()}
-                                        className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-amber-500/80 hover:bg-amber-500 text-white flex items-center justify-center z-30 opacity-0 hover:opacity-100 transition-opacity shadow-lg"
-                                        style={{ pointerEvents: 'auto' }}
-                                        title="Disable Bin"
-                                    >
-                                        <Ban className="w-3 h-3" />
-                                    </button>
+                                        {/* Disable button */}
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); handleDisableBin(bin); }}
+                                            onPointerDown={(e) => e.stopPropagation()}
+                                            className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-amber-500/80 hover:bg-amber-500 text-white flex items-center justify-center z-30 opacity-0 hover:opacity-100 transition-opacity shadow-lg"
+                                            style={{ pointerEvents: 'auto' }}
+                                            title="Disable Bin"
+                                        >
+                                            <Ban className="w-3 h-3" />
+                                        </button>
 
-                                    {/* ─── Resize Handles (4 edges + 4 corners) ──────────── */}
-                                    {/* North edge */}
-                                    <div onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-n')} className="absolute left-2 right-2 -top-[3px] h-[6px] cursor-n-resize z-30 group">
-                                        <div className="absolute inset-x-0 top-[2px] h-[2px] bg-orange-500/0 group-hover:bg-orange-500/60 transition-colors rounded-full" />
-                                    </div>
-                                    {/* South edge */}
-                                    <div onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-s')} className="absolute left-2 right-2 -bottom-[3px] h-[6px] cursor-s-resize z-30 group">
-                                        <div className="absolute inset-x-0 bottom-[2px] h-[2px] bg-orange-500/0 group-hover:bg-orange-500/60 transition-colors rounded-full" />
-                                    </div>
-                                    {/* West edge */}
-                                    <div onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-w')} className="absolute top-2 bottom-2 -left-[3px] w-[6px] cursor-w-resize z-30 group">
-                                        <div className="absolute inset-y-0 left-[2px] w-[2px] bg-orange-500/0 group-hover:bg-orange-500/60 transition-colors rounded-full" />
-                                    </div>
-                                    {/* East edge */}
-                                    <div onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-e')} className="absolute top-2 bottom-2 -right-[3px] w-[6px] cursor-e-resize z-30 group">
-                                        <div className="absolute inset-y-0 right-[2px] w-[2px] bg-orange-500/0 group-hover:bg-orange-500/60 transition-colors rounded-full" />
-                                    </div>
+                                        {/* ─── Resize Handles (4 edges + 4 corners) ──────────── */}
+                                        {/* North edge */}
+                                        <div onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-n')} className="absolute left-2 right-2 -top-[3px] h-[6px] cursor-n-resize z-30 group">
+                                            <div className="absolute inset-x-0 top-[2px] h-[2px] bg-orange-500/0 group-hover:bg-orange-500/60 transition-colors rounded-full" />
+                                        </div>
+                                        {/* South edge */}
+                                        <div onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-s')} className="absolute left-2 right-2 -bottom-[3px] h-[6px] cursor-s-resize z-30 group">
+                                            <div className="absolute inset-x-0 bottom-[2px] h-[2px] bg-orange-500/0 group-hover:bg-orange-500/60 transition-colors rounded-full" />
+                                        </div>
+                                        {/* West edge */}
+                                        <div onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-w')} className="absolute top-2 bottom-2 -left-[3px] w-[6px] cursor-w-resize z-30 group">
+                                            <div className="absolute inset-y-0 left-[2px] w-[2px] bg-orange-500/0 group-hover:bg-orange-500/60 transition-colors rounded-full" />
+                                        </div>
+                                        {/* East edge */}
+                                        <div onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-e')} className="absolute top-2 bottom-2 -right-[3px] w-[6px] cursor-e-resize z-30 group">
+                                            <div className="absolute inset-y-0 right-[2px] w-[2px] bg-orange-500/0 group-hover:bg-orange-500/60 transition-colors rounded-full" />
+                                        </div>
 
-                                    {/* Corner handles (visible dots) */}
-                                    {/* NW */}
-                                    <div
-                                        onPointerDown={(e) => e.stopPropagation()}
-                                        onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-nw')}
-                                        className="absolute -top-[4px] -left-[4px] w-[8px] h-[8px] rounded-full bg-orange-500/60 hover:bg-orange-500 border border-orange-500 cursor-nw-resize z-40 transition-colors"
-                                    />
-                                    {/* NE */}
-                                    <div
-                                        onPointerDown={(e) => e.stopPropagation()}
-                                        onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-ne')}
-                                        className="absolute -top-[4px] -right-[4px] w-[8px] h-[8px] rounded-full bg-orange-500/60 hover:bg-orange-500 border border-orange-500 cursor-ne-resize z-40 transition-colors"
-                                    />
-                                    {/* SW */}
-                                    <div
-                                        onPointerDown={(e) => e.stopPropagation()}
-                                        onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-sw')}
-                                        className="absolute -bottom-[4px] -left-[4px] w-[8px] h-[8px] rounded-full bg-orange-500/60 hover:bg-orange-500 border border-orange-500 cursor-sw-resize z-40 transition-colors"
-                                    />
-                                    {/* SE */}
-                                    <div
-                                        onPointerDown={(e) => e.stopPropagation()}
-                                        onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-se')}
-                                        className="absolute -bottom-[4px] -right-[4px] w-[8px] h-[8px] rounded-full bg-orange-500/60 hover:bg-orange-500 border border-orange-500 cursor-se-resize z-40 transition-colors"
-                                    />
-                                </div>
-                            );
-                        })}
+                                        {/* Corner handles (visible dots) */}
+                                        {/* NW */}
+                                        <div
+                                            onPointerDown={(e) => e.stopPropagation()}
+                                            onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-nw')}
+                                            className="absolute -top-[4px] -left-[4px] w-[8px] h-[8px] rounded-full bg-orange-500/60 hover:bg-orange-500 border border-orange-500 cursor-nw-resize z-40 transition-colors"
+                                        />
+                                        {/* NE */}
+                                        <div
+                                            onPointerDown={(e) => e.stopPropagation()}
+                                            onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-ne')}
+                                            className="absolute -top-[4px] -right-[4px] w-[8px] h-[8px] rounded-full bg-orange-500/60 hover:bg-orange-500 border border-orange-500 cursor-ne-resize z-40 transition-colors"
+                                        />
+                                        {/* SW */}
+                                        <div
+                                            onPointerDown={(e) => e.stopPropagation()}
+                                            onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-sw')}
+                                            className="absolute -bottom-[4px] -left-[4px] w-[8px] h-[8px] rounded-full bg-orange-500/60 hover:bg-orange-500 border border-orange-500 cursor-sw-resize z-40 transition-colors"
+                                        />
+                                        {/* SE */}
+                                        <div
+                                            onPointerDown={(e) => e.stopPropagation()}
+                                            onMouseDown={(e) => handleMouseDown(e, bin.id, 'resize-se')}
+                                            className="absolute -bottom-[4px] -right-[4px] w-[8px] h-[8px] rounded-full bg-orange-500/60 hover:bg-orange-500 border border-orange-500 cursor-se-resize z-40 transition-colors"
+                                        />
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 </div>
@@ -870,9 +868,16 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                                     <div className="flex items-center justify-between gap-2">
                                         <div className="flex items-center gap-1.5 min-w-0">
                                             <GripVertical className="w-3.5 h-3.5 text-muted-foreground/60 group-hover:text-ot-action shrink-0" />
-                                            <span className="text-xs font-semibold text-white whitespace-nowrap px-1 py-0.5 rounded truncate select-none">
-                                                {bin.label}
-                                            </span>
+                                            <input
+                                                value={bin.label}
+                                                onChange={(e) => {
+                                                    const newVal = e.target.value;
+                                                    setBinBlocks(prev => prev.map(b => b.id === bin.id ? { ...b, label: newVal } : b));
+                                                    setIsDirty(true);
+                                                }}
+                                                className="text-xs font-semibold text-white bg-transparent border border-transparent hover:border-white/20 focus:border-ot-action focus:bg-ot-surface-top rounded outline-none px-1 -ml-1 w-full min-w-0 transition-all"
+                                                title="Edit bin name"
+                                            />
                                         </div>
 
                                         {!isDisabled && (

@@ -494,7 +494,10 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
                                         <div className="flex items-center justify-between gap-1 shrink-0">
                                             <input
                                                 value={cb.name}
-                                                onChange={(e) => setCanvasCupboards(prev => prev.map(c => c.canvasId === cb.canvasId ? { ...c, name: e.target.value } : c))}
+                                                onChange={(e) => {
+                                                    setCanvasCupboards(prev => prev.map(c => c.canvasId === cb.canvasId ? { ...c, name: e.target.value } : c));
+                                                    setIsDirty(true);
+                                                }}
                                                 className="text-[10px] font-bold text-white bg-transparent border border-transparent hover:border-white/20 focus:border-ot-action focus:bg-ot-action/10 rounded outline-none w-full min-w-0 px-0.5 -ml-0.5 transition-all"
                                                 title="Edit cupboard name"
                                             />
@@ -554,7 +557,10 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
                                     <div className="flex-1 min-w-0">
                                         <input
                                             value={c.name}
-                                            onChange={(e) => setCanvasCupboards(prev => prev.map(cc => cc.canvasId === c.canvasId ? { ...cc, name: e.target.value } : cc))}
+                                            onChange={(e) => {
+                                                setCanvasCupboards(prev => prev.map(cc => cc.canvasId === c.canvasId ? { ...cc, name: e.target.value } : cc));
+                                                setIsDirty(true);
+                                            }}
                                             className="text-[11px] font-semibold text-white bg-transparent border border-transparent hover:border-white/20 focus:border-ot-action focus:bg-ot-surface-top rounded outline-none w-full min-w-0 px-1 -ml-1 transition-all"
                                             title="Edit cupboard name"
                                         />
