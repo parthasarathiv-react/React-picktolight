@@ -11,22 +11,16 @@ import { ConfirmDialog } from 'components/ui/ConfirmDialog';
 import { toast } from 'sonner';
 import { apiService } from 'lib/apiService';
 
-// Generate 16 static ports for a controller
-const generateInitialPorts = () => {
-    return Array.from({ length: 16 }, (_, i) => {
+// Generate initial channels for a controller
+const generateInitialChannels = (count = 16) => {
+    return Array.from({ length: count }, (_, i) => {
         const num = String(i + 1).padStart(2, '0');
-        const initialStrips = i === 0 ? [
-            { id: 'strip-101', label: 'Strip 01-A', ledCount: 6, shelf: 'Shelf A1', linkedBins: 4 },
-            { id: 'strip-102', label: 'Strip 01-B', ledCount: 8, shelf: 'Shelf A2', linkedBins: 6 }
-        ] : i === 1 ? [
-            { id: 'strip-103', label: 'Strip 02-A', ledCount: 6, shelf: 'Shelf B1', linkedBins: 3 }
-        ] : [];
-
         return {
-            port_name: `PORT-${num}`,
-            strip_count: initialStrips.length,
-            status: initialStrips.length > 0 ? 'Active' : 'Idle',
-            strips: initialStrips
+            channel_name: `CHANNEL-${num}`,
+            channel_ledcount: 0,
+            channel_stripcount: 0,
+            status: 'Idle',
+            strips: []
         };
     });
 };
@@ -40,17 +34,19 @@ const SAMPLE_STRIP_OPTIONS = [
     { id: 'sample-5', label: 'LED Strip Type E', ledCount: 24, shelf: 'Shelf 5', linkedBins: 12 },
 ];
 
-export default function ControllersTab({ controllersData, syncControllers }) {
+export default function ControllersTab({ controllersData, syncControllers, refetchControllers }) {
     const [showControllerForm, setShowControllerForm] = useState(false);
     const [editingController, setEditingController] = useState(null);
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [controllerToDelete, setControllerToDelete] = useState(null);
+    console.log("controllersData", controllersData);
 
     // Expandable controllers state
     const [expandedControllers, setExpandedControllers] = useState({});
 
     // Dynamic ports state per controller: { [controllerId]: portsArray }
     const [controllerPortsMap, setControllerPortsMap] = useState({});
+    const [addingInitialForCtrl, setAddingInitialForCtrl] = useState(null);
 
     // Add Strip Modal state (multi-select)
     const [addStripModalOpen, setAddStripModalOpen] = useState(false);
@@ -61,19 +57,243 @@ export default function ControllersTab({ controllersData, syncControllers }) {
     const [selectedPortView, setSelectedPortView] = useState(null);
     const [isSheetOpen, setIsSheetOpen] = useState(false);
 
-    const toggleExpandController = (ctrlId) => {
-        setExpandedControllers(prev => {
-            const nextState = { ...prev, [ctrlId]: !prev[ctrlId] };
+    // Edit Channel Modal state
+    const [editChannelModalOpen, setEditChannelModalOpen] = useState(false);
+    const [editingChannelInfo, setEditingChannelInfo] = useState(null); // { ctrlId, port }
+    const [editChannelName, setEditChannelName] = useState('');
+    const [isSavingChannel, setIsSavingChannel] = useState(false);
 
-            // Ensure 16 ports exist for this controller
-            if (!controllerPortsMap[ctrlId]) {
-                setControllerPortsMap(pm => ({
-                    ...pm,
-                    [ctrlId]: generateInitialPorts()
-                }));
+    // Delete Channel state
+    const [channelDeleteDialogOpen, setChannelDeleteDialogOpen] = useState(false);
+    const [channelToDelete, setChannelToDelete] = useState(null); // { ctrlId, channelId, channelName }
+    const [isDeletingChannel, setIsDeletingChannel] = useState(false);
+
+    const handleDeleteChannel = (ctrlId, port) => {
+        const channelId = port.channel_id || port.id;
+        if (!channelId) {
+            toast.error("Channel ID not found");
+            return;
+        }
+        setChannelToDelete({ ctrlId, channelId, channelName: port.channel_name || 'Channel' });
+        setChannelDeleteDialogOpen(true);
+    };
+
+    const confirmDeleteChannel = async () => {
+        if (!channelToDelete) return;
+        const { ctrlId, channelId, channelName } = channelToDelete;
+        setIsDeletingChannel(true);
+        const toastId = toast.loading(`Deleting ${channelName}...`);
+
+        try {
+            const res = await apiService.deleteChannel(channelId);
+            if (res && (res.success === false || res.error)) {
+                throw new Error(res.message || res.error || "Failed to delete channel");
             }
-            return nextState;
+
+            setControllerPortsMap(prev => {
+                const list = prev[ctrlId] || [];
+                const updatedList = list.filter(item => String(item.channel_id || item.id) !== String(channelId));
+                return { ...prev, [ctrlId]: updatedList };
+            });
+
+            if (refetchControllers) {
+                await refetchControllers();
+            }
+
+            toast.success(`Channel "${channelName}" deleted successfully`, { id: toastId });
+        } catch (error) {
+            console.error("Error deleting channel:", error);
+            toast.error(`Failed to delete channel: ${error.message}`, { id: toastId });
+        } finally {
+            setIsDeletingChannel(false);
+            setChannelDeleteDialogOpen(false);
+            setChannelToDelete(null);
+        }
+    };
+
+    const handleOpenEditChannelModal = (ctrlId, port) => {
+        setEditingChannelInfo({ ctrlId, port });
+        setEditChannelName(port.channel_name || '');
+        setEditChannelModalOpen(true);
+    };
+
+    const handleSaveChannelName = async () => {
+        if (!editingChannelInfo || !editChannelName.trim()) {
+            toast.error("Channel name cannot be empty");
+            return;
+        }
+        const { ctrlId, port } = editingChannelInfo;
+        const channelId = port.channel_id || port.id;
+
+        if (!channelId) {
+            toast.error("Channel ID not found");
+            return;
+        }
+
+        setIsSavingChannel(true);
+        const toastId = toast.loading("Updating channel name...");
+
+        try {
+            const payload = {
+                channel_name: editChannelName.trim(),
+                channel_ledcount: String(port.channel_ledcount || "0"),
+                channel_stripcount: String(port.channel_stripcount || "0"),
+            };
+
+            const res = await apiService.updateChannel(channelId, payload);
+
+            if (res && (res.success === false || res.error)) {
+                throw new Error(res.message || res.error || "Failed to update channel");
+            }
+
+            setControllerPortsMap(prev => {
+                const list = prev[ctrlId] || [];
+                const updatedList = list.map(item =>
+                    (String(item.channel_id || item.id) === String(channelId))
+                        ? { ...item, channel_name: editChannelName.trim() }
+                        : item
+                );
+                return { ...prev, [ctrlId]: updatedList };
+            });
+
+            toast.success("Channel name updated successfully", { id: toastId });
+            setEditChannelModalOpen(false);
+            setEditingChannelInfo(null);
+        } catch (error) {
+            console.error("Error updating channel name:", error);
+            toast.error(`Failed to update channel: ${error.message}`, { id: toastId });
+        } finally {
+            setIsSavingChannel(false);
+        }
+    };
+
+    const toggleExpandController = async (ctrlId) => {
+        setExpandedControllers(prev => {
+            return { ...prev, [ctrlId]: !prev[ctrlId] };
         });
+
+        if (!controllerPortsMap[ctrlId]) {
+            try {
+                const res = await apiService.getChannels(ctrlId);
+                const channelsList = res?.data || (Array.isArray(res) ? res : []);
+                const mappedChannels = channelsList.map(ch => ({
+                    ...ch,
+                    channel_name: ch.channel_name || ch.name || '',
+                    channel_ledcount: parseInt(ch.channel_ledcount || 0, 10),
+                    channel_stripcount: parseInt(ch.channel_stripcount || 0, 10),
+                    status: parseInt(ch.channel_stripcount || 0, 10) > 0 ? 'Active' : 'Idle',
+                    strips: ch.strips || []
+                }));
+                setControllerPortsMap(prev => ({
+                    ...prev,
+                    [ctrlId]: mappedChannels
+                }));
+            } catch (error) {
+                console.error("Error fetching channels:", error);
+                toast.error("Failed to fetch channels");
+            }
+        }
+    };
+
+    // Add 16 channels at once for initial add when channel count is 0
+    const handleAddInitialChannels = async (ctrlId, count = 16) => {
+        setAddingInitialForCtrl(ctrlId);
+        const toastId = toast.loading(`Adding initial ${count} channels...`);
+        try {
+            const createdChannels = [];
+            for (let i = 1; i <= count; i++) {
+                const num = String(i).padStart(2, '0');
+                const channelName = `CHANNEL-${num}`;
+                const payload = {
+                    channel_name: channelName,
+                    channel_ledcount: "0",
+                    channel_stripcount: "0",
+                    channel_ctl_id: String(ctrlId)
+                };
+
+                const res = await apiService.createChannel(payload);
+                const channelId = res?.data?.channel_id || res?.channel_id || res?.id || Math.random().toString(36).substr(2, 9);
+
+                createdChannels.push({
+                    id: channelId,
+                    channel_name: channelName,
+                    channel_ledcount: 0,
+                    channel_stripcount: 0,
+                    strips: []
+                });
+            }
+
+            setControllerPortsMap(prev => ({
+                ...prev,
+                [ctrlId]: createdChannels
+            }));
+
+            if (syncControllers && controllersData) {
+                const updatedCtrlList = controllersData.map(c =>
+                    String(c.id) === String(ctrlId) ? { ...c, channels: count, ctl_channels: count } : c
+                );
+                syncControllers(updatedCtrlList);
+            }
+
+            if (refetchControllers) {
+                await refetchControllers();
+            }
+
+            toast.success(`Added ${count} initial channels successfully.`, { id: toastId });
+        } catch (error) {
+            console.error("Error creating initial channels:", error);
+            toast.error(`Failed to create initial channels: ${error.message}`, { id: toastId });
+        } finally {
+            setAddingInitialForCtrl(null);
+        }
+    };
+
+    const handleAddChannel = async (ctrlId, limit) => {
+        const currentChannels = controllerPortsMap[ctrlId] || [];
+        // if (currentChannels.length >= limit) {
+        //     toast.error(`Channel limit of ${limit} reached.`);
+        //     return;
+        // }
+
+        const num = String(currentChannels.length + 1).padStart(2, '0');
+        const channelName = `CHANNEL-${num}`;
+
+        try {
+            const payload = {
+                channel_name: channelName,
+                channel_ledcount: "0",
+                channel_stripcount: "0",
+                channel_ctl_id: String(ctrlId)
+            };
+
+            const res = await apiService.createChannel(payload);
+            const channelId = res?.data?.channel_id || res?.channel_id || res?.id || Math.random().toString(36).substr(2, 9);
+
+            const newChannel = {
+                id: channelId,
+                channel_name: channelName,
+                channel_ledcount: 0,
+                channel_stripcount: 0,
+                strips: []
+            };
+
+            setControllerPortsMap(prev => {
+                const prevChannels = prev[ctrlId] || [];
+                return {
+                    ...prev,
+                    [ctrlId]: [...prevChannels, newChannel]
+                };
+            });
+
+            if (refetchControllers) {
+                await refetchControllers();
+            }
+
+            toast.success(`Added ${channelName} successfully.`);
+        } catch (error) {
+            console.error("Error creating channel:", error);
+            toast.error(`Failed to create channel: ${error.message}`);
+        }
     };
 
     // Open Add Strip Modal
@@ -118,14 +338,15 @@ export default function ControllersTab({ controllersData, syncControllers }) {
         }));
 
         setControllerPortsMap(prev => {
-            const currentPorts = prev[ctrlId] || generateInitialPorts();
+            const currentPorts = prev[ctrlId] || [];
             const updatedPorts = currentPorts.map((p, idx) => {
                 if (idx !== portIndex) return p;
                 const nextStrips = [...p.strips, ...newStripItems];
                 return {
                     ...p,
                     strips: nextStrips,
-                    strip_count: nextStrips.length,
+                    channel_stripcount: nextStrips.length,
+                    channel_ledcount: nextStrips.reduce((acc, s) => acc + s.ledCount, 0),
                     status: 'Active'
                 };
             });
@@ -148,14 +369,15 @@ export default function ControllersTab({ controllersData, syncControllers }) {
 
     // Open View Sheet
     const handleOpenStripSheet = (ctrl, portIndex) => {
-        const ctrlPorts = controllerPortsMap[ctrl.id] || generateInitialPorts();
+        const ctrlPorts = controllerPortsMap[ctrl.id] || [];
         const portObj = ctrlPorts[portIndex];
+        if (!portObj) return;
 
         setSelectedPortView({
             ctrlId: ctrl.id,
             portIndex: portIndex,
             controllerName: ctrl.name,
-            portName: portObj.port_name,
+            portName: portObj.channel_name,
             strips: portObj.strips || []
         });
         setIsSheetOpen(true);
@@ -167,14 +389,15 @@ export default function ControllersTab({ controllersData, syncControllers }) {
         const { ctrlId, portIndex } = selectedPortView;
 
         setControllerPortsMap(prev => {
-            const currentPorts = prev[ctrlId] || generateInitialPorts();
+            const currentPorts = prev[ctrlId] || [];
             const updatedPorts = currentPorts.map((p, idx) => {
                 if (idx !== portIndex) return p;
                 const nextStrips = p.strips.filter(s => s.id !== stripId);
                 return {
                     ...p,
                     strips: nextStrips,
-                    strip_count: nextStrips.length,
+                    channel_stripcount: nextStrips.length,
+                    channel_ledcount: nextStrips.reduce((acc, s) => acc + s.ledCount, 0),
                     status: nextStrips.length > 0 ? 'Active' : 'Idle'
                 };
             });
@@ -211,7 +434,7 @@ export default function ControllersTab({ controllersData, syncControllers }) {
         const name = data.get('name');
         const ip = data.get('ip');
         const port = data.get('port');
-        const cports = parseInt(data.get('cports') || '16', 10);
+        const channels = parseInt(data.get('channels') || '16', 10);
         const status = data.get('status') === 'ACTIVE' ? 'Online' : 'Offline';
 
         if (editingController) {
@@ -230,13 +453,14 @@ export default function ControllersTab({ controllersData, syncControllers }) {
                     ctl_ip: ip,
                     ctl_port: parseInt(port, 10),
                     ctl_loc_id: ctl_loc_id,
-                    ctl_status: status === 'Online'
+                    ctl_channels: String(channels),
+                    ctl_status: status === 'Online' ? "True" : "False"
                 };
 
                 await apiService.updateController(editingController.id, payload);
 
                 const updated = controllersData.map(c =>
-                    c.id === editingController.id ? { ...c, name, ip, port, cports, status } : c
+                    c.id === editingController.id ? { ...c, name, ip, port, channels, status } : c
                 );
                 syncControllers(updated);
                 setShowControllerForm(false);
@@ -262,7 +486,8 @@ export default function ControllersTab({ controllersData, syncControllers }) {
                     ctl_ip: ip,
                     ctl_port: parseInt(port, 10),
                     ctl_loc_id: ctl_loc_id,
-                    ctl_status: status === 'Online'
+                    ctl_channels: String(channels),
+                    ctl_status: status === 'Online' ? "True" : "False"
                 };
 
                 const resData = await apiService.createController(payload);
@@ -281,7 +506,7 @@ export default function ControllersTab({ controllersData, syncControllers }) {
                     name: name,
                     ip: ip,
                     port: parseInt(port, 10),
-                    cports: cports,
+                    channels: channels,
                     status: status
                 };
                 syncControllers([...controllersData, newCtrl]);
@@ -348,8 +573,8 @@ export default function ControllersTab({ controllersData, syncControllers }) {
                                 </div>
 
                                 <div className="space-y-2">
-                                    <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">cports (Ports Count)</label>
-                                    <Input name="cports" type="number" defaultValue={editingController ? (editingController.cports || editingController.portsCount || 16) : 16} placeholder="16" className="bg-ot-surface-bottom border-ot-border" required />
+                                    <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">Channels</label>
+                                    <Input name="channels" type="number" defaultValue={editingController ? (editingController.channels || editingController.ctl_channels || 16) : 16} placeholder="16" className="bg-ot-surface-bottom border-ot-border" required />
                                 </div>
 
                                 <div className="space-y-2 col-span-2 sm:col-span-1">
@@ -384,7 +609,7 @@ export default function ControllersTab({ controllersData, syncControllers }) {
                             <TableHead>Name</TableHead>
                             <TableHead>IP Address</TableHead>
                             <TableHead>Port</TableHead>
-                            <TableHead className="font-semibold">cports</TableHead>
+                            <TableHead className="font-semibold">Channels</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
@@ -392,13 +617,13 @@ export default function ControllersTab({ controllersData, syncControllers }) {
                     <TableBody>
                         {controllersData.map((ctrl) => {
                             const isExpanded = !!expandedControllers[ctrl.id];
-                            const portsList = controllerPortsMap[ctrl.id] || generateInitialPorts();
-                            const portsCount = ctrl.cports || ctrl.portsCount || 16;
+                            const portsList = controllerPortsMap[ctrl.id] || [];
+                            const portsCount = parseInt(ctrl.channels ?? ctrl.ctl_channels ?? 0, 10);
 
                             return (
                                 <React.Fragment key={ctrl.id}>
-                                    <TableRow className={cn("transition-colors hover:bg-ot-surface-top/40", isExpanded && "bg-ot-surface-top/30 border-b-0")}>
-                                        <TableCell className="text-center p-2">
+                                    <TableRow className={cn("transition-colors hover:bg-ot-surface-top/40 align-middle", isExpanded && "bg-ot-surface-top/30 border-b-0")}>
+                                        <TableCell className="text-center p-2 align-middle">
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
@@ -409,20 +634,22 @@ export default function ControllersTab({ controllersData, syncControllers }) {
                                                 {isExpanded ? <ChevronDown className="w-4 h-4 text-ot-action" /> : <ChevronRight className="w-4 h-4" />}
                                             </Button>
                                         </TableCell>
-                                        <TableCell className="font-medium text-white flex items-center gap-2">
-                                            <Cpu className="w-4 h-4 text-ot-action shrink-0" />
-                                            {ctrl.name}
+                                        <TableCell className="font-medium text-white align-middle">
+                                            <div className="flex items-center gap-2">
+                                                <Cpu className="w-4 h-4 text-ot-action shrink-0" />
+                                                <span>{ctrl.name}</span>
+                                            </div>
                                         </TableCell>
-                                        <TableCell className="text-muted-foreground font-mono text-xs">{ctrl.ip}</TableCell>
-                                        <TableCell className="text-muted-foreground text-xs font-mono">{ctrl.port}</TableCell>
-                                        <TableCell className="font-mono text-xs text-ot-action font-semibold">
-                                            <span className="px-2 py-0.5 rounded bg-ot-surface-bottom border border-ot-border/50">
-                                                {portsCount} Ports
+                                        <TableCell className="text-muted-foreground font-mono text-xs align-middle">{ctrl.ip}</TableCell>
+                                        <TableCell className="text-muted-foreground text-xs font-mono align-middle">{ctrl.port}</TableCell>
+                                        <TableCell className="font-mono text-xs text-ot-action font-semibold align-middle">
+                                            <span className="inline-block px-2 py-0.5 rounded bg-ot-surface-bottom border border-ot-border/50">
+                                                {portsCount} Channels
                                             </span>
                                         </TableCell>
-                                        <TableCell>
+                                        <TableCell className="align-middle">
                                             <span className={cn(
-                                                "px-2 py-0.5 text-xs rounded-full border font-medium",
+                                                "inline-block px-2 py-0.5 text-xs rounded-full border font-medium",
                                                 ctrl.status === 'Online'
                                                     ? "bg-green-500/10 text-green-400 border-green-500/20"
                                                     : "bg-red-500/10 text-red-400 border-red-500/20"
@@ -430,7 +657,7 @@ export default function ControllersTab({ controllersData, syncControllers }) {
                                                 {ctrl.status}
                                             </span>
                                         </TableCell>
-                                        <TableCell className="text-right">
+                                        <TableCell className="text-right align-middle">
                                             <Button variant="ghost" size="sm" onClick={() => handleEditController(ctrl)} className="text-ot-action hover:text-ot-action-hover mr-2 transition-colors"><PenSquare className="w-4 h-4" /></Button>
                                             <Button variant="ghost" size="sm" onClick={() => handleDeleteController(ctrl.id)} className="text-red-400 hover:text-red-300 transition-colors"><Trash2 className="w-4 h-4" /></Button>
                                         </TableCell>
@@ -444,11 +671,36 @@ export default function ControllersTab({ controllersData, syncControllers }) {
                                                     <div className="flex items-center justify-between px-1 pb-2 border-b border-ot-border/40">
                                                         <div className="flex items-center gap-2 text-xs font-bold text-ot-action uppercase tracking-wider">
                                                             <Cable className="w-3.5 h-3.5" />
-                                                            Controller Ports (16 Ports)
+                                                            Controller Channels ({portsList.length} Channels)
                                                         </div>
-                                                        <span className="text-[10px] text-muted-foreground font-mono bg-ot-surface-elev-bottom px-2 py-0.5 rounded border border-ot-border/40">
-                                                            Limit: 16 Ports
-                                                        </span>
+                                                        <div className="flex items-center gap-2">
+                                                            {portsCount === 0 ? (
+                                                                <Button
+                                                                    variant="outline"
+                                                                    size="sm"
+                                                                    disabled={addingInitialForCtrl === ctrl.id}
+                                                                    onClick={() => handleAddInitialChannels(ctrl.id, 16)}
+                                                                    className="h-6 text-[10px] bg-ot-action/10 text-ot-action border-ot-action/30 hover:bg-ot-action/20 disabled:opacity-50"
+                                                                >
+                                                                    <Plus className="w-3 h-3 mr-1" />
+                                                                    {addingInitialForCtrl === ctrl.id ? "Adding 16 Channels..." : "Initial Add"}
+                                                                </Button>
+                                                            ) : (
+                                                                portsCount && (
+                                                                    <Button
+                                                                        variant="outline"
+                                                                        size="sm"
+                                                                        onClick={() => handleAddChannel(ctrl.id, portsCount)}
+                                                                        className="h-6 text-[10px] bg-ot-action/10 text-ot-action border-ot-action/30 hover:bg-ot-action/20"
+                                                                    >
+                                                                        <Plus className="w-3 h-3 mr-1" /> Add Channel
+                                                                    </Button>
+                                                                )
+                                                            )}
+                                                            <span className="text-[10px] text-muted-foreground font-mono bg-ot-surface-elev-bottom px-2 py-0.5 rounded border border-ot-border/40">
+                                                                Limit: {portsCount} Channels
+                                                            </span>
+                                                        </div>
                                                     </div>
 
                                                     {/* Scrollable Container with Max Height */}
@@ -456,61 +708,86 @@ export default function ControllersTab({ controllersData, syncControllers }) {
                                                         <Table className="text-xs">
                                                             <TableHeader className="sticky top-0 bg-ot-surface-elev-bottom z-10">
                                                                 <TableRow className="border-b border-ot-border/40 hover:bg-transparent">
-                                                                    <TableHead className="text-muted-foreground font-semibold uppercase text-[10px] py-2">port_name</TableHead>
+                                                                    <TableHead className="text-muted-foreground font-semibold uppercase text-[10px] py-2">channel_name</TableHead>
+                                                                    <TableHead className="text-muted-foreground font-semibold uppercase text-[10px] py-2">led_count</TableHead>
                                                                     <TableHead className="text-muted-foreground font-semibold uppercase text-[10px] py-2">strip_count</TableHead>
-                                                                    <TableHead className="text-muted-foreground font-semibold uppercase text-[10px] py-2">status</TableHead>
                                                                     <TableHead className="text-right text-muted-foreground font-semibold uppercase text-[10px] py-2">actions</TableHead>
                                                                 </TableRow>
                                                             </TableHeader>
                                                             <TableBody>
-                                                                {portsList.map((port, pIdx) => (
-                                                                    <TableRow key={pIdx} className="border-b border-ot-border/20 hover:bg-ot-surface-top/30 transition-colors">
-                                                                        <TableCell className="font-mono font-semibold text-white py-2">
-                                                                            <span className="px-2 py-0.5 rounded bg-ot-surface-elev-top/50 text-ot-action border border-ot-border/50">
-                                                                                {port.port_name}
-                                                                            </span>
-                                                                        </TableCell>
-                                                                        <TableCell className="text-muted-foreground py-2 font-mono">
-                                                                            <span className="px-2 py-0.5 rounded bg-ot-surface-bottom border border-ot-border/40 text-xs">
-                                                                                {port.strip_count} {port.strip_count === 1 ? 'Strip' : 'Strips'}
-                                                                            </span>
-                                                                        </TableCell>
-                                                                        <TableCell className="py-2">
-                                                                            <span className={cn(
-                                                                                "inline-flex items-center gap-1.5 text-[11px] font-medium",
-                                                                                port.status === 'Active' ? "text-green-400" : "text-amber-400"
-                                                                            )}>
-                                                                                <span className={cn("w-1.5 h-1.5 rounded-full", port.status === 'Active' ? "bg-green-400 shadow-[0_0_6px_#34d399]" : "bg-amber-400")} />
-                                                                                {port.status}
-                                                                            </span>
-                                                                        </TableCell>
-                                                                        <TableCell className="text-right py-2 space-x-2">
-                                                                            {/* + Add Strip Button */}
-                                                                            <Button
-                                                                                variant="ghost"
-                                                                                size="sm"
-                                                                                onClick={() => handleOpenAddStripModal(ctrl.id, pIdx, port.port_name)}
-                                                                                className="h-7 px-2 gap-1 text-xs text-ot-action hover:bg-ot-action/15 border border-ot-action/30 rounded"
-                                                                                title="Add Strip to Port"
-                                                                            >
-                                                                                <Plus className="w-3.5 h-3.5" />
-                                                                                Add Strip
-                                                                            </Button>
-
-                                                                            {/* View Eye Icon Button */}
-                                                                            <Button
-                                                                                variant="ghost"
-                                                                                size="sm"
-                                                                                onClick={() => handleOpenStripSheet(ctrl, pIdx)}
-                                                                                className="h-7 px-2 gap-1 text-xs text-white hover:bg-ot-surface-elev-top border border-ot-border rounded"
-                                                                                title="View Strip Details"
-                                                                            >
-                                                                                <Eye className="w-3.5 h-3.5 text-ot-action" />
-                                                                                View
-                                                                            </Button>
+                                                                {portsList.length === 0 ? (
+                                                                    <TableRow>
+                                                                        <TableCell colSpan={4} className="text-center py-6 text-muted-foreground text-xs">
+                                                                            No channels added yet. Click <span className="text-ot-action font-semibold">"Initial Add"</span> to create 16 initial channels.
                                                                         </TableCell>
                                                                     </TableRow>
-                                                                ))}
+                                                                ) : (
+                                                                    portsList.map((port, pIdx) => (
+                                                                        <TableRow key={pIdx} className="border-b border-ot-border/20 hover:bg-ot-surface-top/30 transition-colors">
+                                                                            <TableCell className="font-mono font-semibold text-white py-2">
+                                                                                <span className="px-2 py-0.5 rounded bg-ot-surface-elev-top/50 text-ot-action border border-ot-border/50">
+                                                                                    {port.channel_name}
+                                                                                </span>
+                                                                            </TableCell>
+                                                                            <TableCell className="text-muted-foreground py-2 font-mono text-xs">
+                                                                                <span className="px-2 py-0.5 rounded bg-ot-surface-bottom border border-ot-border/40">
+                                                                                    {port.channel_ledcount} LEDs
+                                                                                </span>
+                                                                            </TableCell>
+                                                                            <TableCell className="text-muted-foreground py-2 font-mono text-xs">
+                                                                                <span className="px-2 py-0.5 rounded bg-ot-surface-bottom border border-ot-border/40">
+                                                                                    {port.channel_stripcount} Strips
+                                                                                </span>
+                                                                            </TableCell>
+                                                                            <TableCell className="text-right py-2 space-x-2 flex justify-end">
+                                                                                {/* + Add Strip Button */}
+                                                                                <Button
+                                                                                    variant="ghost"
+                                                                                    size="sm"
+                                                                                    onClick={() => handleOpenAddStripModal(ctrl.id, pIdx, port.channel_name)}
+                                                                                    className="h-7 px-2 gap-1 text-xs text-ot-action hover:bg-ot-action/15 border border-ot-action/30 rounded"
+                                                                                    title="Add Strip"
+                                                                                >
+                                                                                    <Plus className="w-3.5 h-3.5" />
+                                                                                    Add Strip
+                                                                                </Button>
+
+                                                                                {/* View Eye Icon Button */}
+                                                                                <Button
+                                                                                    variant="ghost"
+                                                                                    size="sm"
+                                                                                    onClick={() => handleOpenStripSheet(ctrl, pIdx)}
+                                                                                    className="h-7 px-2 gap-1 text-xs text-white hover:bg-ot-surface-elev-top border border-ot-border rounded"
+                                                                                    title="View Channel Details"
+                                                                                >
+                                                                                    <Eye className="w-3.5 h-3.5 text-ot-action" />
+                                                                                    View
+                                                                                </Button>
+
+                                                                                {/* Edit Icon Button */}
+                                                                                <Button
+                                                                                    variant="ghost"
+                                                                                    size="sm"
+                                                                                    onClick={() => handleOpenEditChannelModal(ctrl.id, port)}
+                                                                                    className="h-7 px-2 text-xs text-ot-action hover:bg-ot-action/15 border border-ot-action/30 rounded"
+                                                                                    title="Edit Channel"
+                                                                                >
+                                                                                    <PenSquare className="w-3.5 h-3.5" />
+                                                                                </Button>
+
+                                                                                {/* Delete Icon Button */}
+                                                                                <Button
+                                                                                    variant="ghost"
+                                                                                    size="sm"
+                                                                                    onClick={() => handleDeleteChannel(ctrl.id, port)}
+                                                                                    className="h-7 px-2 text-xs text-red-400 hover:bg-red-500/15 border border-red-500/30 rounded"
+                                                                                    title="Delete Channel"
+                                                                                >
+                                                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                                                </Button>
+                                                                            </TableCell>
+                                                                        </TableRow>
+                                                                    )))}
                                                             </TableBody>
                                                         </Table>
                                                     </div>
@@ -691,6 +968,43 @@ export default function ControllersTab({ controllersData, syncControllers }) {
                 </>
             )}
 
+            {/* Edit Channel Name Dialog */}
+            <Dialog open={editChannelModalOpen} onOpenChange={setEditChannelModalOpen}>
+                <DialogContent className="sm:max-w-md bg-ot-surface-bottom border-ot-border text-white">
+                    <DialogHeader>
+                        <DialogTitle className="text-base font-bold flex items-center gap-2">
+                            <PenSquare className="w-4 h-4 text-ot-action" />
+                            Edit Channel Name
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="py-4 space-y-4">
+                        <div className="space-y-2">
+                            <label htmlFor="channelNameInput" className="text-xs font-semibold text-muted-foreground uppercase block">
+                                Channel Name
+                            </label>
+                            <Input
+                                id="channelNameInput"
+                                value={editChannelName}
+                                onChange={(e) => setEditChannelName(e.target.value)}
+                                placeholder="Enter channel name"
+                                className="bg-ot-surface-top border-ot-border text-white focus:border-ot-action"
+                                autoFocus
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter className="gap-2">
+
+                        <Button
+                            onClick={handleSaveChannelName}
+                            disabled={isSavingChannel || !editChannelName.trim()}
+                            className="bg-ot-action hover:bg-ot-action-hover text-white font-bold"
+                        >
+                            {isSavingChannel ? "Saving..." : "Save Changes"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
             <ConfirmDialog
                 open={deleteDialogOpen}
                 onOpenChange={setDeleteDialogOpen}
@@ -701,6 +1015,19 @@ export default function ControllersTab({ controllersData, syncControllers }) {
                 variant="destructive"
                 onConfirm={confirmDeleteController}
                 onCancel={() => setControllerToDelete(null)}
+            />
+
+            <ConfirmDialog
+                open={channelDeleteDialogOpen}
+                onOpenChange={setChannelDeleteDialogOpen}
+                title="Delete Channel"
+                description={`Are you sure you want to delete ${channelToDelete?.channelName || 'this channel'}? This action cannot be undone.`}
+                confirmText="Delete"
+                cancelText="Cancel"
+                variant="destructive"
+                isLoading={isDeletingChannel}
+                onConfirm={confirmDeleteChannel}
+                onCancel={() => setChannelToDelete(null)}
             />
         </div>
     );

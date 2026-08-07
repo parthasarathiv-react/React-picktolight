@@ -108,6 +108,37 @@ export const apiService = {
         return handleResponse(response);
     },
 
+    // Channels
+    getChannels: async (controllerId = 'All') => {
+        const response = await fetch(`${API_URL}/config/get-channels?controller=${controllerId}`, {
+            headers: getHeaders()
+        });
+        return handleResponse(response);
+    },
+    createChannel: async (payload) => {
+        const response = await fetch(`${API_URL}/config/create-channel`, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify(payload)
+        });
+        return handleResponse(response);
+    },
+    updateChannel: async (channelId, payload) => {
+        const response = await fetch(`${API_URL}/config/update-channel/${channelId}`, {
+            method: 'PUT',
+            headers: getHeaders(),
+            body: JSON.stringify(payload)
+        });
+        return handleResponse(response);
+    },
+    deleteChannel: async (channelId) => {
+        const response = await fetch(`${API_URL}/config/delete-channel/${channelId}`, {
+            method: 'DELETE',
+            headers: getHeaders()
+        });
+        return handleResponse(response);
+    },
+
     // Walls
     getWalls: async (locId) => {
         const response = await fetch(`${API_URL}/config/get-walls?location=${locId}`, {

@@ -52,7 +52,7 @@ export default function Settings() {
         return '';
     }, []);
 
-    const { data: fetchedControllers, isFetching: isFetchingControllers, error: errorControllers } = useQuery({
+    const { data: fetchedControllers, isFetching: isFetchingControllers, error: errorControllers, refetch: refetchControllers } = useQuery({
         queryKey: ['controllers', locId],
         queryFn: async () => {
             if (!locId) return [];
@@ -63,6 +63,7 @@ export default function Settings() {
                 name: c.ctl_name,
                 ip: c.ctl_ip,
                 port: c.ctl_port,
+                channels: c.ctl_channels || 16,
                 status: (c.ctl_status === 'True' || c.ctl_status === true || c.ctl_status === 'Online') ? 'Online' : 'Offline'
             }));
         },
@@ -607,6 +608,7 @@ export default function Settings() {
                         <ControllersTab
                             controllersData={controllersData}
                             syncControllers={syncControllers}
+                            refetchControllers={refetchControllers}
                         />
                     )}
 

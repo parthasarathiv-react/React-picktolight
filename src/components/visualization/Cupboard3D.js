@@ -234,22 +234,6 @@ function ShelfCell({ cupboardId, row, col, ledsPerDrawer, position, size, cellId
     const assignment = getDrawerAssignment(cupboardId, row, col);
     const cellId = cellIdOverride || `${row}${String.fromCharCode(64 + col)}`;
 
-    const activeLedsColors = [];
-    if (assignment) {
-        if (assignment.queue) {
-            assignment.queue.forEach(q => {
-                for (let i = 0; i < q.count; i++) {
-                    activeLedsColors.push(q.color);
-                }
-            });
-        } else {
-            const actCount = Math.min(assignment.activeLeds || 0, ledsPerDrawer);
-            for (let i = 0; i < actCount; i++) {
-                activeLedsColors.push(assignment.ledColor);
-            }
-        }
-    }
-
     const binMeshColor = hovered
         ? '#425679'
         : assignment
@@ -283,27 +267,10 @@ function ShelfCell({ cupboardId, row, col, ledsPerDrawer, position, size, cellId
             <FlatText
                 text={cellId}
                 color={stripTheme ? '#ffffff' : '#8ba3c4'}
-                position={[0, -size[1] * 0.22, size[2] / 2 + 0.021]}
-                planeHeight={Math.min(0.08, size[1] * 0.35)}
+                position={[0, 0, size[2] / 2 + 0.021]}
+                planeHeight={Math.min(0.08, size[1] * 0.45)}
                 maxPlaneWidth={size[0] - 0.05}
             />
-
-            {Array.from({ length: ledsPerDrawer }).map((_, ledIndex) => {
-                const colorValue = activeLedsColors[ledIndex];
-                const activeColorMeta = colorValue ? getLedColor(colorValue) : null;
-                const isActive = !!activeColorMeta;
-                const ledGap = size[0] / (ledsPerDrawer + 1);
-                const x = -size[0] / 2 + ledGap * (ledIndex + 1);
-                const ledColor = isActive ? activeColorMeta.hex : (stripTheme ? stripTheme.hex : '#0e2e54');
-
-                return (
-                    <mesh key={ledIndex} position={[x, size[1] * 0.22, size[2] / 2 + 0.04]}>
-                        <sphereGeometry args={[Math.min(0.035, ledGap * 0.3), 12, 12]} />
-                        <meshBasicMaterial color={ledColor} />
-                        {(isActive || stripTheme) && <pointLight color={ledColor} intensity={isActive ? 0.35 : 0.25} distance={0.8} />}
-                    </mesh>
-                );
-            })}
         </group>
     );
 }

@@ -137,24 +137,7 @@ const DrawerCell = React.memo(function DrawerCell({ cupboardId, row, col, ledsPe
     const defaultCellId = `${row}${String.fromCharCode(64 + col)}`;
     const isCustom = shelfLabel && !shelfLabel.toLowerCase().startsWith('shelf');
     const cellId = isCustom ? (shelfColumns === 1 ? shelfLabel : `${shelfLabel}-${String.fromCharCode(64 + col)}`) : defaultCellId;
-    const ledSizeClass = dense ? "w-1 h-1" : "w-1.5 h-1.5 sm:w-2 sm:h-2 lg:w-3.5 lg:h-3.5";
-    const labelClass = dense ? "text-[8px] sm:text-[9px] top-0.5 left-1" : "text-[9px] sm:text-[11px] lg:text-[15px] top-0.5 left-1 lg:top-1 lg:left-1.5";
-    const ledStripClass = dense ? "mt-1 sm:mt-2 gap-px px-0.5" : "mt-2 sm:mt-4 gap-0.5 px-0.5 sm:px-1";
-
-    // Memoize the LED colour array so it only recomputes when assignment changes
-    const activeLedsColors = useMemo(() => {
-        if (!assignment) return [];
-        const colors = [];
-        if (assignment.queue) {
-            assignment.queue.forEach(q => {
-                for (let i = 0; i < q.count; i++) colors.push(q.color);
-            });
-        } else {
-            const actCount = Math.min(assignment.activeLeds || 0, ledsPerDrawer);
-            for (let i = 0; i < actCount; i++) colors.push(assignment.ledColor);
-        }
-        return colors;
-    }, [assignment, ledsPerDrawer]);
+    const labelClass = dense ? "text-[8px] sm:text-[9px]" : "text-[9px] sm:text-[11px] lg:text-[13px]";
 
     if (absoluteLayout) {
         return (
@@ -165,31 +148,10 @@ const DrawerCell = React.memo(function DrawerCell({ cupboardId, row, col, ledsPe
                     : (!assignment ? "bg-ot-surface-bottom/60 border-ot-border/40 opacity-80" : "bg-ot-surface-bottom border-ot-border/80 hover:border-ot-action/60")
             )}>
                 <div className={cn(
-                    "flex-none font-semibold text-[10px] whitespace-nowrap overflow-hidden text-ellipsis max-w-[95%] transition-colors leading-none",
+                    "flex-none font-semibold text-[10px] sm:text-xs whitespace-nowrap overflow-hidden text-ellipsis max-w-[95%] transition-colors leading-none text-center",
                     stripTheme ? `${stripTheme.text} font-bold` : (!assignment ? "text-muted-foreground" : "text-white")
                 )} title={cellId}>
                     {cellId}
-                </div>
-                <div className="flex flex-wrap items-center justify-center gap-[2px] z-10 w-full mt-0.5">
-                    {Array.from({ length: ledsPerDrawer }).map((_, ledIndex) => {
-                        const colorValue = activeLedsColors[ledIndex];
-                        const activeColorMeta = colorValue ? getLedColor(colorValue) : null;
-                        const isActive = !!activeColorMeta;
-                        return (
-                            <div
-                                key={ledIndex}
-                                className={cn(
-                                    "rounded-full transition-all w-1 h-1 sm:w-1.5 sm:h-1.5 shrink-0",
-                                    isActive
-                                        ? cn(activeColorMeta.tailwind, "scale-110 shadow-sm")
-                                        : stripTheme
-                                            ? "border border-white/20"
-                                            : "bg-ot-surface-elev-bottom border border-ot-border/40 opacity-40"
-                                )}
-                                style={!isActive && stripTheme ? { backgroundColor: stripTheme.hex, opacity: 0.9, boxShadow: `0 0 5px ${stripTheme.hex}` } : {}}
-                            />
-                        );
-                    })}
                 </div>
             </div>
         );
@@ -198,30 +160,17 @@ const DrawerCell = React.memo(function DrawerCell({ cupboardId, row, col, ledsPe
     if (!assignment) {
         return (
             <div className={cn(
-                "h-full w-full min-h-0 min-w-0 flex flex-col items-center justify-center relative group overflow-hidden border transition-all duration-200 rounded-md",
+                "h-full w-full min-h-0 min-w-0 flex flex-col items-center justify-center relative group overflow-hidden border transition-all duration-200 rounded-md p-1",
                 stripTheme
                     ? `${stripTheme.bgLight} ${stripTheme.border} ${stripTheme.shadowBin}`
                     : "bg-ot-bg-top/60 border-ot-border/30 opacity-45"
             )}>
                 <div className={cn(
-                    "absolute font-mono whitespace-nowrap overflow-hidden text-ellipsis max-w-[95%]",
+                    "font-mono text-center whitespace-nowrap overflow-hidden text-ellipsis max-w-[95%]",
                     labelClass,
                     stripTheme ? `${stripTheme.text} font-bold` : "text-muted-foreground/50"
                 )} title={cellId}>
                     {cellId}
-                </div>
-                <div className={cn("flex", ledStripClass)}>
-                    {Array.from({ length: ledsPerDrawer }).map((_, i) => (
-                        <div
-                            key={i}
-                            className={cn(
-                                "rounded-full transition-all",
-                                ledSizeClass,
-                                stripTheme ? "border border-white/20" : "bg-ot-surface-elev-bottom border border-ot-border/20"
-                            )}
-                            style={stripTheme ? { backgroundColor: stripTheme.hex, opacity: 0.9, boxShadow: `0 0 5px ${stripTheme.hex}` } : {}}
-                        />
-                    ))}
                 </div>
             </div>
         );
@@ -230,38 +179,16 @@ const DrawerCell = React.memo(function DrawerCell({ cupboardId, row, col, ledsPe
     return (
         <div
             className={cn(
-                "h-full w-full min-h-0 min-w-0 border flex flex-col items-center justify-between relative group hover:border-ot-action/60 transition-all duration-200 overflow-hidden cursor-pointer rounded-md",
+                "h-full w-full min-h-0 min-w-0 border flex flex-col items-center justify-center relative group hover:border-ot-action/60 transition-all duration-200 overflow-hidden cursor-pointer rounded-md p-1",
                 stripTheme ? `${stripTheme.bgLight} ${stripTheme.border}` : "bg-ot-surface-bottom border-ot-border/80"
             )}
         >
             <div className={cn(
-                "absolute font-mono font-bold transition-colors z-10 whitespace-nowrap overflow-hidden text-ellipsis max-w-[95%]",
+                "font-mono font-bold text-center transition-colors z-10 whitespace-nowrap overflow-hidden text-ellipsis max-w-[95%]",
                 labelClass,
                 stripTheme ? `${stripTheme.text}` : "text-muted-foreground group-hover:text-white"
             )} title={cellId}>
                 {cellId}
-            </div>
-            <div className={cn("flex items-center w-full justify-center z-10", ledStripClass)}>
-                {Array.from({ length: ledsPerDrawer }).map((_, ledIndex) => {
-                    const colorValue = activeLedsColors[ledIndex];
-                    const activeColorMeta = colorValue ? getLedColor(colorValue) : null;
-                    const isActive = !!activeColorMeta;
-                    return (
-                        <div
-                            key={ledIndex}
-                            className={cn(
-                                "rounded-full transition-all duration-300",
-                                ledSizeClass,
-                                isActive
-                                    ? cn(activeColorMeta.tailwind, "scale-110")
-                                    : stripTheme
-                                        ? "border border-white/20"
-                                        : "bg-ot-surface-elev-bottom border border-ot-border/40 opacity-25"
-                            )}
-                            style={!isActive && stripTheme ? { backgroundColor: stripTheme.hex, opacity: 0.9, boxShadow: `0 0 5px ${stripTheme.hex}` } : {}}
-                        />
-                    );
-                })}
             </div>
         </div>
     );
