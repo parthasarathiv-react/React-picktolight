@@ -138,6 +138,20 @@ export const apiService = {
         });
         return handleResponse(response);
     },
+    createChannelStrip: async (payload) => {
+        const response = await fetch(`${API_URL}/config/create-channelstrip`, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify(payload)
+        });
+        return handleResponse(response);
+    },
+    getChannelStrips: async (channelId) => {
+        const response = await fetch(`${API_URL}/config/get-channelstrip-channelid?channelid=${channelId}`, {
+            headers: getHeaders()
+        });
+        return handleResponse(response);
+    },
 
     // Walls
     getWalls: async (locId) => {

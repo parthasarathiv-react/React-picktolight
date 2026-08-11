@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Card, CardContent } from 'components/ui/card';
 import { Button } from 'components/ui/button';
 import { Input } from 'components/ui/input';
-import { Plus, PenSquare, Trash2, ServerOff, ChevronDown, ChevronRight, Eye, X, Cable, Cpu, Layers, Check } from 'lucide-react';
+import { Plus, PenSquare, Trash2, ServerOff, ChevronDown, ChevronRight, Eye, X, Cable, Cpu, Layers, Check, Loader2 } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from 'components/ui/table';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from 'components/ui/select';
@@ -48,14 +48,18 @@ export default function ControllersTab({ controllersData, syncControllers, refet
     const [controllerPortsMap, setControllerPortsMap] = useState({});
     const [addingInitialForCtrl, setAddingInitialForCtrl] = useState(null);
 
-    // Add Strip Modal state (multi-select)
+    // Add Strip Modal state (multi-select dynamic from API)
     const [addStripModalOpen, setAddStripModalOpen] = useState(false);
-    const [targetPortInfo, setTargetPortInfo] = useState(null); // { ctrlId, portIndex, portName }
-    const [selectedSampleStripIds, setSelectedSampleStripIds] = useState(['sample-1']);
+    const [targetPortInfo, setTargetPortInfo] = useState(null); // { ctrlId, portIndex, portName, channelId }
+    const [availableStrips, setAvailableStrips] = useState([]);
+    const [isLoadingStrips, setIsLoadingStrips] = useState(false);
+    const [isSavingStrips, setIsSavingStrips] = useState(false);
+    const [selectedSampleStripIds, setSelectedSampleStripIds] = useState([]);
 
     // Right-side sheet state for simple strip view
     const [selectedPortView, setSelectedPortView] = useState(null);
     const [isSheetOpen, setIsSheetOpen] = useState(false);
+    const [isLoadingSheetStrips, setIsLoadingSheetStrips] = useState(false);
 
     // Edit Channel Modal state
     const [editChannelModalOpen, setEditChannelModalOpen] = useState(false);
@@ -296,14 +300,62 @@ export default function ControllersTab({ controllersData, syncControllers, refet
         }
     };
 
-    // Open Add Strip Modal
-    const handleOpenAddStripModal = (ctrlId, portIndex, portName) => {
-        setTargetPortInfo({ ctrlId, portIndex, portName });
-        setSelectedSampleStripIds(['sample-1']);
+    // Open Add Strip Modal & fetch strips from API matching strip_ctl_id and pre-select assigned channel strips
+    const handleOpenAddStripModal = async (ctrlId, portIndex, portObjParam) => {
+        const portObj = typeof portObjParam === 'object' ? portObjParam : { channel_name: portObjParam };
+        const channelId = portObj.channel_id || portObj.id || (portObj.channel_name ? portObj.channel_name.replace('CHANNEL-', '') : null);
+        const portName = portObj.channel_name || `Port #${portIndex + 1}`;
+
+        setTargetPortInfo({ ctrlId, portIndex, portName, channelId });
+        setSelectedSampleStripIds([]);
         setAddStripModalOpen(true);
+        setIsLoadingStrips(true);
+
+        try {
+            let locId = 'All';
+            const selectedLocationStr = localStorage.getItem('selectedLocation');
+            if (selectedLocationStr) {
+                try {
+                    const selectedLocation = JSON.parse(selectedLocationStr);
+                    if (selectedLocation.pick_location_id) {
+                        locId = String(selectedLocation.pick_location_id);
+                    }
+                } catch (e) { }
+            }
+
+            // 1. Fetch strips matching controller ctl_id
+            const res = await apiService.getStrips(locId);
+            const allStrips = res?.data || (Array.isArray(res) ? res : []);
+
+            const matchingStrips = allStrips.filter(s =>
+                s.strip_ctl_id !== undefined &&
+                s.strip_ctl_id !== null &&
+                String(s.strip_ctl_id).trim() === String(ctrlId).trim()
+            );
+
+            setAvailableStrips(matchingStrips);
+
+            // 2. Fetch assigned channel strips from GET API to pre-mark/check them
+            if (channelId) {
+                try {
+                    const csRes = await apiService.getChannelStrips(channelId);
+                    const csData = csRes?.data || (Array.isArray(csRes) ? csRes : []);
+                    const alreadyAssignedIds = csData.map(cs => String(cs.strip_id || cs.id || cs.stripId));
+                    setSelectedSampleStripIds(alreadyAssignedIds);
+                } catch (err) {
+                    console.error("Error fetching assigned channel strips:", err);
+                }
+            }
+        } catch (error) {
+            console.error("Error fetching strips for controller:", error);
+            toast.error("Failed to load strips from API");
+            setAvailableStrips([]);
+        } finally {
+            setIsLoadingStrips(false);
+        }
     };
 
-    // Multi-select toggle for sample strips
+    // Multi-select toggle for strips
     const toggleSelectSampleStrip = (id) => {
         setSelectedSampleStripIds(prev =>
             prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
@@ -311,76 +363,161 @@ export default function ControllersTab({ controllersData, syncControllers, refet
     };
 
     const handleSelectAllStrips = () => {
-        if (selectedSampleStripIds.length === SAMPLE_STRIP_OPTIONS.length) {
+        if (selectedSampleStripIds.length === availableStrips.length) {
             setSelectedSampleStripIds([]);
         } else {
-            setSelectedSampleStripIds(SAMPLE_STRIP_OPTIONS.map(s => s.id));
+            setSelectedSampleStripIds(availableStrips.map(s => String(s.strip_id || s.id)));
         }
     };
 
-    // Submit Add Multiple Strips from Modal
-    const handleAddStripSubmit = () => {
+    // Submit Add Multiple Strips from Modal by calling POST API create-channelstrip
+    const handleAddStripSubmit = async () => {
         if (!targetPortInfo || selectedSampleStripIds.length === 0) {
             toast.error("Please select at least one strip to add.");
             return;
         }
-        const { ctrlId, portIndex, portName } = targetPortInfo;
+        const { ctrlId, portIndex, portName, channelId } = targetPortInfo;
+        setIsSavingStrips(true);
+        const toastId = toast.loading(`Saving channel strip assignments...`);
 
-        const selectedStripsData = SAMPLE_STRIP_OPTIONS.filter(s => selectedSampleStripIds.includes(s.id));
-        const currentCount = controllerPortsMap[ctrlId]?.[portIndex]?.strips?.length || 0;
+        try {
+            const selectedStripsData = availableStrips.filter(s =>
+                selectedSampleStripIds.includes(String(s.strip_id || s.id))
+            );
 
-        const newStripItems = selectedStripsData.map((sample, idx) => ({
-            id: `strip-${Date.now()}-${idx}-${Math.floor(Math.random() * 1000)}`,
-            label: `${sample.label} (#${currentCount + idx + 1})`,
-            ledCount: sample.ledCount,
-            shelf: sample.shelf,
-            linkedBins: sample.linkedBins
-        }));
+            const effectiveChannelId = channelId || '1';
 
-        setControllerPortsMap(prev => {
-            const currentPorts = prev[ctrlId] || [];
-            const updatedPorts = currentPorts.map((p, idx) => {
-                if (idx !== portIndex) return p;
-                const nextStrips = [...p.strips, ...newStripItems];
+            // Call POST API /config/create-channelstrip for each selected strip
+            for (let idx = 0; idx < selectedStripsData.length; idx++) {
+                const sObj = selectedStripsData[idx];
+                const stripIdStr = String(sObj.strip_id || sObj.id);
+
+                const payload = {
+                    strip_id: stripIdStr,
+                    channel_id: String(effectiveChannelId),
+                    strip_order: String(idx + 1)
+                };
+
+                await apiService.createChannelStrip(payload);
+            }
+
+            const currentCount = controllerPortsMap[ctrlId]?.[portIndex]?.strips?.length || 0;
+
+            const newStripItems = selectedStripsData.map((s, idx) => {
+                const stripIdStr = String(s.strip_id || s.id || `strip-${Date.now()}-${idx}`);
+                const ledWidth = parseInt(s.strip_width || s.ledCount || 6, 10);
                 return {
-                    ...p,
-                    strips: nextStrips,
-                    channel_stripcount: nextStrips.length,
-                    channel_ledcount: nextStrips.reduce((acc, s) => acc + s.ledCount, 0),
-                    status: 'Active'
+                    id: stripIdStr,
+                    label: s.strip_name || `Strip #${currentCount + idx + 1}`,
+                    ledCount: !isNaN(ledWidth) && ledWidth > 0 ? ledWidth : 6,
+                    shelf: s.strip_shelf_id ? `Shelf ${s.strip_shelf_id}` : 'Shelf 1',
+                    linkedBins: Array.isArray(s.bin_list) ? s.bin_list.length : 0,
+                    strip_ctl_id: s.strip_ctl_id,
+                    strip_cupboard_id: s.strip_cupboard_id,
+                    strip_shelf_id: s.strip_shelf_id
                 };
             });
 
-            // Update sheet view if currently open for this port
-            if (selectedPortView && selectedPortView.ctrlId === ctrlId && selectedPortView.portIndex === portIndex) {
-                setSelectedPortView(sp => ({
-                    ...sp,
-                    strips: [...sp.strips, ...newStripItems]
-                }));
-            }
+            setControllerPortsMap(prev => {
+                const currentPorts = prev[ctrlId] || [];
+                const updatedPorts = currentPorts.map((p, idx) => {
+                    if (idx !== portIndex) return p;
+                    return {
+                        ...p,
+                        strips: newStripItems,
+                        channel_stripcount: newStripItems.length,
+                        channel_ledcount: newStripItems.reduce((acc, st) => acc + st.ledCount, 0),
+                        status: newStripItems.length > 0 ? 'Active' : 'Idle'
+                    };
+                });
 
-            return { ...prev, [ctrlId]: updatedPorts };
-        });
+                // Update sheet view if currently open for this port
+                if (selectedPortView && selectedPortView.ctrlId === ctrlId && selectedPortView.portIndex === portIndex) {
+                    setSelectedPortView(sp => ({
+                        ...sp,
+                        strips: newStripItems
+                    }));
+                }
 
-        toast.success(`Added ${newStripItems.length} strip(s) to ${portName}`);
-        setAddStripModalOpen(false);
-        setTargetPortInfo(null);
+                return { ...prev, [ctrlId]: updatedPorts };
+            });
+
+            toast.success(`Assigned ${newStripItems.length} strip(s) to ${portName}`, { id: toastId });
+            setAddStripModalOpen(false);
+            setTargetPortInfo(null);
+        } catch (error) {
+            console.error("Error creating channel strip assignments:", error);
+            toast.error(`Failed to assign strips: ${error.message}`, { id: toastId });
+        } finally {
+            setIsSavingStrips(false);
+        }
     };
 
-    // Open View Sheet
-    const handleOpenStripSheet = (ctrl, portIndex) => {
+    // Open View Sheet & fetch assigned strips from GET API get-channelstrip-channelid
+    const handleOpenStripSheet = async (ctrl, portIndex, portObjParam) => {
         const ctrlPorts = controllerPortsMap[ctrl.id] || [];
-        const portObj = ctrlPorts[portIndex];
+        const portObj = portObjParam || ctrlPorts[portIndex];
         if (!portObj) return;
+
+        const channelId = portObj.channel_id || portObj.id || (portObj.channel_name ? portObj.channel_name.replace('CHANNEL-', '') : '1');
 
         setSelectedPortView({
             ctrlId: ctrl.id,
             portIndex: portIndex,
             controllerName: ctrl.name,
             portName: portObj.channel_name,
-            strips: portObj.strips || []
+            channelId: channelId,
+            strips: []
         });
         setIsSheetOpen(true);
+        setIsLoadingSheetStrips(true);
+
+        try {
+            let locId = 'All';
+            const selectedLocationStr = localStorage.getItem('selectedLocation');
+            if (selectedLocationStr) {
+                try {
+                    const selectedLocation = JSON.parse(selectedLocationStr);
+                    if (selectedLocation.pick_location_id) {
+                        locId = String(selectedLocation.pick_location_id);
+                    }
+                } catch (e) { }
+            }
+
+            // 1. Fetch channel strip mappings from GET API
+            const csRes = await apiService.getChannelStrips(channelId);
+            const csList = csRes?.data || (Array.isArray(csRes) ? csRes : []);
+
+            // 2. Fetch full strips to enrich names, LEDs, shelves, bins
+            const stripsRes = await apiService.getStrips(locId);
+            const allStrips = stripsRes?.data || (Array.isArray(stripsRes) ? stripsRes : []);
+
+            const mappedStrips = csList.map((cs, idx) => {
+                const csStripId = String(cs.strip_id || cs.id || cs.stripId);
+                const matched = allStrips.find(s => String(s.strip_id || s.id) === csStripId);
+                const ledWidth = parseInt(matched?.strip_width || cs.strip_width || 6, 10);
+                const binCount = Array.isArray(matched?.bin_list) ? matched.bin_list.length : 0;
+
+                return {
+                    id: csStripId,
+                    label: matched?.strip_name || cs.strip_name || `Strip ${csStripId}`,
+                    ledCount: !isNaN(ledWidth) && ledWidth > 0 ? ledWidth : 6,
+                    shelf: matched?.strip_shelf_id ? `Shelf ${matched.strip_shelf_id}` : (cs.strip_shelf_id ? `Shelf ${cs.strip_shelf_id}` : 'Shelf 1'),
+                    linkedBins: binCount,
+                    strip_order: cs.strip_order || String(idx + 1)
+                };
+            });
+
+            setSelectedPortView(sp => ({
+                ...sp,
+                strips: mappedStrips
+            }));
+        } catch (error) {
+            console.error("Error fetching channel strips for view:", error);
+            toast.error("Failed to load channel strips list");
+        } finally {
+            setIsLoadingSheetStrips(false);
+        }
     };
 
     // Delete strip from sheet list
@@ -744,7 +881,7 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                                                                                 <Button
                                                                                     variant="ghost"
                                                                                     size="sm"
-                                                                                    onClick={() => handleOpenAddStripModal(ctrl.id, pIdx, port.channel_name)}
+                                                                                    onClick={() => handleOpenAddStripModal(ctrl.id, pIdx, port)}
                                                                                     className="h-7 px-2 gap-1 text-xs text-ot-action hover:bg-ot-action/15 border border-ot-action/30 rounded"
                                                                                     title="Add Strip"
                                                                                 >
@@ -756,8 +893,8 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                                                                                 <Button
                                                                                     variant="ghost"
                                                                                     size="sm"
-                                                                                    onClick={() => handleOpenStripSheet(ctrl, pIdx)}
-                                                                                    className="h-7 px-2 gap-1 text-xs text-white hover:bg-ot-surface-elev-top border border-ot-border rounded"
+                                                                                    onClick={() => handleOpenStripSheet(ctrl, pIdx, port)}
+                                                                                    className="h-7 px-2 gap-1 text-white hover:bg-ot-surface-elev-top border border-ot-border rounded"
                                                                                     title="View Channel Details"
                                                                                 >
                                                                                     <Eye className="w-3.5 h-3.5 text-ot-action" />
@@ -813,7 +950,10 @@ export default function ControllersTab({ controllersData, syncControllers, refet
 
             {/* Redesigned Multi-Select Add Strip Modal Dialog */}
             <Dialog open={addStripModalOpen} onOpenChange={setAddStripModalOpen}>
-                <DialogContent className="sm:max-w-lg bg-ot-surface-top border-ot-border text-white shadow-2xl">
+                <DialogContent
+                    onPointerDownOutside={(e) => e.preventDefault()}
+                    className="sm:max-w-lg bg-ot-surface-top border-ot-border text-white shadow-2xl"
+                >
                     <DialogHeader className="pb-2 border-b border-ot-border/40">
                         <DialogTitle className="text-lg font-bold text-white flex items-center justify-between">
                             <span className="flex items-center gap-2">
@@ -831,66 +971,97 @@ export default function ControllersTab({ controllersData, syncControllers, refet
 
                     <div className="space-y-3 py-2">
                         <div className="flex items-center justify-between px-1">
-                            <span className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">Available Sample Strips:</span>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={handleSelectAllStrips}
-                                className="h-7 px-2 text-xs text-ot-action hover:bg-ot-action/10"
-                            >
-                                {selectedSampleStripIds.length === SAMPLE_STRIP_OPTIONS.length ? 'Deselect All' : 'Select All'}
-                            </Button>
+                            <span className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">
+                                Controller Strips ({availableStrips.length}):
+                            </span>
+                            {!isLoadingStrips && availableStrips.length > 0 && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={handleSelectAllStrips}
+                                    className="h-7 px-2 text-xs text-ot-action hover:bg-ot-action/10"
+                                >
+                                    {selectedSampleStripIds.length === availableStrips.length ? 'Deselect All' : 'Select All'}
+                                </Button>
+                            )}
                         </div>
 
-                        <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
-                            {SAMPLE_STRIP_OPTIONS.map((opt) => {
-                                const isSelected = selectedSampleStripIds.includes(opt.id);
-                                return (
-                                    <div
-                                        key={opt.id}
-                                        onClick={() => toggleSelectSampleStrip(opt.id)}
-                                        className={cn(
-                                            "p-3.5 rounded-xl border cursor-pointer transition-all flex items-center justify-between group",
-                                            isSelected
-                                                ? "bg-ot-surface-elev-top/80 border-ot-action shadow-[0_0_12px_rgba(95,166,255,0.15)]"
-                                                : "bg-ot-surface-bottom border-ot-border/60 text-muted-foreground hover:border-ot-action/50 hover:bg-ot-surface-bottom/80"
-                                        )}
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            <div className={cn(
-                                                "w-5 h-5 rounded flex items-center justify-center border transition-colors shrink-0",
-                                                isSelected ? "bg-ot-action border-ot-action text-white" : "border-ot-border bg-ot-surface-bottom group-hover:border-ot-action/60"
-                                            )}>
-                                                {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                                            </div>
-                                            <div>
-                                                <div className="font-bold text-sm text-white group-hover:text-ot-action transition-colors">
-                                                    {opt.label}
+                        {isLoadingStrips ? (
+                            <div className="py-12 text-center text-sm text-muted-foreground flex flex-col items-center justify-center gap-2">
+                                <Loader2 className="w-6 h-6 animate-spin text-ot-action" />
+                                <span>Loading strips from API...</span>
+                            </div>
+                        ) : availableStrips.length === 0 ? (
+                            <div className="py-10 px-4 text-center text-sm text-muted-foreground bg-ot-surface-bottom/60 border border-ot-border/40 rounded-xl space-y-1">
+                                <p className="font-semibold text-white">No matching strips found</p>
+                                <p className="text-xs">No strips found matching strip_ctl_id = <span className="font-mono text-ot-action">{targetPortInfo?.ctrlId}</span>.</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                                {availableStrips.map((opt) => {
+                                    const stripIdStr = String(opt.strip_id || opt.id);
+                                    const isSelected = selectedSampleStripIds.includes(stripIdStr);
+                                    const shelfName = opt.strip_shelf_id ? `Shelf ${opt.strip_shelf_id}` : 'Shelf 1';
+                                    const binCount = Array.isArray(opt.bin_list) ? opt.bin_list.length : 0;
+                                    const ledWidth = parseInt(opt.strip_width || opt.ledCount || 6, 10);
+                                    const displayLeds = isNaN(ledWidth) || ledWidth <= 0 ? 6 : ledWidth;
+
+                                    return (
+                                        <div
+                                            key={stripIdStr}
+                                            onClick={() => toggleSelectSampleStrip(stripIdStr)}
+                                            className={cn(
+                                                "p-3.5 rounded-xl border cursor-pointer transition-all flex items-center justify-between group",
+                                                isSelected
+                                                    ? "bg-ot-surface-elev-top/80 border-ot-action shadow-[0_0_12px_rgba(95,166,255,0.15)]"
+                                                    : "bg-ot-surface-bottom border-ot-border/60 text-muted-foreground hover:border-ot-action/50 hover:bg-ot-surface-bottom/80"
+                                            )}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className={cn(
+                                                    "w-5 h-5 rounded flex items-center justify-center border transition-colors shrink-0",
+                                                    isSelected ? "bg-ot-action border-ot-action text-white" : "border-ot-border bg-ot-surface-bottom group-hover:border-ot-action/60"
+                                                )}>
+                                                    {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                                                 </div>
-                                                <div className="text-xs text-muted-foreground mt-0.5">
-                                                    Assigned to <span className="text-slate-300 font-medium">{opt.shelf}</span> • <span className="text-ot-action font-mono">{opt.linkedBins} Bins Linked</span>
+                                                <div>
+                                                    <div className="font-bold text-sm text-white group-hover:text-ot-action transition-colors">
+                                                        {opt.strip_name || `Strip ${stripIdStr}`}
+                                                    </div>
+                                                    <div className="text-xs text-muted-foreground mt-0.5">
+                                                        Assigned to <span className="text-slate-300 font-medium">{shelfName}</span> • <span className="text-ot-action font-mono">{binCount} Bins Linked</span>
+                                                    </div>
                                                 </div>
                                             </div>
+
+                                            <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-md bg-ot-surface-elev-bottom border border-ot-border/60 text-ot-action shrink-0">
+                                                {displayLeds} LEDs
+                                            </span>
                                         </div>
-
-                                        <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-md bg-ot-surface-elev-bottom border border-ot-border/60 text-ot-action shrink-0">
-                                            {opt.ledCount} LEDs
-                                        </span>
-                                    </div>
-                                );
-                            })}
-                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </div>
 
                     <DialogFooter className="gap-2 pt-2 border-t border-ot-border/40">
 
                         <Button
                             onClick={handleAddStripSubmit}
-                            disabled={selectedSampleStripIds.length === 0}
+                            disabled={selectedSampleStripIds.length === 0 || isLoadingStrips || isSavingStrips}
                             className="bg-ot-action hover:bg-ot-action-hover text-white font-bold text-xs gap-1.5"
                         >
-                            <Plus className="w-4 h-4" />
-                            Add Selected ({selectedSampleStripIds.length})
+                            {isSavingStrips ? (
+                                <>
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    Saving...
+                                </>
+                            ) : (
+                                <>
+                                    <Plus className="w-4 h-4" />
+                                    Add Selected ({selectedSampleStripIds.length})
+                                </>
+                            )}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
@@ -902,7 +1073,6 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                     {/* Backdrop */}
                     <div
                         className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 animate-in fade-in duration-200"
-                        onClick={() => setIsSheetOpen(false)}
                     />
 
                     {/* Sheet Drawer */}
@@ -926,13 +1096,18 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                             </Button>
                         </div>
 
-                        {/* Sheet Body: Simple Clean List */}
+                        {/* Sheet Body: Simple Clean List from GET API */}
                         <div className="flex-1 overflow-y-auto p-4 space-y-3">
                             <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">
                                 Connected Strips ({selectedPortView.strips.length})
                             </div>
 
-                            {selectedPortView.strips.length === 0 ? (
+                            {isLoadingSheetStrips ? (
+                                <div className="py-12 text-center text-sm text-muted-foreground flex flex-col items-center justify-center gap-2">
+                                    <Loader2 className="w-6 h-6 animate-spin text-ot-action" />
+                                    <span>Loading channel strips from API...</span>
+                                </div>
+                            ) : selectedPortView.strips.length === 0 ? (
                                 <div className="p-8 text-center text-sm text-muted-foreground bg-ot-surface-top/30 border border-ot-border/40 rounded-lg">
                                     No strips connected to this port yet. Use "+ Add Strip" to assign one.
                                 </div>
@@ -948,18 +1123,9 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                                                 {strip.label}
                                             </div>
                                             <div className="text-xs text-muted-foreground font-mono">
-                                                {strip.ledCount} LEDs • {strip.shelf || 'Shelf 1'} ({strip.linkedBins || 0} Bins)
+                                                {strip.shelf || '-'} ({strip.linkedBins || 0} Bins)
                                             </div>
                                         </div>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => handleRemoveStripFromPort(strip.id)}
-                                            className="h-8 w-8 p-0 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded"
-                                            title="Remove Strip"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </Button>
                                     </div>
                                 ))
                             )}
@@ -970,7 +1136,10 @@ export default function ControllersTab({ controllersData, syncControllers, refet
 
             {/* Edit Channel Name Dialog */}
             <Dialog open={editChannelModalOpen} onOpenChange={setEditChannelModalOpen}>
-                <DialogContent className="sm:max-w-md bg-ot-surface-bottom border-ot-border text-white">
+                <DialogContent
+                    onPointerDownOutside={(e) => e.preventDefault()}
+                    className="sm:max-w-md bg-ot-surface-bottom border-ot-border text-white"
+                >
                     <DialogHeader>
                         <DialogTitle className="text-base font-bold flex items-center gap-2">
                             <PenSquare className="w-4 h-4 text-ot-action" />

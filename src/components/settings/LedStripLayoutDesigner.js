@@ -191,7 +191,7 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
                     const cupboardStrips = res.data.filter(s => {
                         const sCupId = String(s.strip_cupboard_id || '').trim();
                         const matchesCup = !sCupId || (
-                            sCupId === targetCupboardId || 
+                            sCupId === targetCupboardId ||
                             sCupId === targetCupboardName ||
                             (cupboard.cupboard_id && sCupId === String(cupboard.cupboard_id)) ||
                             (cupboard.id && sCupId === String(cupboard.id))
@@ -205,7 +205,7 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
 
                     const mappedStrips = cupboardStrips.map((s, idx) => {
                         const realId = (s.strip_id !== undefined && s.strip_id !== null) ? String(s.strip_id) : ((s.id !== undefined && s.id !== null) ? String(s.id) : `strip-${idx}`);
-                        
+
                         const parsedX = parseFloat(s.strip_gridx);
                         const parsedY = parseFloat(s.strip_gridy);
                         const parsedW = parseFloat(s.strip_width);
@@ -217,7 +217,7 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
 
                             for (const sh of shelves) {
                                 if (Array.isArray(sh.bins)) {
-                                    const match = sh.bins.find(bn => 
+                                    const match = sh.bins.find(bn =>
                                         (b.bin_id !== undefined && b.bin_id !== null && String(bn.bin_id || bn.id) === String(b.bin_id)) ||
                                         String(bn.label || bn.bin_name) === rawBinName
                                     );
@@ -240,6 +240,7 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
                             ledCount: savedLedConfig.ledCount || 6,
                             colors: (savedLedConfig.colors && savedLedConfig.colors.length > 0) ? savedLedConfig.colors : [],
                             strip_loc_id: s.strip_loc_id,
+                            strip_ctl_id: s.strip_ctl_id || cupboard.controller_id || cupboard.cupboard_ctl_id || cupboard.controller,
                             strip_cupboard_id: s.strip_cupboard_id || targetCupboardId,
                             strip_shelf_id: s.strip_shelf_id,
                             strip_org_id: s.strip_org_id || "Salem",
@@ -324,6 +325,7 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
             height: 22, // Height for LED strips
             ledCount: defaultLedCount,
             colors: defaultColors,
+            strip_ctl_id: cupboard.controller_id || cupboard.cupboard_ctl_id || cupboard.controller || "1",
             linkedBins: [], // Array of bin IDs: "shelfId_binId"
         };
         setLedStrips(prev => [...prev, newStrip]);
@@ -384,7 +386,7 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
 
         const updatedStrips = ledStrips.filter(s => s.id !== stripToDelete);
         setLedStrips(updatedStrips);
-        
+
         if (cupboardsData && syncCupboards) {
             const updatedCupboards = cupboardsData.map(c =>
                 c.id === cupboard.id
@@ -666,11 +668,28 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
                 });
             };
 
+            const getCtlIdForStrip = (s) => {
+                if (s.strip_ctl_id !== undefined && s.strip_ctl_id !== null && String(s.strip_ctl_id).trim() !== '') {
+                    return String(s.strip_ctl_id);
+                }
+                if (cupboard.controller_id !== undefined && cupboard.controller_id !== null && String(cupboard.controller_id).trim() !== '') {
+                    return String(cupboard.controller_id);
+                }
+                if (cupboard.cupboard_ctl_id !== undefined && cupboard.cupboard_ctl_id !== null && String(cupboard.cupboard_ctl_id).trim() !== '') {
+                    return String(cupboard.cupboard_ctl_id);
+                }
+                if (cupboard.controller !== undefined && cupboard.controller !== null && String(cupboard.controller).trim() !== '') {
+                    return String(cupboard.controller);
+                }
+                return "1";
+            };
+
             // 3. Create new strips via POST API
             if (newStrips.length > 0) {
                 const createPayloads = newStrips.map(({ strip, idx }) => ({
                     strip_name: String(strip.label || `Strip ${idx + 1}`),
                     strip_loc_id: String(strip.strip_loc_id !== undefined && strip.strip_loc_id !== null ? strip.strip_loc_id : (locId || '1')),
+                    strip_ctl_id: getCtlIdForStrip(strip),
                     strip_cupboard_id: cupboardIdStr,
                     strip_shelf_id: getShelfIdForStrip(strip),
                     strip_gridx: String(Math.round(strip.x || 0)),
@@ -694,6 +713,8 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
                 const updatePayload = {
                     strip_name: String(strip.label || `Strip ${idx + 1}`),
                     strip_loc_id: String(strip.strip_loc_id !== undefined && strip.strip_loc_id !== null ? strip.strip_loc_id : (locId || '1')),
+                    strip_ctl_id: getCtlIdForStrip(strip),
+                    strip_cupboard_id: cupboardIdStr,
                     strip_shelf_id: getShelfIdForStrip(strip),
                     strip_gridx: String(Math.round(strip.x || 0)),
                     strip_gridy: String(Math.round(strip.y || 0)),
