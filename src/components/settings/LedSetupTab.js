@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from 'components/ui/card';
 import { Button } from 'components/ui/button';
 import { Input } from 'components/ui/input';
@@ -76,6 +76,7 @@ export default function LedSetupTab({ locId: propLocId }) {
     // API Colors state
     const [apiColors, setApiColors] = useState([]);
     const [isLoadingColors, setIsLoadingColors] = useState(false);
+    const autoCreatedLocationsRef = useRef(new Set());
 
     // Color Modal state
     const [isColorModalOpen, setIsColorModalOpen] = useState(false);
@@ -114,7 +115,50 @@ export default function LedSetupTab({ locId: propLocId }) {
                     .map(key => typeof res[key] === 'object' ? { id: key, ...res[key] } : null)
                     .filter(Boolean);
             }
-            setApiColors(colorsList);
+            if (colorsList.length === 0 && activeLocId && activeLocId !== 'All' && !autoCreatedLocationsRef.current.has(String(activeLocId))) {
+                autoCreatedLocationsRef.current.add(String(activeLocId));
+                const initialColors = [
+                    { pick_color_name: 'Red', pick_color_hexcode: '#ef4444', pick_color_loc_id: String(activeLocId) },
+                    { pick_color_name: 'Green', pick_color_hexcode: '#22c55e', pick_color_loc_id: String(activeLocId) },
+                    { pick_color_name: 'Blue', pick_color_hexcode: '#3b82f6', pick_color_loc_id: String(activeLocId) },
+                    { pick_color_name: 'Yellow', pick_color_hexcode: '#facc15', pick_color_loc_id: String(activeLocId) },
+                    { pick_color_name: 'Orange', pick_color_hexcode: '#f97316', pick_color_loc_id: String(activeLocId) },
+                    { pick_color_name: 'Purple', pick_color_hexcode: '#a855f7', pick_color_loc_id: String(activeLocId) }
+                ];
+
+                for (const col of initialColors) {
+                    try {
+                        await apiService.createColor(col);
+                    } catch (e) {
+                        console.error('Error auto-creating default color:', e);
+                    }
+                }
+
+                // Refetch colors after creating initial set
+                const refreshedRes = await apiService.getColors(activeLocId);
+                if (Array.isArray(refreshedRes)) {
+                    colorsList = refreshedRes;
+                } else if (refreshedRes?.data && Array.isArray(refreshedRes.data)) {
+                    colorsList = refreshedRes.data;
+                } else if (refreshedRes?.colors && Array.isArray(refreshedRes.colors)) {
+                    colorsList = refreshedRes.colors;
+                }
+            }
+
+            // Deduplicate by pick_color_name to display clean list
+            const uniqueColors = [];
+            const seenNames = new Set();
+            for (const col of colorsList) {
+                const nameKey = (col.pick_color_name || col.name || '').trim().toLowerCase();
+                if (nameKey && !seenNames.has(nameKey)) {
+                    seenNames.add(nameKey);
+                    uniqueColors.push(col);
+                } else if (!nameKey) {
+                    uniqueColors.push(col);
+                }
+            }
+
+            setApiColors(uniqueColors);
         } catch (err) {
             console.error('Error fetching location colors:', err);
             toast.error(`Failed to load location colors: ${err.message}`);

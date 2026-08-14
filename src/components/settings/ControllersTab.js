@@ -46,7 +46,6 @@ export default function ControllersTab({ controllersData, syncControllers, refet
 
     // Dynamic ports state per controller: { [controllerId]: portsArray }
     const [controllerPortsMap, setControllerPortsMap] = useState({});
-    const [addingInitialForCtrl, setAddingInitialForCtrl] = useState(null);
 
     // Add Strip Modal state (multi-select dynamic from API)
     const [addStripModalOpen, setAddStripModalOpen] = useState(false);
@@ -55,6 +54,7 @@ export default function ControllersTab({ controllersData, syncControllers, refet
     const [isLoadingStrips, setIsLoadingStrips] = useState(false);
     const [isSavingStrips, setIsSavingStrips] = useState(false);
     const [selectedSampleStripIds, setSelectedSampleStripIds] = useState([]);
+    const [alreadyAssignedStripIds, setAlreadyAssignedStripIds] = useState([]);
 
     // Right-side sheet state for simple strip view
     const [selectedPortView, setSelectedPortView] = useState(null);
@@ -199,58 +199,6 @@ export default function ControllersTab({ controllersData, syncControllers, refet
         }
     };
 
-    // Add 16 channels at once for initial add when channel count is 0
-    const handleAddInitialChannels = async (ctrlId, count = 16) => {
-        setAddingInitialForCtrl(ctrlId);
-        const toastId = toast.loading(`Adding initial ${count} channels...`);
-        try {
-            const createdChannels = [];
-            for (let i = 1; i <= count; i++) {
-                const num = String(i).padStart(2, '0');
-                const channelName = `CHANNEL-${num}`;
-                const payload = {
-                    channel_name: channelName,
-                    channel_ledcount: "0",
-                    channel_stripcount: "0",
-                    channel_ctl_id: String(ctrlId)
-                };
-
-                const res = await apiService.createChannel(payload);
-                const channelId = res?.data?.channel_id || res?.channel_id || res?.id || Math.random().toString(36).substr(2, 9);
-
-                createdChannels.push({
-                    id: channelId,
-                    channel_name: channelName,
-                    channel_ledcount: 0,
-                    channel_stripcount: 0,
-                    strips: []
-                });
-            }
-
-            setControllerPortsMap(prev => ({
-                ...prev,
-                [ctrlId]: createdChannels
-            }));
-
-            if (syncControllers && controllersData) {
-                const updatedCtrlList = controllersData.map(c =>
-                    String(c.id) === String(ctrlId) ? { ...c, channels: count, ctl_channels: count } : c
-                );
-                syncControllers(updatedCtrlList);
-            }
-
-            if (refetchControllers) {
-                await refetchControllers();
-            }
-
-            toast.success(`Added ${count} initial channels successfully.`, { id: toastId });
-        } catch (error) {
-            console.error("Error creating initial channels:", error);
-            toast.error(`Failed to create initial channels: ${error.message}`, { id: toastId });
-        } finally {
-            setAddingInitialForCtrl(null);
-        }
-    };
 
     const handleAddChannel = async (ctrlId, limit) => {
         const currentChannels = controllerPortsMap[ctrlId] || [];
@@ -300,7 +248,7 @@ export default function ControllersTab({ controllersData, syncControllers, refet
         }
     };
 
-    // Open Add Strip Modal & fetch strips from API matching strip_ctl_id and pre-select assigned channel strips
+    // Open Add Strip Modal & fetch strips from API matching strip_ctl_id and identify assigned channel strips
     const handleOpenAddStripModal = async (ctrlId, portIndex, portObjParam) => {
         const portObj = typeof portObjParam === 'object' ? portObjParam : { channel_name: portObjParam };
         const channelId = portObj.channel_id || portObj.id || (portObj.channel_name ? portObj.channel_name.replace('CHANNEL-', '') : null);
@@ -308,6 +256,7 @@ export default function ControllersTab({ controllersData, syncControllers, refet
 
         setTargetPortInfo({ ctrlId, portIndex, portName, channelId });
         setSelectedSampleStripIds([]);
+        setAlreadyAssignedStripIds([]);
         setAddStripModalOpen(true);
         setIsLoadingStrips(true);
 
@@ -335,13 +284,13 @@ export default function ControllersTab({ controllersData, syncControllers, refet
 
             setAvailableStrips(matchingStrips);
 
-            // 2. Fetch assigned channel strips from GET API to pre-mark/check them
+            // 2. Fetch assigned channel strips from GET API to identify already assigned strips
             if (channelId) {
                 try {
                     const csRes = await apiService.getChannelStrips(channelId);
                     const csData = csRes?.data || (Array.isArray(csRes) ? csRes : []);
                     const alreadyAssignedIds = csData.map(cs => String(cs.strip_id || cs.id || cs.stripId));
-                    setSelectedSampleStripIds(alreadyAssignedIds);
+                    setAlreadyAssignedStripIds(alreadyAssignedIds);
                 } catch (err) {
                     console.error("Error fetching assigned channel strips:", err);
                 }
@@ -355,22 +304,24 @@ export default function ControllersTab({ controllersData, syncControllers, refet
         }
     };
 
-    // Multi-select toggle for strips
+    // Multi-select toggle for strips (only unassigned strips can be toggled)
     const toggleSelectSampleStrip = (id) => {
+        if (alreadyAssignedStripIds.includes(id)) return;
         setSelectedSampleStripIds(prev =>
             prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
         );
     };
 
     const handleSelectAllStrips = () => {
-        if (selectedSampleStripIds.length === availableStrips.length) {
+        const unassignedStrips = availableStrips.filter(s => !alreadyAssignedStripIds.includes(String(s.strip_id || s.id)));
+        if (selectedSampleStripIds.length === unassignedStrips.length) {
             setSelectedSampleStripIds([]);
         } else {
-            setSelectedSampleStripIds(availableStrips.map(s => String(s.strip_id || s.id)));
+            setSelectedSampleStripIds(unassignedStrips.map(s => String(s.strip_id || s.id)));
         }
     };
 
-    // Submit Add Multiple Strips from Modal by calling POST API create-channelstrip
+    // Submit Add Multiple Strips from Modal by calling POST API create-channelstrip ONLY for newly selected strips
     const handleAddStripSubmit = async () => {
         if (!targetPortInfo || selectedSampleStripIds.length === 0) {
             toast.error("Please select at least one strip to add.");
@@ -381,13 +332,21 @@ export default function ControllersTab({ controllersData, syncControllers, refet
         const toastId = toast.loading(`Saving channel strip assignments...`);
 
         try {
+            // Filter to ONLY newly selected strips that aren't already assigned
             const selectedStripsData = availableStrips.filter(s =>
-                selectedSampleStripIds.includes(String(s.strip_id || s.id))
+                selectedSampleStripIds.includes(String(s.strip_id || s.id)) &&
+                !alreadyAssignedStripIds.includes(String(s.strip_id || s.id))
             );
+
+            if (selectedStripsData.length === 0) {
+                toast.error("Selected strips are already assigned.", { id: toastId });
+                setIsSavingStrips(false);
+                return;
+            }
 
             const effectiveChannelId = channelId || '1';
 
-            // Call POST API /config/create-channelstrip for each selected strip
+            // Call POST API /config/create-channelstrip ONLY for newly selected strips
             for (let idx = 0; idx < selectedStripsData.length; idx++) {
                 const sObj = selectedStripsData[idx];
                 const stripIdStr = String(sObj.strip_id || sObj.id);
@@ -395,20 +354,18 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                 const payload = {
                     strip_id: stripIdStr,
                     channel_id: String(effectiveChannelId),
-                    strip_order: String(idx + 1)
+                    strip_order: String(alreadyAssignedStripIds.length + idx + 1)
                 };
 
                 await apiService.createChannelStrip(payload);
             }
 
-            const currentCount = controllerPortsMap[ctrlId]?.[portIndex]?.strips?.length || 0;
-
-            const newStripItems = selectedStripsData.map((s, idx) => {
+            const addedStripItems = selectedStripsData.map((s, idx) => {
                 const stripIdStr = String(s.strip_id || s.id || `strip-${Date.now()}-${idx}`);
                 const ledWidth = parseInt(s.strip_width || s.ledCount || 6, 10);
                 return {
                     id: stripIdStr,
-                    label: s.strip_name || `Strip #${currentCount + idx + 1}`,
+                    label: s.strip_name || `Strip #${stripIdStr}`,
                     ledCount: !isNaN(ledWidth) && ledWidth > 0 ? ledWidth : 6,
                     shelf: s.strip_shelf_id ? `Shelf ${s.strip_shelf_id}` : 'Shelf 1',
                     linkedBins: Array.isArray(s.bin_list) ? s.bin_list.length : 0,
@@ -422,27 +379,36 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                 const currentPorts = prev[ctrlId] || [];
                 const updatedPorts = currentPorts.map((p, idx) => {
                     if (idx !== portIndex) return p;
+                    const existingStrips = p.strips || [];
+                    const existingIds = new Set(existingStrips.map(st => String(st.id)));
+                    const filteredNew = addedStripItems.filter(st => !existingIds.has(String(st.id)));
+                    const combined = [...existingStrips, ...filteredNew];
                     return {
                         ...p,
-                        strips: newStripItems,
-                        channel_stripcount: newStripItems.length,
-                        channel_ledcount: newStripItems.reduce((acc, st) => acc + st.ledCount, 0),
-                        status: newStripItems.length > 0 ? 'Active' : 'Idle'
+                        strips: combined,
+                        channel_stripcount: combined.length,
+                        channel_ledcount: combined.reduce((acc, st) => acc + st.ledCount, 0),
+                        status: combined.length > 0 ? 'Active' : 'Idle'
                     };
                 });
 
-                // Update sheet view if currently open for this port
                 if (selectedPortView && selectedPortView.ctrlId === ctrlId && selectedPortView.portIndex === portIndex) {
-                    setSelectedPortView(sp => ({
-                        ...sp,
-                        strips: newStripItems
-                    }));
+                    setSelectedPortView(sp => {
+                        const existingIds = new Set((sp.strips || []).map(st => String(st.id)));
+                        const filteredNew = addedStripItems.filter(st => !existingIds.has(String(st.id)));
+                        return {
+                            ...sp,
+                            strips: [...(sp.strips || []), ...filteredNew]
+                        };
+                    });
                 }
 
                 return { ...prev, [ctrlId]: updatedPorts };
             });
 
-            toast.success(`Assigned ${newStripItems.length} strip(s) to ${portName}`, { id: toastId });
+            toast.success(`Assigned ${selectedStripsData.length} strip(s) to ${portName}`, { id: toastId });
+            setSelectedSampleStripIds([]);
+            setAlreadyAssignedStripIds([]);
             setAddStripModalOpen(false);
             setTargetPortInfo(null);
         } catch (error) {
@@ -608,6 +574,7 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                 toast.error(`Failed to update controller: ${error.message}`);
             }
         } else {
+            const toastId = toast.loading("Adding controller and channels...");
             try {
                 let ctl_loc_id = '';
                 const selectedLocationStr = localStorage.getItem('selectedLocation');
@@ -638,6 +605,38 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                     newId = resData.id;
                 }
 
+                // Create initial channels based on the channel count
+                const createdChannels = [];
+                for (let i = 1; i <= channels; i++) {
+                    const num = String(i).padStart(2, '0');
+                    const channelName = `CHANNEL-${num}`;
+                    const channelPayload = {
+                        channel_name: channelName,
+                        channel_ledcount: "0",
+                        channel_stripcount: "0",
+                        channel_ctl_id: String(newId)
+                    };
+
+                    try {
+                        const cRes = await apiService.createChannel(channelPayload);
+                        const channelId = cRes?.data?.channel_id || cRes?.channel_id || cRes?.id || Math.random().toString(36).substr(2, 9);
+                        createdChannels.push({
+                            id: channelId,
+                            channel_name: channelName,
+                            channel_ledcount: 0,
+                            channel_stripcount: 0,
+                            strips: []
+                        });
+                    } catch (err) {
+                        console.error("Error creating channel during controller init:", err);
+                    }
+                }
+
+                setControllerPortsMap(prev => ({
+                    ...prev,
+                    [newId]: createdChannels
+                }));
+
                 const newCtrl = {
                     id: newId,
                     name: name,
@@ -648,10 +647,10 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                 };
                 syncControllers([...controllersData, newCtrl]);
                 setShowControllerForm(false);
-                toast.success("Controller added successfully");
+                toast.success(`Controller added with ${channels} channels successfully`, { id: toastId });
             } catch (error) {
                 console.error("Error adding controller:", error);
-                toast.error(`Failed to add controller: ${error.message}`);
+                toast.error(`Failed to add controller: ${error.message}`, { id: toastId });
             }
         }
     };
@@ -711,7 +710,7 @@ export default function ControllersTab({ controllersData, syncControllers, refet
 
                                 <div className="space-y-2">
                                     <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">Channels</label>
-                                    <Input name="channels" type="number" defaultValue={editingController ? (editingController.channels || editingController.ctl_channels || 16) : 16} placeholder="16" className="bg-ot-surface-bottom border-ot-border" required />
+                                    <Input name="channels" type="number" defaultValue={editingController ? (editingController.channels || editingController.ctl_channels || 16) : 16} placeholder="16" className="bg-ot-surface-bottom border-ot-border opacity-50 cursor-not-allowed" readOnly required />
                                 </div>
 
                                 <div className="space-y-2 col-span-2 sm:col-span-1">
@@ -811,31 +810,16 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                                                             Controller Channels ({portsList.length} Channels)
                                                         </div>
                                                         <div className="flex items-center gap-2">
-                                                            {portsCount === 0 ? (
-                                                                <Button
-                                                                    variant="outline"
-                                                                    size="sm"
-                                                                    disabled={addingInitialForCtrl === ctrl.id}
-                                                                    onClick={() => handleAddInitialChannels(ctrl.id, 16)}
-                                                                    className="h-6 text-[10px] bg-ot-action/10 text-ot-action border-ot-action/30 hover:bg-ot-action/20 disabled:opacity-50"
-                                                                >
-                                                                    <Plus className="w-3 h-3 mr-1" />
-                                                                    {addingInitialForCtrl === ctrl.id ? "Adding 16 Channels..." : "Initial Add"}
-                                                                </Button>
-                                                            ) : (
-                                                                portsCount && (
-                                                                    <Button
-                                                                        variant="outline"
-                                                                        size="sm"
-                                                                        onClick={() => handleAddChannel(ctrl.id, portsCount)}
-                                                                        className="h-6 text-[10px] bg-ot-action/10 text-ot-action border-ot-action/30 hover:bg-ot-action/20"
-                                                                    >
-                                                                        <Plus className="w-3 h-3 mr-1" /> Add Channel
-                                                                    </Button>
-                                                                )
-                                                            )}
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                onClick={() => handleAddChannel(ctrl.id, portsCount || 16)}
+                                                                className="h-6 text-[10px] bg-ot-action/10 text-ot-action border-ot-action/30 hover:bg-ot-action/20"
+                                                            >
+                                                                <Plus className="w-3 h-3 mr-1" /> Add Channel
+                                                            </Button>
                                                             <span className="text-[10px] text-muted-foreground font-mono bg-ot-surface-elev-bottom px-2 py-0.5 rounded border border-ot-border/40">
-                                                                Limit: {portsCount} Channels
+                                                                Limit: {portsCount || 16} Channels
                                                             </span>
                                                         </div>
                                                     </div>
@@ -855,7 +839,7 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                                                                 {portsList.length === 0 ? (
                                                                     <TableRow>
                                                                         <TableCell colSpan={4} className="text-center py-6 text-muted-foreground text-xs">
-                                                                            No channels added yet. Click <span className="text-ot-action font-semibold">"Initial Add"</span> to create 16 initial channels.
+                                                                            No channels added yet. Click <span className="text-ot-action font-semibold">"Add Channel"</span> to create a channel.
                                                                         </TableCell>
                                                                     </TableRow>
                                                                 ) : (
@@ -974,14 +958,14 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                             <span className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">
                                 Controller Strips ({availableStrips.length}):
                             </span>
-                            {!isLoadingStrips && availableStrips.length > 0 && (
+                            {!isLoadingStrips && availableStrips.filter(s => !alreadyAssignedStripIds.includes(String(s.strip_id || s.id))).length > 0 && (
                                 <Button
                                     variant="ghost"
                                     size="sm"
                                     onClick={handleSelectAllStrips}
                                     className="h-7 px-2 text-xs text-ot-action hover:bg-ot-action/10"
                                 >
-                                    {selectedSampleStripIds.length === availableStrips.length ? 'Deselect All' : 'Select All'}
+                                    {selectedSampleStripIds.length === availableStrips.filter(s => !alreadyAssignedStripIds.includes(String(s.strip_id || s.id))).length ? 'Deselect All' : 'Select All'}
                                 </Button>
                             )}
                         </div>
@@ -1000,6 +984,7 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                             <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
                                 {availableStrips.map((opt) => {
                                     const stripIdStr = String(opt.strip_id || opt.id);
+                                    const isAlreadyAssigned = alreadyAssignedStripIds.includes(stripIdStr);
                                     const isSelected = selectedSampleStripIds.includes(stripIdStr);
                                     const shelfName = opt.strip_shelf_id ? `Shelf ${opt.strip_shelf_id}` : 'Shelf 1';
                                     const binCount = Array.isArray(opt.bin_list) ? opt.bin_list.length : 0;
@@ -1011,22 +996,39 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                                             key={stripIdStr}
                                             onClick={() => toggleSelectSampleStrip(stripIdStr)}
                                             className={cn(
-                                                "p-3.5 rounded-xl border cursor-pointer transition-all flex items-center justify-between group",
-                                                isSelected
-                                                    ? "bg-ot-surface-elev-top/80 border-ot-action shadow-[0_0_12px_rgba(95,166,255,0.15)]"
-                                                    : "bg-ot-surface-bottom border-ot-border/60 text-muted-foreground hover:border-ot-action/50 hover:bg-ot-surface-bottom/80"
+                                                "p-3.5 rounded-xl border transition-all flex items-center justify-between group",
+                                                isAlreadyAssigned
+                                                    ? "bg-ot-surface-bottom/40 border-ot-border/40 opacity-60 cursor-not-allowed"
+                                                    : isSelected
+                                                        ? "bg-ot-surface-elev-top/80 border-ot-action shadow-[0_0_12px_rgba(95,166,255,0.15)] cursor-pointer"
+                                                        : "bg-ot-surface-bottom border-ot-border/60 text-muted-foreground hover:border-ot-action/50 hover:bg-ot-surface-bottom/80 cursor-pointer"
                                             )}
                                         >
                                             <div className="flex items-center gap-3">
                                                 <div className={cn(
                                                     "w-5 h-5 rounded flex items-center justify-center border transition-colors shrink-0",
-                                                    isSelected ? "bg-ot-action border-ot-action text-white" : "border-ot-border bg-ot-surface-bottom group-hover:border-ot-action/60"
+                                                    isAlreadyAssigned
+                                                        ? "bg-ot-surface-top border-ot-border/60 text-muted-foreground"
+                                                        : isSelected
+                                                            ? "bg-ot-action border-ot-action text-white"
+                                                            : "border-ot-border bg-ot-surface-bottom group-hover:border-ot-action/60"
                                                 )}>
-                                                    {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                                                    {isAlreadyAssigned ? (
+                                                        <Check className="w-3.5 h-3.5 text-muted-foreground stroke-[2]" />
+                                                    ) : isSelected ? (
+                                                        <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                                    ) : null}
                                                 </div>
                                                 <div>
-                                                    <div className="font-bold text-sm text-white group-hover:text-ot-action transition-colors">
-                                                        {opt.strip_name || `Strip ${stripIdStr}`}
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-bold text-sm text-white group-hover:text-ot-action transition-colors">
+                                                            {opt.strip_name || `Strip ${stripIdStr}`}
+                                                        </span>
+                                                        {isAlreadyAssigned && (
+                                                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-700/60 text-slate-300 border border-slate-600/40">
+                                                                Already Added
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     <div className="text-xs text-muted-foreground mt-0.5">
                                                         Assigned to <span className="text-slate-300 font-medium">{shelfName}</span> • <span className="text-ot-action font-mono">{binCount} Bins Linked</span>

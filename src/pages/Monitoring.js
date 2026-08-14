@@ -205,7 +205,7 @@ export default function Monitoring() {
                                         height: parseFloat(b.bin_height) || 48,
                                         placed: true,
                                         bin_order: b.bin_order,
-                                        bin_phr_id: b.bin_phr_id || "122",
+                                        bin_phr_id: b.bin_phr_id || b.phr_id || "",
                                         bin_org_id: b.bin_org_id || "skshospital",
                                         bin_branch_id: b.bin_branch_id || "Salem",
                                         bin_status: b.bin_status,

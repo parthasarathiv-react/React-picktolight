@@ -183,11 +183,12 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                             height: (b.bin_height && !isNaN(parseFloat(b.bin_height))) ? parseFloat(b.bin_height) : 48,
                             placed: isPlaced,
                             bin_order: b.bin_order,
-                            bin_phr_id: b.bin_phr_id || "122",
+                            bin_phr_id: b.bin_phr_id || b.phr_id || "",
+                            bin_shelf_phr_id: b.bin_shelf_phr_id || b.bin_shelf_id || targetShelfId,
                             bin_org_id: b.bin_org_id || "skshospital",
                             bin_branch_id: b.bin_branch_id || "Salem",
                             bin_status: b.bin_status !== undefined ? b.bin_status : true,
-                            bin_shelf_id: b.bin_shelf_id || targetShelfId,
+                            bin_shelf_id: b.bin_shelf_id || b.bin_shelf_phr_id || targetShelfId,
                             bin_loc_id: b.bin_loc_id
                         };
                     });
@@ -439,13 +440,13 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                 const payload = {
                     bin_name: String(bin.label || bin.bin_name || `Bin ${idx + 1}`),
                     bin_loc_id: String(bin.bin_loc_id || locId),
-                    bin_shelf_id: String(shelf.shelf_phr_id || ''),
+                    bin_shelf_id: String(bin.bin_shelf_id || bin.bin_shelf_phr_id || shelf.shelf_phr_id || ''),
                     bin_gridx: String(Math.round(bin.x || 0)),
                     bin_gridy: String(Math.round(bin.y || 0)),
                     bin_width: String(Math.round(bin.width || 80)),
                     bin_height: String(Math.round(bin.height || 48)),
                     bin_order: String(bin.bin_order || idx + 1),
-                    bin_phr_id: String(shelf.shelf_phr_id || ''),
+                    bin_phr_id: String(bin.bin_phr_id || bin.phr_id || ''),
                     bin_org_id: String(bin.bin_org_id || "skshospital"),
                     bin_branch_id: String(bin.bin_branch_id || "Salem"),
                     bin_status: bin.bin_status !== undefined ? (typeof bin.bin_status === 'boolean' ? bin.bin_status : bin.bin_status === 'True') : true

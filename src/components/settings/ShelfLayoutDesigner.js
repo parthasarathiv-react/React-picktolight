@@ -413,7 +413,7 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                     shelf_width: String(Math.round(s.width || 560)),
                     shelf_height: String(Math.round(s.height || 48)),
                     shelf_order: String(s.shelf_order || idx + 1),
-                    shelf_phr_id: String(s.shelf_phr_id || "122"),
+                    shelf_phr_id: String(s.shelf_phr_id || s.phr_id || ""),
                     shelf_org_id: String(s.shelf_org_id || "skshospital"),
                     shelf_branch_id: String(s.shelf_branch_id || "Salem"),
                     shelf_status: s.shelf_status !== undefined ? (s.shelf_status ? "True" : "False") : "True"
@@ -439,7 +439,7 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                     shelf_width: String(Math.round(s.width || 560)),
                     shelf_height: String(Math.round(s.height || 48)),
                     shelf_order: String(s.shelf_order || idx + 1),
-                    shelf_phr_id: String(s.shelf_phr_id || "122"),
+                    shelf_phr_id: String(s.shelf_phr_id || s.phr_id || ""),
                     shelf_org_id: String(s.shelf_org_id || "skshospital"),
                     shelf_branch_id: String(s.shelf_branch_id || "Salem"),
                     shelf_status: s.shelf_status !== undefined ? (typeof s.shelf_status === 'boolean' ? s.shelf_status : s.shelf_status === 'True') : true
