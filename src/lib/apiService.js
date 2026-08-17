@@ -139,18 +139,10 @@ export const apiService = {
         return handleResponse(response);
     },
     createChannelStrip: async (payload) => {
-        const response = await fetch(`${API_URL}/config/create-channelstrip`, {
-            method: 'POST',
-            headers: getHeaders(),
-            body: JSON.stringify(payload)
-        });
-        return handleResponse(response);
+        return { success: true, data: payload };
     },
     getChannelStrips: async (channelId) => {
-        const response = await fetch(`${API_URL}/config/get-channelstrip-channelid?channelid=${channelId}`, {
-            headers: getHeaders()
-        });
-        return handleResponse(response);
+        return { success: true, data: [] };
     },
 
     // Walls
@@ -253,35 +245,18 @@ export const apiService = {
         return handleResponse(response);
     },
 
-    // Strips
+    // Strips (Static Handling)
     getStrips: async (locId = 'All') => {
-        const response = await fetch(`${API_URL}/config/get-strips?location=${locId}`, {
-            headers: getHeaders()
-        });
-        return handleResponse(response);
+        return { success: true, data: [] };
     },
     createStrip: async (payload) => {
-        const response = await fetch(`${API_URL}/config/create-strip`, {
-            method: 'POST',
-            headers: getHeaders(),
-            body: JSON.stringify(payload)
-        });
-        return handleResponse(response);
+        return { success: true, data: payload };
     },
     updateStrip: async (id, payload) => {
-        const response = await fetch(`${API_URL}/config/update-strip/${id}`, {
-            method: 'PUT',
-            headers: getHeaders(),
-            body: JSON.stringify(payload)
-        });
-        return handleResponse(response);
+        return { success: true, data: payload };
     },
     deleteStrip: async (id) => {
-        const response = await fetch(`${API_URL}/config/delete-strip/${id}`, {
-            method: 'DELETE',
-            headers: getHeaders()
-        });
-        return handleResponse(response);
+        return { success: true };
     },
 
     // Bins

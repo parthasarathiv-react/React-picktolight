@@ -1110,19 +1110,19 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
                                     const nextStrip = ledStrips[idx + 1];
                                     if (!nextStrip) return null;
 
-                                    // OUT Port on current strip (LEFT side)
-                                    const x1 = strip.x;
+                                    // OUT Port on current strip (RIGHT side)
+                                    const x1 = strip.x + strip.width;
                                     const y1 = strip.y + (strip.height || 22) / 2;
 
-                                    // IN Port on next strip (RIGHT side)
-                                    const x2 = nextStrip.x + nextStrip.width;
+                                    // IN Port on next strip (LEFT side)
+                                    const x2 = nextStrip.x;
                                     const y2 = nextStrip.y + (nextStrip.height || 22) / 2;
 
                                     // Bezier curve control points
-                                    const dx = Math.max(80, Math.abs(x1 - x2) * 0.5, Math.abs(y1 - y2) * 0.4);
-                                    const cp1X = x1 - dx;
+                                    const dx = Math.max(40, Math.abs(x2 - x1) * 0.45, Math.abs(y2 - y1) * 0.3);
+                                    const cp1X = x1 + dx;
                                     const cp1Y = y1;
-                                    const cp2X = x2 + dx;
+                                    const cp2X = x2 - dx;
                                     const cp2Y = y2;
 
                                     const pathD = `M ${x1} ${y1} C ${cp1X} ${cp1Y}, ${cp2X} ${cp2Y}, ${x2} ${y2}`;
@@ -1213,8 +1213,8 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
 
                                         {/* Visual LED dots inside the strip using setup colors */}
                                         <div className="flex items-center justify-around w-full px-1.5 pointer-events-none overflow-hidden">
-                                            {Array.from({ length: Math.min(strip.ledCount || savedLedConfig.ledCount, 200) }).map((_, i) => {
-                                                const count = Math.min(strip.ledCount || savedLedConfig.ledCount, 200);
+                                            {Array.from({ length: 6 }).map((_, i) => {
+                                                const count = 6;
                                                 const dotSize = Math.max(6, Math.min(10, (strip.width - 8) / count));
                                                 const colorHex = (strip.colors && strip.colors[i])
                                                     ? strip.colors[i]

@@ -861,30 +861,6 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                                                                                 </span>
                                                                             </TableCell>
                                                                             <TableCell className="text-right py-2 space-x-2 flex justify-end">
-                                                                                {/* + Add Strip Button */}
-                                                                                <Button
-                                                                                    variant="ghost"
-                                                                                    size="sm"
-                                                                                    onClick={() => handleOpenAddStripModal(ctrl.id, pIdx, port)}
-                                                                                    className="h-7 px-2 gap-1 text-xs text-ot-action hover:bg-ot-action/15 border border-ot-action/30 rounded"
-                                                                                    title="Add Strip"
-                                                                                >
-                                                                                    <Plus className="w-3.5 h-3.5" />
-                                                                                    Add Strip
-                                                                                </Button>
-
-                                                                                {/* View Eye Icon Button */}
-                                                                                <Button
-                                                                                    variant="ghost"
-                                                                                    size="sm"
-                                                                                    onClick={() => handleOpenStripSheet(ctrl, pIdx, port)}
-                                                                                    className="h-7 px-2 gap-1 text-white hover:bg-ot-surface-elev-top border border-ot-border rounded"
-                                                                                    title="View Channel Details"
-                                                                                >
-                                                                                    <Eye className="w-3.5 h-3.5 text-ot-action" />
-                                                                                    View
-                                                                                </Button>
-
                                                                                 {/* Edit Icon Button */}
                                                                                 <Button
                                                                                     variant="ghost"

@@ -109,9 +109,10 @@ function findStripForBin(ledStrips, shelf, bin) {
 
     for (let idx = 0; idx < ledStrips.length; idx++) {
         const strip = ledStrips[idx];
-        if (!strip.linkedBins || !Array.isArray(strip.linkedBins)) continue;
+        const linked = strip.linkedBins || strip.bins;
+        if (!linked || !Array.isArray(linked)) continue;
 
-        const isMatch = strip.linkedBins.some(lb => {
+        const isMatch = linked.some(lb => {
             const lbStr = String(lb).trim();
             if (lbStr === compositeId) return true;
             if (binIdStr && lbStr === binIdStr) return true;
@@ -125,7 +126,10 @@ function findStripForBin(ledStrips, shelf, bin) {
         });
 
         if (isMatch) {
-            return { strip, index: idx, theme: getStripColor(idx) };
+            const colorIdx = (strip.colorIndex !== undefined && !isNaN(Number(strip.colorIndex)))
+                ? Number(strip.colorIndex)
+                : idx;
+            return { strip, index: idx, theme: getStripColor(colorIdx) };
         }
     }
     return null;
@@ -194,8 +198,30 @@ const DrawerCell = React.memo(function DrawerCell({ cupboardId, row, col, ledsPe
     );
 });
 
+const WALL_COLOR_THEMES = [
+    { name: 'cyan', border: 'border-cyan-500/60', headerBg: 'bg-cyan-950/70', badgeBg: 'bg-cyan-500/20 text-cyan-300 border-cyan-400/40', accentDot: 'bg-cyan-400' },
+    { name: 'emerald', border: 'border-emerald-500/60', headerBg: 'bg-emerald-950/70', badgeBg: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40', accentDot: 'bg-emerald-400' },
+    { name: 'amber', border: 'border-amber-500/60', headerBg: 'bg-amber-950/70', badgeBg: 'bg-amber-500/20 text-amber-300 border-amber-400/40', accentDot: 'bg-amber-400' },
+    { name: 'purple', border: 'border-purple-500/60', headerBg: 'bg-purple-950/70', badgeBg: 'bg-purple-500/20 text-purple-300 border-purple-400/40', accentDot: 'bg-purple-400' },
+    { name: 'rose', border: 'border-rose-500/60', headerBg: 'bg-rose-950/70', badgeBg: 'bg-rose-500/20 text-rose-300 border-rose-400/40', accentDot: 'bg-rose-400' },
+    { name: 'sky', border: 'border-sky-500/60', headerBg: 'bg-sky-950/70', badgeBg: 'bg-sky-500/20 text-sky-300 border-sky-400/40', accentDot: 'bg-sky-400' },
+    { name: 'indigo', border: 'border-indigo-500/60', headerBg: 'bg-indigo-950/70', badgeBg: 'bg-indigo-500/20 text-indigo-300 border-indigo-400/40', accentDot: 'bg-indigo-400' },
+    { name: 'orange', border: 'border-orange-500/60', headerBg: 'bg-orange-950/70', badgeBg: 'bg-orange-500/20 text-orange-300 border-orange-400/40', accentDot: 'bg-orange-400' },
+];
+
+function getWallTheme(wallName) {
+    if (!wallName) return WALL_COLOR_THEMES[0];
+    let hash = 0;
+    const str = String(wallName).trim();
+    for (let i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const idx = Math.abs(hash) % WALL_COLOR_THEMES.length;
+    return WALL_COLOR_THEMES[idx];
+}
+
 // Memoized: only re-renders when cupboard data or active state changes
-const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSelect, bayRef }) {
+const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSelect, bayRef, onStripMove, onStripClick, onStripDoubleClick, hideInternalWires = true }) {
     const { id, name, shelves, rows, columns, ledsPerDrawer, wall } = cupboard;
     const computedShelves = getShelfCount({ shelves, rows });
     const computedColumns = normalizeCount(columns);
@@ -210,24 +236,31 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
         }, 0);
     }, [id, computedShelves, computedColumns]);
 
+    const wallTheme = getWallTheme(wall);
+
     return (
-        <Button variant="ghost"
-            type="button"
+        <div
             ref={bayRef}
             onClick={onSelect}
             className={cn(
-                "w-fit max-w-full flex-none text-left transition-opacity",
+                "w-fit max-w-full flex-none text-left transition-opacity cursor-pointer",
                 isActive ? "opacity-100" : "opacity-85 hover:opacity-100"
             )}
         >
             <Card className={cn(
-                "max-w-full bg-ot-surface-top border shadow-2xl flex flex-col overflow-hidden rounded-none",
-                isActive ? "border-ot-action/70" : "border-ot-border"
+                "max-w-full bg-ot-surface-top border shadow-2xl flex flex-col overflow-hidden rounded-md transition-all",
+                wallTheme.border,
+                isActive ? "ring-2 ring-ot-action/80" : ""
             )}>
-                <div className="px-3 py-2 border-b border-ot-border/70 bg-ot-surface-elev-bottom flex items-center justify-between gap-2 shrink-0">
+                <div className={cn("px-3 py-2 border-b border-ot-border/70 flex items-center justify-between gap-2 shrink-0", wallTheme.headerBg)}>
                     <div className="min-w-0">
-                        <div className="text-sm font-bold text-white truncate">{name}</div>
-                        <div className="text-[10px] uppercase tracking-wide text-muted-foreground truncate">{wall || 'No wall'}</div>
+                        <div className="text-sm font-bold text-white truncate flex items-center gap-1.5">
+                            <span className={cn("w-2 h-2 rounded-full shrink-0", wallTheme.accentDot)} />
+                            {name}
+                        </div>
+                        <div className={cn("text-[10px] font-mono px-2 py-0.5 rounded border inline-block mt-0.5 font-bold uppercase tracking-wider", wallTheme.badgeBg)}>
+                            {wall || 'No wall'}
+                        </div>
                     </div>
                     <div className="text-right text-[10px] text-muted-foreground shrink-0">
                         <div className="font-semibold text-ot-action">{computedShelves} shelves</div>
@@ -314,7 +347,7 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                                                     })
                                                 ) : (
                                                     <div className="absolute inset-0 flex items-center justify-center text-[10px] text-muted-foreground/50 font-mono">
-                                                        No bins
+
                                                     </div>
                                                 )}
                                             </div>
@@ -323,7 +356,7 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                                 })}
 
                                  {/* Render Wire Connections between LED Strips */}
-                                 {cupboard.ledStrips && cupboard.ledStrips.length > 1 && (
+                                 {!hideInternalWires && cupboard.ledStrips && cupboard.ledStrips.length > 1 && (
                                      <svg className="absolute inset-0 pointer-events-none z-15 overflow-visible" width={canvasWidth} height={canvasHeight}>
                                          <style>{`
                                              @keyframes wireFlowMonitoring {
@@ -346,19 +379,51 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                                              if (!nextStrip) return null;
 
                                              // OUT Port on current strip (LEFT side)
-                                             const x1 = Number(strip.x || 0);
-                                             const y1 = Number(strip.y || 0) + (Number(strip.height) || 22) / 2;
+                                             let savedLedCount = 6;
+                                             try {
+                                                 const saved = localStorage.getItem('ledSetupConfig');
+                                                 if (saved) {
+                                                     const parsed = JSON.parse(saved);
+                                                     if (parsed.ledCount) savedLedCount = parsed.ledCount;
+                                                 }
+                                             } catch (e) { }
 
-                                             // IN Port on next strip (RIGHT side)
-                                             const x2 = Number(nextStrip.x || 0) + Number(nextStrip.width || 100);
-                                             const y2 = Number(nextStrip.y || 0) + (Number(nextStrip.height) || 22) / 2;
+                                             const count = 6;
+                                             const calcWidth = (c) => Math.max(30, 10 + (Math.max(1, Number(c) || 6)) * 8);
+                                             const curW = (strip.width && !isNaN(Number(strip.width)) && Number(strip.width) > 0) ? Number(strip.width) : calcWidth(count);
+                                             const curH = (strip.height && !isNaN(Number(strip.height)) && Number(strip.height) > 0) ? Number(strip.height) : 22;
+
+                                             const nextCount = 6;
+                                             const nextH = (nextStrip.height && !isNaN(Number(nextStrip.height)) && Number(nextStrip.height) > 0) ? Number(nextStrip.height) : 22;
+
+                                             // OUT Port on current strip (RIGHT side of strip)
+                                             const x1 = Number(strip.x || 0) + curW;
+                                             const y1 = Number(strip.y || 0) + curH / 2;
+
+                                             // IN Port on next strip (LEFT side of next strip)
+                                             const x2 = Number(nextStrip.x || 0);
+                                             const y2 = Number(nextStrip.y || 0) + nextH / 2;
 
                                              // Bezier curve control points
-                                             const dx = Math.max(80, Math.abs(x1 - x2) * 0.5, Math.abs(y1 - y2) * 0.4);
-                                             const cp1X = x1 - dx;
-                                             const cp1Y = y1;
-                                             const cp2X = x2 + dx;
-                                             const cp2Y = y2;
+                                             const diffX = x2 - x1;
+                                             const diffY = y2 - y1;
+                                             const absDx = Math.abs(diffX);
+                                             const absDy = Math.abs(diffY);
+                                             let cp1X, cp1Y, cp2X, cp2Y;
+                                             if (diffX >= 0) {
+                                                 const offset = Math.min(80, Math.max(15, absDx * 0.35));
+                                                 cp1X = x1 + offset;
+                                                 cp1Y = y1;
+                                                 cp2X = x2 - offset;
+                                                 cp2Y = y2;
+                                             } else {
+                                                 const offset = Math.min(40, Math.max(15, absDx * 0.15, absDy * 0.15));
+                                                 const yDir = diffY >= 0 ? 1 : -1;
+                                                 cp1X = x1 + offset;
+                                                 cp1Y = y1 + offset * yDir;
+                                                 cp2X = x2 - offset;
+                                                 cp2Y = y2 - offset * yDir;
+                                             }
 
                                              const pathD = `M ${x1} ${y1} C ${cp1X} ${cp1Y}, ${cp2X} ${cp2Y}, ${x2} ${y2}`;
                                              const themeColor = getStripColor(idx).hex || '#38bdf8';
@@ -422,15 +487,94 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                                          }
                                      } catch (e) { }
 
-                                     const count = strip.ledCount || savedLedCount;
+                                     const count = 6;
                                      const colors = (strip.colors && strip.colors.length > 0) ? strip.colors : savedColors;
-                                     const colorTheme = getStripColor(stripIdx);
+                                     const colorIdx = (strip.colorIndex !== undefined && !isNaN(Number(strip.colorIndex)))
+                                         ? Number(strip.colorIndex)
+                                         : stripIdx;
+                                     const colorTheme = getStripColor(colorIdx);
+                                     const cupId = cupboard.id || cupboard.cupboard_id || 'c';
+                                     const sId = strip.id || strip.strip_id;
 
                                      return (
                                          <div
-                                             key={strip.id}
+                                             key={sId}
+                                             id={`strip-target-${cupId}-${sId}`}
+                                             data-strip-target={sId}
+                                             onMouseDown={(e) => {
+                                                 if (!onStripMove) return;
+                                                 e.stopPropagation();
+                                                 const startX = e.clientX;
+                                                 const startY = e.clientY;
+                                                 const initialX = Number(strip.x) || 20;
+                                                 const initialY = Number(strip.y) || 20;
+
+                                                 // Find parent scroll container for edge auto-scrolling
+                                                 let pElem = e.currentTarget.parentElement;
+                                                 while (pElem && pElem !== document.body) {
+                                                     const overflow = window.getComputedStyle(pElem).overflow;
+                                                     const overflowX = window.getComputedStyle(pElem).overflowX;
+                                                     const overflowY = window.getComputedStyle(pElem).overflowY;
+                                                     if (/(auto|scroll)/.test(overflow + overflowX + overflowY)) {
+                                                         break;
+                                                     }
+                                                     pElem = pElem.parentElement;
+                                                 }
+
+                                                 const handleMouseMove = (moveEvent) => {
+                                                     const dx = moveEvent.clientX - startX;
+                                                     const dy = moveEvent.clientY - startY;
+
+                                                     // Auto scroll parent container when dragging near side edges
+                                                     if (pElem) {
+                                                         const rect = pElem.getBoundingClientRect();
+                                                         const edgeMargin = 70;
+                                                         if (moveEvent.clientX > rect.right - edgeMargin) {
+                                                             pElem.scrollLeft += 15;
+                                                         } else if (moveEvent.clientX < rect.left + edgeMargin) {
+                                                             pElem.scrollLeft -= 15;
+                                                         }
+                                                         if (moveEvent.clientY > rect.bottom - edgeMargin) {
+                                                             pElem.scrollTop += 15;
+                                                         } else if (moveEvent.clientY < rect.top + edgeMargin) {
+                                                             pElem.scrollTop -= 15;
+                                                         }
+                                                     }
+
+                                                     const newX = Math.max(0, Math.round(initialX + dx));
+                                                     const newY = Math.max(0, Math.round(initialY + dy));
+                                                     onStripMove(sId, newX, newY);
+                                                 };
+
+                                                 const handleMouseUp = () => {
+                                                     window.removeEventListener('mousemove', handleMouseMove);
+                                                     window.removeEventListener('mouseup', handleMouseUp);
+                                                 };
+
+                                                 window.addEventListener('mousemove', handleMouseMove);
+                                                 window.addEventListener('mouseup', handleMouseUp);
+                                             }}
+                                             onClick={(e) => {
+                                                 e.stopPropagation();
+                                                 const now = Date.now();
+                                                 if (strip._lastClick && (now - strip._lastClick < 400)) {
+                                                     if (onStripDoubleClick) {
+                                                         onStripDoubleClick(strip);
+                                                     }
+                                                     strip._lastClick = 0;
+                                                 } else {
+                                                     strip._lastClick = now;
+                                                 }
+                                             }}
+                                             onDoubleClick={(e) => {
+                                                 e.stopPropagation();
+                                                 if (onStripDoubleClick) {
+                                                     onStripDoubleClick(strip);
+                                                 }
+                                             }}
                                              className={cn(
-                                                 "absolute rounded-full border-2 flex items-center overflow-visible z-20 pointer-events-none transition-all",
+                                                 "absolute rounded-full border-2 flex items-center overflow-visible z-30 transition-all select-none",
+                                                 (onStripMove || onStripDoubleClick) ? "pointer-events-auto cursor-pointer hover:scale-105 hover:border-white shadow-xl" : "pointer-events-none",
                                                  colorTheme.border,
                                                  colorTheme.bgLight,
                                                  colorTheme.shadow
@@ -438,15 +582,35 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                                              style={{
                                                  left: strip.x,
                                                  top: strip.y,
-                                                 width: strip.width,
-                                                 height: strip.height,
+                                                 width: (strip.width && !isNaN(Number(strip.width)) && Number(strip.width) > 0 && Number(strip.width) <= 220)
+                                                     ? Number(strip.width)
+                                                     : Math.max(40, Math.min(180, (count || 6) * 11 + 12)),
+                                                 height: (strip.height && !isNaN(Number(strip.height)) && Number(strip.height) > 0) ? Number(strip.height) : 22,
                                              }}
                                          >
-                                             <div className={cn("absolute -top-4 left-1 text-[9px] font-mono font-bold whitespace-nowrap px-1 rounded bg-slate-950/90 border shadow-sm", colorTheme.border, colorTheme.text)}>{strip.label}</div>
+                                             {/* Left IN Anchor (Invisible Target Node) */}
+                                             <div
+                                                 id={`strip-in-${cupId}-${sId}`}
+                                                 data-strip-in={sId}
+                                                 className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-1 pointer-events-none opacity-0"
+                                             />
+
+                                             {/* Strip Label Badge - Placed cleanly ABOVE strip so it never covers LEDs */}
+                                             <div className={cn(
+                                                 "absolute -top-6 left-1 text-[9px] font-mono font-bold whitespace-nowrap px-1.5 py-0.5 rounded bg-slate-950/95 border shadow-md z-40 pointer-events-none tracking-tight",
+                                                 colorTheme.border, colorTheme.text
+                                             )}>
+                                                 {strip.label}
+                                             </div>
+
+                                             {/* LED Lights Array */}
                                              <div className="flex items-center justify-around w-full px-1">
                                                  {Array.from({ length: Math.min(count, 200) }).map((_, i) => {
                                                      const renderCount = Math.min(count, 200);
-                                                     const dotSize = Math.max(3, Math.min(6, (strip.width - 8) / renderCount));
+                                                     const stripW = (strip.width && !isNaN(Number(strip.width)) && Number(strip.width) > 0 && Number(strip.width) <= 220)
+                                                         ? Number(strip.width)
+                                                         : Math.max(40, Math.min(180, (count || 6) * 11 + 12));
+                                                     const dotSize = Math.max(3, Math.min(6, (stripW - 8) / renderCount));
                                                      const hex = colors[i % colors.length] || '#facc15';
                                                      return (
                                                          <div
@@ -462,6 +626,13 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                                                      );
                                                  })}
                                              </div>
+
+                                             {/* Right OUT Anchor (Invisible Target Node) */}
+                                             <div
+                                                 id={`strip-out-${cupId}-${sId}`}
+                                                 data-strip-out={sId}
+                                                 className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-1 pointer-events-none opacity-0"
+                                             />
                                          </div>
                                      );
                                  })}
@@ -486,12 +657,12 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                     </span>
                 </div>
             </Card>
-        </Button>
+        </div>
     );
 });
 
 
-export default function Cupboard2D({ cupboards = [], controllerName, selectedCupboard, activeCupboardIdx = 0, onSelectCupboard, layoutMode = 'horizontal' }) {
+export default function Cupboard2D({ cupboards = [], controllerName, selectedCupboard, activeCupboardIdx = 0, onSelectCupboard, layoutMode = 'horizontal', onStripMove, onStripClick, onStripDoubleClick, hideInternalWires = true, onZoomChange }) {
     const [zoom, setZoom] = useState(1);
     const scrollRef = useRef(null);
     const cupboardRefs = useRef([]);
@@ -511,6 +682,17 @@ export default function Cupboard2D({ cupboards = [], controllerName, selectedCup
     const controllerLabel = controllerName || 'No controller';
 
     useEffect(() => {
+        onZoomChange?.(zoom);
+        window.dispatchEvent(new Event('scroll'));
+        const t = setTimeout(() => window.dispatchEvent(new Event('scroll')), 100);
+        const t2 = setTimeout(() => window.dispatchEvent(new Event('scroll')), 250);
+        return () => {
+            clearTimeout(t);
+            clearTimeout(t2);
+        };
+    }, [zoom, onZoomChange]);
+
+    useEffect(() => {
         const activeCupboard = cupboardRefs.current[activeCupboardIdx];
         activeCupboard?.scrollIntoView({
             behavior: 'smooth',
@@ -521,6 +703,7 @@ export default function Cupboard2D({ cupboards = [], controllerName, selectedCup
 
     const handlePointerDown = (event) => {
         if (event.button !== 0) return;
+        if (event.target.closest && event.target.closest('[data-strip-target], [data-strip-in], button, input, select, .pointer-events-auto')) return;
 
         const container = scrollRef.current;
         if (!container) return;
@@ -533,7 +716,6 @@ export default function Cupboard2D({ cupboards = [], controllerName, selectedCup
             scrollTop: container.scrollTop,
             moved: false,
         };
-        container.setPointerCapture?.(event.pointerId);
     };
 
     const handlePointerMove = (event) => {
@@ -546,6 +728,7 @@ export default function Cupboard2D({ cupboards = [], controllerName, selectedCup
 
         if (!dragState.moved && (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3)) {
             dragState.moved = true;
+            container.setPointerCapture?.(event.pointerId);
         }
 
         if (dragState.moved) {
@@ -573,7 +756,7 @@ export default function Cupboard2D({ cupboards = [], controllerName, selectedCup
     return (
         <div className="w-full h-full bg-ot-bg-mid  p-3 sm:p-4">
             <div className="h-full min-h-0 flex flex-col">
-                <Card className="mb-3 flex items-center justify-between gap-3 p-3 bg-ot-surface-top border-ot-border rounded-lg shadow-sm">
+                <Card className="mb-3 flex items-center justify-between gap-3 p-3 bg-ot-surface-top border-ot-border rounded-lg shadow-sm relative z-30">
                     <div className="min-w-0">
                         <h3 className="text-white font-bold flex items-center gap-2 truncate">
                             <Archive className="w-4 h-4 text-ot-action shrink-0" />
@@ -581,7 +764,22 @@ export default function Cupboard2D({ cupboards = [], controllerName, selectedCup
                         </h3>
                         <p className="text-xs text-muted-foreground truncate">{currentWall} · {cupboards.length} cupboards · {totalShelves} shelves</p>
                     </div>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
+                    <div className="flex items-center gap-2.5 text-xs text-muted-foreground shrink-0">
+                        {/* Sample Legend Strip Badge */}
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full border border-cyan-500/40 bg-slate-950/80 text-[10px] font-mono shadow-sm" title="LED Strip Signal Flow Legend: Left Pin = IN (Data Input), Right Pin = OUT (Data Output to Next Strip)">
+                            <span className="text-[9px] text-cyan-400 font-bold tracking-tight uppercase">Flow:</span>
+                            <div className="flex items-center gap-1 bg-slate-900 border border-slate-700/80 rounded-full px-1.5 py-0.5">
+                                <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 border border-white text-[6px] text-black font-black flex items-center justify-center shadow-[0_0_4px_#22d3ee]">I</span>
+                                <div className="flex items-center gap-0.5 px-0.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_4px_#facc15]" />
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_4px_#34d399]" />
+                                    <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shadow-[0_0_4px_#c084fc]" />
+                                </div>
+                                <span className="w-2.5 h-2.5 rounded-full bg-purple-500 border border-white text-[6px] text-white font-black flex items-center justify-center shadow-[0_0_4px_#a855f7]">O</span>
+                            </div>
+                            <span className="text-[8px] text-slate-400 hidden sm:inline">(IN ➔ OUT)</span>
+                        </div>
+
                         <div className="flex items-center gap-1 bg-ot-surface-bottom border border-ot-border rounded p-0.5">
                             <Button variant="ghost" className="h-6 w-6 p-0 hover:bg-ot-surface-top" onClick={() => setZoom(z => Math.max(0.2, z - 0.1))}>
                                 <ZoomOut className="w-3 h-3" />
@@ -599,7 +797,7 @@ export default function Cupboard2D({ cupboards = [], controllerName, selectedCup
                 <div
                     ref={scrollRef}
                     className={cn(
-                        "flex-1 min-h-0 flex p-2 items-start overflow-x-auto overflow-y-auto overscroll-contain cursor-grab active:cursor-grabbing select-none touch-none"
+                        "flex-1 min-h-0 flex p-2 items-start overflow-x-auto overflow-y-auto overscroll-contain cursor-grab active:cursor-grabbing select-none touch-none relative z-10"
                     )}
                     style={{ contain: 'strict', willChange: 'transform' }}
                     onPointerDown={handlePointerDown}
@@ -621,6 +819,10 @@ export default function Cupboard2D({ cupboards = [], controllerName, selectedCup
                                 cupboard={cupboard}
                                 isActive={index === activeCupboardIdx}
                                 onSelect={() => onSelectCupboard?.(index)}
+                                onStripMove={onStripMove}
+                                onStripClick={onStripClick}
+                                onStripDoubleClick={onStripDoubleClick}
+                                hideInternalWires={hideInternalWires}
                             />
                         ))}
                     </div>

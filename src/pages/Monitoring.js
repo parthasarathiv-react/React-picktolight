@@ -1,7 +1,7 @@
 import React, { useState, useCallback, lazy, Suspense, useMemo, useEffect } from 'react';
 import { Card, CardContent } from 'components/ui/card';
 import Cupboard2D from 'components/visualization/Cupboard2D';
-import { Layers, Box, MonitorPlay, ChevronRight, PanelRightClose, PanelRightOpen, LayoutGrid, List, Loader2 } from 'lucide-react';
+import { Layers, Box, MonitorPlay, ChevronRight, PanelRightClose, PanelRightOpen, LayoutGrid, List, Loader2, Cpu } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { CONTROLLERS_CONFIG, WALLS_CONFIG, CUPBOARDS_CONFIG, getCupboardAssignments } from 'lib/dataStore';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from 'components/ui/collapsible';
@@ -13,6 +13,21 @@ import { apiService } from 'lib/apiService';
 // Cupboard3D is lazy-loaded — Three.js (~600 KB) is only fetched when user
 // clicks "3D View", keeping the initial bundle small and TBT low.
 const Cupboard3D = lazy(() => import('components/visualization/Cupboard3D'));
+
+const CHANNEL_PALETTES = [
+    { hex: '#22d3ee', bgGrad: 'from-cyan-950 via-[#03303d] to-[#011a21]', border: 'border-cyan-400', text: 'text-cyan-300', dot: 'bg-cyan-400 shadow-[0_0_10px_#22d3ee]', glow: 'shadow-[inset_0_1px_2px_rgba(255,255,255,0.3),_0_0_16px_rgba(34,211,238,0.5)]' },
+    { hex: '#34d399', bgGrad: 'from-emerald-950 via-[#032e1e] to-[#011a11]', border: 'border-emerald-400', text: 'text-emerald-300', dot: 'bg-emerald-400 shadow-[0_0_10px_#34d399]', glow: 'shadow-[inset_0_1px_2px_rgba(255,255,255,0.3),_0_0_16px_rgba(52,211,153,0.5)]' },
+    { hex: '#38bdf8', bgGrad: 'from-sky-950 via-[#032c40] to-[#011724]', border: 'border-sky-400', text: 'text-sky-300', dot: 'bg-sky-400 shadow-[0_0_10px_#38bdf8]', glow: 'shadow-[inset_0_1px_2px_rgba(255,255,255,0.3),_0_0_16px_rgba(56,189,248,0.5)]' },
+    { hex: '#fbbf24', bgGrad: 'from-amber-950 via-[#3d2503] to-[#241501]', border: 'border-amber-400', text: 'text-amber-300', dot: 'bg-amber-400 shadow-[0_0_10px_#fbbf24]', glow: 'shadow-[inset_0_1px_2px_rgba(255,255,255,0.3),_0_0_16px_rgba(251,191,36,0.5)]' },
+    { hex: '#c084fc', bgGrad: 'from-purple-950 via-[#330347] to-[#1c0129]', border: 'border-purple-400', text: 'text-purple-300', dot: 'bg-purple-400 shadow-[0_0_10px_#c084fc]', glow: 'shadow-[inset_0_1px_2px_rgba(255,255,255,0.3),_0_0_16px_rgba(192,132,252,0.5)]' },
+    { hex: '#fb7185', bgGrad: 'from-rose-950 via-[#45031d] to-[#290110]', border: 'border-rose-400', text: 'text-rose-300', dot: 'bg-rose-400 shadow-[0_0_10px_#fb7185]', glow: 'shadow-[inset_0_1px_2px_rgba(255,255,255,0.3),_0_0_16px_rgba(251,113,133,0.5)]' },
+    { hex: '#fb923c', bgGrad: 'from-orange-950 via-[#421d03] to-[#291101]', border: 'border-orange-400', text: 'text-orange-300', dot: 'bg-orange-400 shadow-[0_0_10px_#fb923c]', glow: 'shadow-[inset_0_1px_2px_rgba(255,255,255,0.3),_0_0_16px_rgba(251,146,60,0.5)]' },
+    { hex: '#e879f9', bgGrad: 'from-fuchsia-950 via-[#3d0342] to-[#240129]', border: 'border-fuchsia-400', text: 'text-fuchsia-300', dot: 'bg-fuchsia-400 shadow-[0_0_10px_#e879f9]', glow: 'shadow-[inset_0_1px_2px_rgba(255,255,255,0.3),_0_0_16px_rgba(232,121,249,0.5)]' },
+    { hex: '#2dd4bf', bgGrad: 'from-teal-950 via-[#03332c] to-[#011f1a]', border: 'border-teal-400', text: 'text-teal-300', dot: 'bg-teal-400 shadow-[0_0_10px_#2dd4bf]', glow: 'shadow-[inset_0_1px_2px_rgba(255,255,255,0.3),_0_0_16px_rgba(45,212,191,0.5)]' },
+    { hex: '#818cf8', bgGrad: 'from-indigo-950 via-[#0f174a] to-[#080d2d]', border: 'border-indigo-400', text: 'text-indigo-300', dot: 'bg-indigo-400 shadow-[0_0_10px_#818cf8]', glow: 'shadow-[inset_0_1px_2px_rgba(255,255,255,0.3),_0_0_16px_rgba(129,140,248,0.5)]' },
+    { hex: '#a3e635', bgGrad: 'from-lime-950 via-[#263b03] to-[#162401]', border: 'border-lime-400', text: 'text-lime-300', dot: 'bg-lime-400 shadow-[0_0_10px_#a3e635]', glow: 'shadow-[inset_0_1px_2px_rgba(255,255,255,0.3),_0_0_16px_rgba(163,230,53,0.5)]' },
+    { hex: '#facc15', bgGrad: 'from-yellow-950 via-[#3d3303] to-[#241e01]', border: 'border-yellow-400', text: 'text-yellow-300', dot: 'bg-yellow-400 shadow-[0_0_10px_#facc15]', glow: 'shadow-[inset_0_1px_2px_rgba(255,255,255,0.3),_0_0_16px_rgba(250,204,21,0.5)]' },
+];
 
 // Shown inside the canvas area while Three.js chunk is being fetched
 function Canvas3DLoader() {
@@ -29,6 +44,229 @@ export default function Monitoring() {
     const [layoutMode, setLayoutMode] = useState('horizontal'); // 'horizontal' | 'vertical'
     const [controlsVisible, setControlsVisible] = useState(true);
     const [activeCupboardIdx, setActiveCupboardIdx] = useState(0);
+
+    const containerRef = React.useRef(null);
+    const [wirePaths, setWirePaths] = useState([]);
+
+    const controllerPlacement = useMemo(() => {
+        return localStorage.getItem('controllerPlacement') || 'left';
+    }, []);
+
+    const channelAssignments = useMemo(() => {
+        try {
+            const saved = localStorage.getItem('localChannelAssignments');
+            if (saved) return JSON.parse(saved);
+        } catch (e) { }
+        return {};
+    }, []);
+
+    const allSavedStrips = useMemo(() => {
+        try {
+            const saved = localStorage.getItem('localLedStrips');
+            if (saved) return JSON.parse(saved);
+        } catch (e) { }
+        return [];
+    }, []);
+
+    const calculateWirePaths = useCallback(() => {
+        if (!containerRef.current) return;
+        const containerRect = containerRef.current.getBoundingClientRect();
+        const paths = [];
+
+        const getInAnchor = (s) => {
+            if (!s) return null;
+            const cupId = s.cupboardId || s.cupboard_id || 'c';
+            const sId = s.id || s.strip_id;
+            const candidates = [
+                `strip-in-${cupId}-${sId}`,
+                `strip-in-c-${sId}`,
+                cupId ? `strip-in-${cupId}-${s.id}` : null,
+                cupId ? `strip-in-${cupId}-${s.strip_id}` : null,
+                `strip-in-${sId}`,
+                `strip-in-${s.id}`,
+                `strip-in-${s.strip_id}`,
+                `strip-target-${cupId}-${sId}`,
+                `strip-target-c-${sId}`,
+                `strip-target-${sId}`
+            ].filter(Boolean);
+            for (const id of candidates) {
+                const elem = document.getElementById(id);
+                if (elem) return elem;
+            }
+            return null;
+        };
+
+        const getOutAnchor = (s) => {
+            if (!s) return null;
+            const cupId = s.cupboardId || s.cupboard_id || 'c';
+            const sId = s.id || s.strip_id;
+            const candidates = [
+                `strip-out-${cupId}-${sId}`,
+                `strip-out-c-${sId}`,
+                cupId ? `strip-out-${cupId}-${s.id}` : null,
+                cupId ? `strip-out-${cupId}-${s.strip_id}` : null,
+                `strip-out-${sId}`,
+                `strip-out-${s.id}`,
+                `strip-out-${s.strip_id}`
+            ].filter(Boolean);
+            for (const id of candidates) {
+                const elem = document.getElementById(id);
+                if (elem) return elem;
+            }
+            const inElem = getInAnchor(s);
+            if (inElem) {
+                let stripWrapper = inElem.parentElement;
+                if (stripWrapper) {
+                    const rightOut = stripWrapper.querySelector('[data-strip-out]') || stripWrapper.querySelector('[id*="strip-out-"]');
+                    if (rightOut) return rightOut;
+                }
+            }
+            return null;
+        };
+
+        const headerElem = containerRef.current.querySelector('.bg-ot-surface-top');
+        const minAllowedY = headerElem ? (headerElem.getBoundingClientRect().bottom - containerRect.top + 4) : 4;
+
+        for (let ch = 1; ch <= 16; ch++) {
+            let chStrips = allSavedStrips.filter(s => {
+                const sCh = Number(s.channel) || (s.channel ? parseInt(String(s.channel).replace(/\D/g, ''), 10) : null);
+                return sCh === ch;
+            });
+
+            if (chStrips.length === 0 && channelAssignments[ch]) {
+                chStrips = [channelAssignments[ch]];
+            }
+
+            if (chStrips.length === 0) continue;
+
+            chStrips.forEach((strip, idx) => {
+                const stripId = strip.id || strip.strip_id;
+                const targetInElem = getInAnchor(strip);
+                if (!targetInElem) return;
+
+                if (idx === 0 && !strip.parentStripId) {
+                    const portElem = document.getElementById(`monitoring-port-socket-${ch}`);
+                    if (portElem && targetInElem) {
+                        const pRect = portElem.getBoundingClientRect();
+                        const sRect = targetInElem.getBoundingClientRect();
+
+                        let x1 = pRect.left + pRect.width / 2 - containerRect.left;
+                        let y1 = pRect.top + pRect.height / 2 - containerRect.top;
+                        if (controllerPlacement === 'left') {
+                            x1 = pRect.right - containerRect.left + 2;
+                        } else if (controllerPlacement === 'right') {
+                            x1 = pRect.left - containerRect.left - 2;
+                        } else if (controllerPlacement === 'top') {
+                            y1 = pRect.bottom - containerRect.top + 2;
+                        } else if (controllerPlacement === 'bottom') {
+                            y1 = pRect.top - containerRect.top - 2;
+                        }
+                        const x2 = sRect.left + sRect.width / 2 - containerRect.left;
+                        const y2 = sRect.top + sRect.height / 2 - containerRect.top;
+
+                        const dx = x2 - x1;
+                        const dy = y2 - y1;
+                        const absDx = Math.abs(dx);
+                        const absDy = Math.abs(dy);
+
+                        let cp1x = x1, cp1y = y1, cp2x = x2, cp2y = y2;
+                        if (controllerPlacement === 'left') {
+                            const offset = Math.min(120, Math.max(30, absDx * 0.4));
+                            cp1x = x1 + offset;
+                            cp2x = x2 - offset;
+                        } else if (controllerPlacement === 'right') {
+                            const offset = Math.min(120, Math.max(30, absDx * 0.4));
+                            cp1x = x1 - offset;
+                            cp2x = x2 + offset;
+                        } else if (controllerPlacement === 'top') {
+                            const offset = Math.min(120, Math.max(30, absDy * 0.4));
+                            cp1y = y1 + offset;
+                            cp2y = y2 - offset;
+                        } else {
+                            const offset = Math.min(120, Math.max(30, absDy * 0.4));
+                            cp1y = y1 - offset;
+                            cp2y = y2 + offset;
+                        }
+
+                        cp1y = Math.max(minAllowedY, cp1y);
+                        cp2y = Math.max(minAllowedY, cp2y);
+
+                        paths.push({
+                            id: `wire-ch-${ch}-${stripId}`,
+                            ch,
+                            stripLabel: strip.label || `Strip ${ch}`,
+                            d: `M ${x1} ${y1} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${x2} ${y2}`,
+                            x1, y1, x2, y2
+                        });
+                    }
+                } else {
+                    const prevStrip = strip.parentStripId
+                        ? allSavedStrips.find(s => String(s.id || s.strip_id) === String(strip.parentStripId))
+                        : chStrips[idx - 1];
+
+                    const parentOutElem = getOutAnchor(prevStrip);
+                    if (parentOutElem && targetInElem) {
+                        const pRect = parentOutElem.getBoundingClientRect();
+                        const sRect = targetInElem.getBoundingClientRect();
+
+                        const x1 = pRect.left + pRect.width / 2 - containerRect.left;
+                        const y1 = pRect.top + pRect.height / 2 - containerRect.top;
+                        const x2 = sRect.left + sRect.width / 2 - containerRect.left;
+                        const y2 = sRect.top + sRect.height / 2 - containerRect.top;
+
+                        const dx = x2 - x1;
+                        const absDx = Math.abs(dx);
+
+                        const offset = Math.min(80, Math.max(20, absDx * 0.35));
+                        const cp1x = x1 + offset;
+                        let cp1y = y1;
+                        const cp2x = x2 - offset;
+                        let cp2y = y2;
+
+                        cp1y = Math.max(minAllowedY, cp1y);
+                        cp2y = Math.max(minAllowedY, cp2y);
+
+                        paths.push({
+                            id: `wire-chain-${prevStrip ? (prevStrip.id || prevStrip.strip_id) : 'prev'}-${stripId}`,
+                            ch,
+                            stripLabel: `${strip.label} (Daisy Chain)`,
+                            d: `M ${x1} ${y1} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${x2} ${y2}`,
+                            x1, y1, x2, y2
+                        });
+                    }
+                }
+            });
+        }
+
+        setWirePaths(prev => {
+            if (JSON.stringify(prev) === JSON.stringify(paths)) return prev;
+            return paths;
+        });
+    }, [allSavedStrips, channelAssignments, controllerPlacement]);
+
+    useEffect(() => {
+        if (viewMode !== '2d') return;
+        let rafId;
+        const update = () => {
+            if (rafId) cancelAnimationFrame(rafId);
+            rafId = requestAnimationFrame(() => {
+                calculateWirePaths();
+            });
+        };
+        update();
+        const timer = setTimeout(update, 300);
+        const timer2 = setTimeout(update, 800);
+        window.addEventListener('resize', update);
+        window.addEventListener('scroll', update, true);
+
+        return () => {
+            if (rafId) cancelAnimationFrame(rafId);
+            clearTimeout(timer);
+            clearTimeout(timer2);
+            window.removeEventListener('resize', update);
+            window.removeEventListener('scroll', update, true);
+        };
+    }, [viewMode, calculateWirePaths]);
 
     const locId = React.useMemo(() => {
         try {
@@ -102,15 +340,8 @@ export default function Monitoring() {
         enabled: !!locId,
     });
 
-    const { data: rawStrips, isFetching: isFetchingStrips } = useQuery({
-        queryKey: ['strips', locId],
-        queryFn: async () => {
-            const data = await apiService.getStrips(locId || 'All');
-            if (!data.success || !data.data) throw new Error("Failed to fetch strips");
-            return data.data;
-        },
-        enabled: true,
-    });
+    const rawStrips = [];
+    const isFetchingStrips = false;
 
     const [controllersData, setControllersData] = useState([...CONTROLLERS_CONFIG]);
     const [wallsData, setWallsData] = useState([...WALLS_CONFIG]);
@@ -118,7 +349,10 @@ export default function Monitoring() {
 
     useEffect(() => {
         if (fetchedControllers) {
-            setControllersData(fetchedControllers);
+            setControllersData(prev => {
+                if (JSON.stringify(prev) === JSON.stringify(fetchedControllers)) return prev;
+                return fetchedControllers;
+            });
             CONTROLLERS_CONFIG.length = 0;
             fetchedControllers.forEach(c => CONTROLLERS_CONFIG.push(c));
         }
@@ -140,7 +374,10 @@ export default function Monitoring() {
                     cupboardsCount: 4
                 };
             });
-            setWallsData(mapped);
+            setWallsData(prev => {
+                if (JSON.stringify(prev) === JSON.stringify(mapped)) return prev;
+                return mapped;
+            });
             WALLS_CONFIG.length = 0;
             mapped.forEach(w => WALLS_CONFIG.push(w));
         }
@@ -154,14 +391,26 @@ export default function Monitoring() {
 
                 let shelfLayout = [];
                 if (rawShelves && Array.isArray(rawShelves)) {
-                    const matchingShelves = rawShelves.filter(s =>
-                        String(s.shelf_cupboard_id || '').trim() === String(c.cupboard_id || '').trim() ||
-                        String(s.shelf_cupboard_id || '').trim() === String(c.cupboard_name || '').trim()
-                    );
+                    const cId = String(c.cupboard_id || c.id || '');
+                    const cName = String(c.cupboard_name || c.name || '');
+
+                    const matchingShelves = rawShelves.filter(s => {
+                        const sCupId = String(s.shelf_cupboard_id || '').trim();
+                        return sCupId !== '' && (sCupId === cId || sCupId === cName);
+                    });
+
                     if (matchingShelves.length > 0) {
                         shelfLayout = matchingShelves.map((s, idx) => {
                             const realId = (s.shelf_id !== undefined && s.shelf_id !== null) ? String(s.shelf_id) : ((s.id !== undefined && s.id !== null) ? String(s.id) : `shelf-${idx}`);
-                            
+
+                            const isAssigned = (s.shelf_status === 'True' || s.shelf_status === true || s.shelf_status === 'Active');
+                            const hasGridX = s.shelf_gridx !== undefined && s.shelf_gridx !== null && s.shelf_gridx !== '' && !isNaN(parseFloat(s.shelf_gridx));
+                            const hasGridY = s.shelf_gridy !== undefined && s.shelf_gridy !== null && s.shelf_gridy !== '' && !isNaN(parseFloat(s.shelf_gridy));
+                            const hasWidth = s.shelf_width !== undefined && s.shelf_width !== null && s.shelf_width !== '' && !isNaN(parseFloat(s.shelf_width));
+                            const hasHeight = s.shelf_height !== undefined && s.shelf_height !== null && s.shelf_height !== '' && !isNaN(parseFloat(s.shelf_height));
+
+                            const isPlaced = isAssigned;
+
                             let bins = [];
                             if (rawBins && Array.isArray(rawBins)) {
                                 const matchingBins = rawBins.filter(b => {
@@ -189,9 +438,9 @@ export default function Monitoring() {
                                         b.bin_height !== undefined && b.bin_height !== null && String(b.bin_height).trim() !== ''
                                     );
 
-                                    const isPlaced = b.placed !== false && b.bin_status !== false && String(b.bin_status).toLowerCase() !== 'false';
+                                    const isPlacedBin = b.placed !== false && b.bin_status !== false && String(b.bin_status).toLowerCase() !== 'false';
 
-                                    return isShelfMatch && hasGridAndSize && isPlaced;
+                                    return isShelfMatch && hasGridAndSize && isPlacedBin;
                                 });
 
                                 if (matchingBins.length > 0) {
@@ -199,8 +448,8 @@ export default function Monitoring() {
                                         id: String(b.bin_id || `bin-${bIdx}`),
                                         bin_id: b.bin_id,
                                         label: b.bin_name || `Bin ${bIdx + 1}`,
-                                        x: parseFloat(b.bin_gridx) || 0,
-                                        y: parseFloat(b.bin_gridy) || 0,
+                                        x: parseFloat(b.bin_gridx) || 10,
+                                        y: parseFloat(b.bin_gridy) || 10,
                                         width: parseFloat(b.bin_width) || 80,
                                         height: parseFloat(b.bin_height) || 48,
                                         placed: true,
@@ -241,14 +490,15 @@ export default function Monitoring() {
                                 id: realId,
                                 shelf_id: s.shelf_id || s.id || realId,
                                 label: s.shelf_name || `Shelf ${idx + 1}`,
-                                x: parseFloat(s.shelf_gridx) || 20,
-                                y: parseFloat(s.shelf_gridy) || (20 + idx * 56),
-                                width: parseFloat(s.shelf_width) || 560,
-                                height: parseFloat(s.shelf_height) || 48,
+                                x: hasGridX ? parseFloat(s.shelf_gridx) : 20,
+                                y: hasGridY ? parseFloat(s.shelf_gridy) : (20 + idx * 56),
+                                width: hasWidth ? parseFloat(s.shelf_width) : 560,
+                                height: hasHeight ? parseFloat(s.shelf_height) : 48,
+                                placed: true,
                                 shelf_order: s.shelf_order,
-                                shelf_phr_id: s.shelf_phr_id,
-                                shelf_org_id: s.shelf_org_id,
-                                shelf_branch_id: s.shelf_branch_id,
+                                shelf_phr_id: s.shelf_phr_id || s.phr_id || "",
+                                shelf_org_id: s.shelf_org_id || "skshospital",
+                                shelf_branch_id: s.shelf_branch_id || "Salem",
                                 shelf_status: s.shelf_status,
                                 bins: bins
                             };
@@ -339,7 +589,22 @@ export default function Monitoring() {
                     }
                 }
 
-                if (ledStrips.length === 0) {
+                try {
+                    const localStripsStr = localStorage.getItem('localLedStrips');
+                    if (localStripsStr) {
+                        const parsedStrips = JSON.parse(localStripsStr);
+                        if (Array.isArray(parsedStrips)) {
+                            const cId = String(c.cupboard_id || c.id || '');
+                            const cName = String(c.cupboard_name || c.name || '');
+                            ledStrips = parsedStrips.filter(s => {
+                                const sCupId = String(s.cupboardId || s.cupboard_id || '').trim();
+                                return sCupId !== '' && (sCupId === cId || sCupId === cName);
+                            });
+                        }
+                    }
+                } catch (e) { }
+
+                if (!ledStrips || ledStrips.length === 0) {
                     try {
                         const layouts = JSON.parse(localStorage.getItem('cupboardLayouts') || '{}');
                         if (layouts[c.cupboard_id] && layouts[c.cupboard_id].ledStrips) {
@@ -380,7 +645,11 @@ export default function Monitoring() {
 
                 return cupboardObj;
             });
-            setCupboardsData(mapped);
+
+            setCupboardsData(prev => {
+                if (JSON.stringify(prev) === JSON.stringify(mapped)) return prev;
+                return mapped;
+            });
             CUPBOARDS_CONFIG.length = 0;
             mapped.forEach(c => CUPBOARDS_CONFIG.push(c));
         }
@@ -457,6 +726,17 @@ export default function Monitoring() {
     const firstWallName = firstController?.walls?.[0]?.name || '';
     const [selectedWallName, setSelectedWallName] = useState(firstWallName);
 
+    const [selectedWallNames, setSelectedWallNames] = useState(() => {
+        try {
+            const saved = localStorage.getItem('monitoring_selectedWallNames');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+            }
+        } catch (e) { }
+        return firstWallName ? [firstWallName] : [];
+    });
+
     const [expandedControllers, setExpandedControllers] = useState(() => {
         return firstController?.name ? new Set([firstController.name]) : new Set();
     });
@@ -471,8 +751,40 @@ export default function Monitoring() {
 
     const selectedWall = selectedController.walls?.find(w => w.name === selectedWallName) || selectedController.walls?.[0] || { cupboards: [] };
 
-    const cupboards = selectedWall.cupboards || [];
+    const toggleWallSelection = useCallback((wallName) => {
+        setSelectedWallNames(prev => {
+            const isChecked = prev.includes(wallName);
+            const updated = isChecked ? prev.filter(w => w !== wallName) : [...prev, wallName];
+            try { localStorage.setItem('monitoring_selectedWallNames', JSON.stringify(updated)); } catch (e) { }
+            return updated;
+        });
+    }, []);
+
+    const cupboards = useMemo(() => {
+        if (!selectedController || !selectedController.cupboards) return [];
+
+        if (selectedWallNames && selectedWallNames.length > 0) {
+            const filtered = selectedController.cupboards.filter(c =>
+                selectedWallNames.includes(c.wall) ||
+                selectedWallNames.includes(c.wall_id) ||
+                selectedWallNames.includes(c.cupboard_wall_id)
+            );
+            if (filtered.length > 0) return filtered;
+        }
+
+        return selectedController.cupboards || [];
+    }, [selectedController, selectedWallNames]);
+
     const selectedCupboard = cupboards[activeCupboardIdx] || null;
+
+    useEffect(() => {
+        if (viewMode === '2d') {
+            const timer = setTimeout(() => {
+                calculateWirePaths();
+            }, 100);
+            return () => clearTimeout(timer);
+        }
+    }, [cupboards, viewMode, calculateWirePaths]);
 
     const eanCountFor = useCallback((cbId) => getCupboardAssignments(cbId).length, []);
 
@@ -587,15 +899,161 @@ export default function Monitoring() {
                         </Suspense>
                     ) : (
                         cupboards.length > 0 ? (
-                            <Cupboard2D
-                                cupboards={cupboards}
-                                controllerName={selectedController.name}
-                                selectedCupboard={selectedCupboard}
-                                activeCupboardIdx={activeCupboardIdx}
-                                onSelectCupboard={setActiveCupboardIdx}
-                                layoutMode={layoutMode}
-                                key={selectedController.name}
-                            />
+                            <div
+                                ref={containerRef}
+                                className={cn(
+                                    "flex-1 relative overflow-hidden bg-ot-surface-bottom flex w-full h-full p-2 select-none",
+                                    controllerPlacement === 'left' && "flex-row",
+                                    controllerPlacement === 'right' && "flex-row-reverse",
+                                    controllerPlacement === 'top' && "flex-col",
+                                    controllerPlacement === 'bottom' && "flex-col-reverse"
+                                )}
+                            >
+                                {/* SVG Animated Wires */}
+                                <svg className="absolute inset-0 pointer-events-none z-20 w-full h-full overflow-hidden" style={{ overflow: 'hidden' }}>
+                                    <style>{`
+                                        @keyframes wireFlowMon {
+                                            from { stroke-dashoffset: 24; }
+                                            to { stroke-dashoffset: 0; }
+                                        }
+                                        .animate-wire-flow-mon {
+                                            animation: wireFlowMon 1s linear infinite;
+                                        }
+                                    `}</style>
+                                    <defs>
+                                        <filter id="glowMon" x="-20%" y="-20%" width="140%" height="140%">
+                                            <feGaussianBlur stdDeviation="3" result="blur" />
+                                            <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                                        </filter>
+                                    </defs>
+                                    {wirePaths.map(w => {
+                                        const chNum = Number(w.ch) || 1;
+                                        const palette = CHANNEL_PALETTES[(chNum - 1) % CHANNEL_PALETTES.length] || CHANNEL_PALETTES[0];
+                                        return (
+                                            <g key={w.id || w.ch}>
+                                                <path d={w.d} fill="none" stroke={palette.hex} strokeWidth="5" strokeOpacity="0.4" filter="url(#glowMon)" />
+                                                <path d={w.d} fill="none" stroke={palette.hex} strokeWidth="2.5" strokeDasharray="8 4" className="animate-wire-flow-mon" />
+                                                <circle cx={w.x1} cy={w.y1} r="4.5" fill={palette.hex} stroke="#ffffff" strokeWidth="1.5" />
+                                                <circle cx={w.x2} cy={w.y2} r="4.5" fill={palette.hex} stroke="#ffffff" strokeWidth="1.5" />
+                                            </g>
+                                        );
+                                    })}
+                                </svg>
+
+                                {/* 16-Channel High-Fidelity PCB Controller Board */}
+                                <div className={cn(
+                                    "z-30 p-3 shrink-0 flex flex-col justify-between border-2 border-emerald-500/40 bg-gradient-to-b from-[#092e20] via-[#041d13] to-[#010e08] shadow-[inset_0_2px_4px_rgba(255,255,255,0.15),_inset_0_-2px_4px_rgba(0,0,0,0.8),_0_12px_35px_rgba(0,0,0,0.8),_0_0_20px_rgba(16,185,129,0.25)] transition-all duration-300 relative overflow-hidden rounded-2xl my-2 ml-2",
+                                    (controllerPlacement === 'left' || controllerPlacement === 'right') ? "w-56 h-[calc(100%-16px)]" : "w-full h-40 border-b"
+                                )}>
+                                    {/* 3D Screws */}
+                                    <div className="absolute top-2 left-2 w-3 h-3 rounded-full bg-gradient-to-br from-amber-200 via-amber-400 to-amber-700 border border-amber-500/80 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9),_0_1px_3px_rgba(0,0,0,0.8)] flex items-center justify-center pointer-events-none">
+                                        <div className="w-1.5 h-0.5 bg-amber-950 rounded-full rotate-45" />
+                                    </div>
+                                    <div className="absolute top-2 right-2 w-3 h-3 rounded-full bg-gradient-to-br from-amber-200 via-amber-400 to-amber-700 border border-amber-500/80 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9),_0_1px_3px_rgba(0,0,0,0.8)] flex items-center justify-center pointer-events-none">
+                                        <div className="w-1.5 h-0.5 bg-amber-950 rounded-full -rotate-45" />
+                                    </div>
+                                    <div className="absolute bottom-2 left-2 w-3 h-3 rounded-full bg-gradient-to-br from-amber-200 via-amber-400 to-amber-700 border border-amber-500/80 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9),_0_1px_3px_rgba(0,0,0,0.8)] flex items-center justify-center pointer-events-none">
+                                        <div className="w-1.5 h-0.5 bg-amber-950 rounded-full -rotate-45" />
+                                    </div>
+                                    <div className="absolute bottom-2 right-2 w-3 h-3 rounded-full bg-gradient-to-br from-amber-200 via-amber-400 to-amber-700 border border-amber-500/80 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9),_0_1px_3px_rgba(0,0,0,0.8)] flex items-center justify-center pointer-events-none">
+                                        <div className="w-1.5 h-0.5 bg-amber-950 rounded-full rotate-45" />
+                                    </div>
+
+                                    {/* PCB Etch Background */}
+                                    <div className="absolute inset-0 opacity-15 pointer-events-none bg-[radial-gradient(#10b981_1px,transparent_1px)] [background-size:8px_8px]" />
+
+                                    {/* PCB Header Info */}
+                                    <div className="flex items-center justify-between border-b border-emerald-500/30 pb-2 pt-1 px-3 mb-1.5 relative z-10">
+                                        <div className="flex items-center gap-1.5">
+                                            <div className="w-6 h-6 rounded-md bg-gradient-to-b from-emerald-500/30 to-emerald-900/40 border border-emerald-400/50 flex items-center justify-center text-emerald-300 shadow-[0_2px_4px_rgba(0,0,0,0.5)]">
+                                                <Cpu className="w-3.5 h-3.5" />
+                                            </div>
+                                            <div>
+                                                <h4 className="text-[11px] font-black text-emerald-300 tracking-wider uppercase font-mono leading-tight drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">16-CH PCB MODULE</h4>
+                                                <div className="text-[9px] text-emerald-400/80 font-mono font-medium">
+                                                    {selectedController ? (selectedController.ip || selectedController.name) : '192.168.1.100'}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                                            <span className="text-[8px] font-mono font-bold text-emerald-400 uppercase tracking-widest">LIVE</span>
+                                        </div>
+                                    </div>
+
+                                    {/* 16 Channel Sockets Grid */}
+                                    <div className={cn(
+                                        "grid gap-1.5 overflow-y-auto pr-1 flex-1 relative z-10",
+                                        (controllerPlacement === 'left' || controllerPlacement === 'right') ? "grid-cols-1" : "grid-cols-8"
+                                    )}>
+                                        {Array.from({ length: 16 }, (_, i) => i + 1).map((chNum) => {
+                                            const assigned = allSavedStrips.find(s => {
+                                                const sCh = Number(s.channel) || (s.channel ? parseInt(String(s.channel).replace(/\D/g, ''), 10) : null);
+                                                return sCh === chNum;
+                                            }) || channelAssignments[chNum];
+
+                                            const isConnected = !!assigned;
+                                            const palette = CHANNEL_PALETTES[(chNum - 1) % CHANNEL_PALETTES.length];
+
+                                            return (
+                                                <div
+                                                    key={chNum}
+                                                    id={`monitoring-port-socket-${chNum}`}
+                                                    className={cn(
+                                                        "group relative flex items-center justify-between px-2 py-1.5 rounded-xl transition-all border select-none",
+                                                        isConnected
+                                                            ? `bg-gradient-to-r ${palette.bgGrad} ${palette.border} ${palette.glow}`
+                                                            : "bg-gradient-to-b from-[#0a1017] via-[#04070d] to-[#09111b] border-slate-700/80 text-slate-400"
+                                                    )}
+                                                >
+                                                    <div className="flex items-center gap-1.5 font-mono text-[10px] font-bold">
+                                                        <span className={cn(
+                                                            "w-2.5 h-2.5 rounded-full shrink-0 border border-black/40",
+                                                            isConnected ? `${palette.dot} animate-pulse` : "bg-slate-700"
+                                                        )} />
+                                                        <span className={isConnected ? `${palette.text} font-black drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]` : "text-slate-300"}>
+                                                            CH-{String(chNum).padStart(2, '0')}
+                                                        </span>
+                                                    </div>
+                                                    <div className={cn(
+                                                        "text-[9px] font-mono opacity-90 truncate max-w-[55px] text-right font-semibold",
+                                                        isConnected ? palette.text : "text-slate-500"
+                                                    )}>
+                                                        {assigned ? (assigned.label || `Strip ${chNum}`) : 'Idle'}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {/* Screw Terminal Footer */}
+                                    <div className="pt-2 mt-1 border-t border-emerald-500/30 flex items-center justify-between text-[9px] text-emerald-400/80 font-mono px-2 relative z-10">
+                                        <div className="flex items-center gap-1">
+                                            <span className="px-1.5 py-0.5 rounded-md bg-gradient-to-b from-emerald-900/80 to-emerald-950 border border-emerald-500/40 text-[8px] font-bold text-emerald-300 shadow-[inset_0_1px_2px_rgba(0,0,0,0.6)]">
+                                                GND | VCC | DATA
+                                            </span>
+                                        </div>
+                                        <span className="text-emerald-300 font-bold text-[9px] drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+                                            {allSavedStrips.length}/16 Active
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Cupboard 2D Stage */}
+                                <div className="flex-1 p-4 overflow-auto flex flex-col justify-center items-center relative w-full h-full">
+                                    <Cupboard2D
+                                        cupboards={cupboards}
+                                        controllerName={selectedController.name}
+                                        selectedCupboard={selectedCupboard}
+                                        activeCupboardIdx={activeCupboardIdx}
+                                        onSelectCupboard={setActiveCupboardIdx}
+                                        layoutMode={layoutMode}
+                                        key={selectedController.name}
+                                        hideInternalWires={true}
+                                        onZoomChange={() => calculateWirePaths()}
+                                    />
+                                </div>
+                            </div>
                         ) : (
                             <div className="flex items-center justify-center h-full text-muted-foreground">
                                 No cupboards assigned to this controller.
@@ -657,7 +1115,6 @@ export default function Monitoring() {
                                                     )} />
                                                 </Button>
                                             </CollapsibleTrigger>
-
                                             <CollapsibleContent>
                                                 {controller.walls.length > 0 && (
                                                     <div className="mt-2 mb-2 space-y-2 pl-4 pr-3">
@@ -675,13 +1132,22 @@ export default function Monitoring() {
                                                                         <Button
                                                                             variant="ghost"
                                                                             className={cn(
-                                                                                "w-full h-auto flex items-center justify-between text-xs font-semibold px-3 py-1.5 rounded-md transition-colors",
-                                                                                isSelectedWall
+                                                                                "w-full h-auto flex items-center justify-between text-xs font-semibold px-3 py-1.5 rounded-md transition-colors gap-2",
+                                                                                selectedWallNames.includes(wall.name)
                                                                                     ? 'bg-ot-action/20 text-ot-action hover:bg-ot-action/25 hover:text-ot-action'
                                                                                     : 'bg-ot-surface-top/50 text-white/70 hover:bg-ot-surface-top hover:text-white'
                                                                             )}
                                                                         >
-                                                                            <span className="truncate flex-1 text-left">{wall.name}</span>
+                                                                            <div className="flex items-center gap-2 flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
+                                                                                <input
+                                                                                    type="checkbox"
+                                                                                    id={`chk-wall-${wall.id}`}
+                                                                                    checked={selectedWallNames.includes(wall.name)}
+                                                                                    onChange={() => toggleWallSelection(wall.name)}
+                                                                                    className="w-3.5 h-3.5 rounded border-ot-border text-ot-action focus:ring-ot-action/50 accent-[#22d3ee] cursor-pointer shrink-0"
+                                                                                />
+                                                                                <span className="truncate flex-1 text-left">{wall.name}</span>
+                                                                            </div>
                                                                             <ChevronRight className={cn('w-3 h-3 transition-transform shrink-0', isWallExpanded ? (isSelectedWall ? 'rotate-90 text-ot-action' : 'rotate-90 text-white') : 'text-muted-foreground')} />
                                                                         </Button>
                                                                     </CollapsibleTrigger>
@@ -738,9 +1204,9 @@ export default function Monitoring() {
                         </div>
                     </CardContent>
                 </Card>
-                </>
-                )}
-            </div>
+            </>
+            )}
         </div>
+    </div>
     );
 }

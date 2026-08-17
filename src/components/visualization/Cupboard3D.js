@@ -148,7 +148,7 @@ function LedStrip3D({ strip, stripIdx = 0, canvasWidth, canvasHeight, upperHeigh
         }
     } catch (e) { }
 
-    const count = strip.ledCount || savedLedCount;
+    const count = 6;
     const colors = (strip.colors && strip.colors.length > 0) ? strip.colors : savedColors;
     const colorTheme = getStripColor(stripIdx);
 

@@ -28,6 +28,8 @@ export default function Settings() {
         return localStorage.getItem('settings_active_tab') || 'controllers';
     });
 
+    const [isLedDesignerActive, setIsLedDesignerActive] = useState(false);
+
     const handleTabChange = (tabId) => {
         setActiveTab(tabId);
         localStorage.setItem('settings_active_tab', tabId);
@@ -36,6 +38,9 @@ export default function Settings() {
         setSelectedCupboardForShelves(null);
         setSelectedShelfForBins(null);
         setSelectedCupboardForLeds(null);
+        if (tabId === 'leds') {
+            setIsLedDesignerActive(false);
+        }
     };
 
     const [controllersData, setControllersData] = useState([]);
@@ -118,20 +123,17 @@ export default function Settings() {
         enabled: !!locId && shouldFetchBins,
     });
 
-    const shouldFetchStrips = ['leds'].includes(activeTab);
-    const { data: rawStrips, isFetching: isFetchingStrips, error: errorStrips, refetch: refetchStrips } = useQuery({
-        queryKey: ['strips', locId],
-        queryFn: async () => {
-            const data = await apiService.getStrips(locId || 'All');
-            if (!data.success || !data.data) throw new Error("Failed to fetch strips");
-            return data.data;
-        },
-        enabled: shouldFetchStrips,
-    });
+    const rawStrips = [];
+    const isFetchingStrips = false;
+    const errorStrips = null;
+    const refetchStrips = () => {};
 
     useEffect(() => {
         if (fetchedControllers) {
-            syncControllers(fetchedControllers);
+            setControllersData(prev => {
+                if (JSON.stringify(prev) === JSON.stringify(fetchedControllers)) return prev;
+                return fetchedControllers;
+            });
         }
     }, [fetchedControllers]);
 
@@ -151,7 +153,10 @@ export default function Settings() {
                     cupboardsCount: 4
                 };
             });
-            syncWalls(mapped);
+            setWallsData(prev => {
+                if (JSON.stringify(prev) === JSON.stringify(mapped)) return prev;
+                return mapped;
+            });
         }
     }, [rawWalls, fetchedControllers]);
 
@@ -168,25 +173,18 @@ export default function Settings() {
 
                     const matchingShelves = rawShelves.filter(s => {
                         const sCupId = String(s.shelf_cupboard_id || '').trim();
-                        // Matches this cupboard
-                        if (sCupId && (sCupId === cId || sCupId === cName)) return true;
-                        // Unassigned shelf from API (available for placement)
-                        if (!sCupId || sCupId === '0' || sCupId === 'null') return true;
-                        return false;
+                        return sCupId !== '' && (sCupId === cId || sCupId === cName);
                     });
 
                     if (matchingShelves.length > 0) {
                         shelfLayout = matchingShelves.map((s, idx) => {
                             const realId = (s.shelf_id !== undefined && s.shelf_id !== null) ? String(s.shelf_id) : ((s.id !== undefined && s.id !== null) ? String(s.id) : `shelf-${idx}`);
                             
-                            const sCupId = String(s.shelf_cupboard_id || '').trim();
-                            const isAssigned = sCupId !== '' && (sCupId === cId || sCupId === cName);
+                            const isAssigned = (s.shelf_status === 'True' || s.shelf_status === true || s.shelf_status === 'Active');
                             const hasGridX = s.shelf_gridx !== undefined && s.shelf_gridx !== null && s.shelf_gridx !== '' && !isNaN(parseFloat(s.shelf_gridx));
                             const hasGridY = s.shelf_gridy !== undefined && s.shelf_gridy !== null && s.shelf_gridy !== '' && !isNaN(parseFloat(s.shelf_gridy));
                             const hasWidth = s.shelf_width !== undefined && s.shelf_width !== null && s.shelf_width !== '' && !isNaN(parseFloat(s.shelf_width));
                             const hasHeight = s.shelf_height !== undefined && s.shelf_height !== null && s.shelf_height !== '' && !isNaN(parseFloat(s.shelf_height));
-
-                            const isPlaced = isAssigned;
 
                             let bins = [];
                             if (rawBins && Array.isArray(rawBins)) {
@@ -271,7 +269,7 @@ export default function Settings() {
                                 y: hasGridY ? parseFloat(s.shelf_gridy) : (20 + idx * 56),
                                 width: hasWidth ? parseFloat(s.shelf_width) : 560,
                                 height: hasHeight ? parseFloat(s.shelf_height) : 48,
-                                placed: isPlaced,
+                                placed: true,
                                 shelf_order: s.shelf_order,
                                 shelf_phr_id: s.shelf_phr_id || s.phr_id || "",
                                 shelf_org_id: s.shelf_org_id || "skshospital",
@@ -396,7 +394,10 @@ export default function Settings() {
                 return cupboardObj;
             });
 
-            syncCupboards(mapped);
+            setCupboardsData(prev => {
+                if (JSON.stringify(prev) === JSON.stringify(mapped)) return prev;
+                return mapped;
+            });
         }
     }, [rawCupboards, rawWalls, fetchedControllers, rawShelves, rawBins, rawStrips]);
 
@@ -547,7 +548,7 @@ export default function Settings() {
     const isCupboardDesignerMode = activeTab === 'cupboards' && selectedWallForCupboards !== null;
     const isShelfDesignerMode = activeTab === 'shelves' && selectedCupboardForShelves !== null;
     const isBinDesignerMode = activeTab === 'bins' && selectedShelfForBins !== null;
-    const isLedDesignerMode = activeTab === 'leds' && selectedCupboardForLeds !== null;
+    const isLedDesignerMode = activeTab === 'leds' && isLedDesignerActive;
     const isInDesignerMode = isWallDesignerMode || isCupboardDesignerMode || isShelfDesignerMode || isBinDesignerMode || isLedDesignerMode;
 
     // Close main nav sidebar when entering designer, restore on exit
@@ -703,6 +704,9 @@ export default function Settings() {
                             onFilterControllerChange={handleLedFilterControllerChange}
                             filterWall={ledFilterWall}
                             onFilterWallChange={handleLedFilterWallChange}
+                            onBack={() => setIsLedDesignerActive(false)}
+                            onOpenDesigner={() => setIsLedDesignerActive(true)}
+                            isDesignerActive={isLedDesignerActive}
                             onGoToBins={(targetCupboard) => {
                                 handleTabChange('bins');
                                 if (targetCupboard) {
