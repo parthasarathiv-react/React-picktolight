@@ -13,6 +13,7 @@ import {
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from 'components/ui/select';
 import { apiService } from 'lib/apiService';
 import { toast } from 'sonner';
+import { ConfirmDialog } from 'components/ui/ConfirmDialog';
 import Cupboard2D from 'components/visualization/Cupboard2D';
 
 const CHANNEL_PALETTES = [
@@ -102,24 +103,9 @@ export default function LedStripsTab({
     const [showPositionDialog, setShowPositionDialog] = useState(false);
     const [showChannelDialog, setShowChannelDialog] = useState(false);
 
-    // ── Local Persistence State for LED Strips & Channels ────────────────────
-    const [localLedStrips, setLocalLedStrips] = useState(() => {
-        try {
-            const saved = localStorage.getItem('localLedStrips');
-            return saved ? JSON.parse(saved) : [];
-        } catch (e) {
-            return [];
-        }
-    });
-
-    const [localChannelAssignments, setLocalChannelAssignments] = useState(() => {
-        try {
-            const saved = localStorage.getItem('localChannelAssignments');
-            return saved ? JSON.parse(saved) : {};
-        } catch (e) {
-            return {};
-        }
-    });
+    // ── In-Memory State for LED Strips & Channels ────────────────────────────
+    const [localLedStrips, setLocalLedStrips] = useState([]);
+    const [localChannelAssignments, setLocalChannelAssignments] = useState({});
 
     // ── Add Strip & Bin Assignment Dialog States ──────────────────────────────
     const [showAddStripDialog, setShowAddStripDialog] = useState(false);
@@ -188,6 +174,124 @@ export default function LedStripsTab({
         };
         fetchChannels();
     }, [selectedController?.id, selectedController?.ctl_id]);
+
+    // Fetch and match getStrips + getChannelStrips data dynamically
+    const [isLoadingStripsData, setIsLoadingStripsData] = useState(false);
+
+    useEffect(() => {
+        const fetchAndMatchStripsAndChannels = async () => {
+            const ctrlId = selectedController?.id || selectedController?.ctl_id;
+            if (!ctrlId) return;
+
+            setIsLoadingStripsData(true);
+            let locId = 'All';
+            try {
+                const selectedLocationStr = localStorage.getItem('selectedLocation');
+                if (selectedLocationStr) {
+                    const loc = JSON.parse(selectedLocationStr);
+                    locId = loc.pick_location_id || loc.id || 'All';
+                }
+            } catch (e) { }
+
+            try {
+                // 1. Get all strips from API
+                const stripsRes = await apiService.getStrips(locId);
+                const fetchedStrips = (stripsRes && stripsRes.success && Array.isArray(stripsRes.data))
+                    ? stripsRes.data
+                    : (Array.isArray(stripsRes?.data) ? stripsRes.data : (Array.isArray(stripsRes) ? stripsRes : []));
+
+                // 2. Fetch channel strip assignments for channels
+                const channelMap = {};
+                const loadedLocalStrips = [];
+
+                if (Array.isArray(apiChannels) && apiChannels.length > 0) {
+                    for (let idx = 0; idx < apiChannels.length; idx++) {
+                        const ch = apiChannels[idx];
+                        const chNum = idx + 1;
+                        const channelId = ch.channel_id || ch.id || chNum;
+
+                        try {
+                            const csRes = await apiService.getChannelStrips(channelId);
+                            const csList = (csRes && csRes.success && Array.isArray(csRes.data))
+                                ? csRes.data
+                                : (Array.isArray(csRes?.data) ? csRes.data : (Array.isArray(csRes) ? csRes : []));
+
+                            if (csList && csList.length > 0) {
+                                csList.forEach(csItem => {
+                                    const csStripId = String(csItem.strip_id || csItem.id || '');
+                                    // Match with strip from getStrips by strip_id
+                                    const matchedStrip = fetchedStrips.find(s => String(s.strip_id || s.id) === csStripId) || {
+                                        id: csStripId,
+                                        strip_id: csStripId,
+                                        strip_name: `Strip ${csStripId}`,
+                                        strip_gridx: csItem.x,
+                                        strip_gridy: csItem.y
+                                    };
+
+                                    const formattedStrip = {
+                                        id: String(matchedStrip.strip_id || matchedStrip.id || csStripId),
+                                        strip_id: String(matchedStrip.strip_id || matchedStrip.id || csStripId),
+                                        label: matchedStrip.strip_name || matchedStrip.label || `Strip CH-${String(chNum).padStart(2, '0')}`,
+                                        channel: chNum,
+                                        channelId: channelId,
+                                        x: parseFloat(matchedStrip.strip_gridx ?? csItem.x ?? 40),
+                                        y: parseFloat(matchedStrip.strip_gridy ?? csItem.y ?? 40),
+                                        width: parseFloat(matchedStrip.strip_width ?? 80),
+                                        height: parseFloat(matchedStrip.strip_height ?? 22),
+                                        cupboardId: String(matchedStrip.strip_cupboard_id || '1'),
+                                        bins: matchedStrip.bin_list || matchedStrip.bins || [],
+                                        linkedBins: matchedStrip.bin_list || matchedStrip.linkedBins || []
+                                    };
+
+                                    channelMap[chNum] = formattedStrip;
+                                    loadedLocalStrips.push(formattedStrip);
+                                });
+                            }
+                        } catch (err) {
+                            console.warn(`Could not fetch channelstrips for channel ${channelId}:`, err);
+                        }
+                    }
+                }
+
+                // Add any remaining unassigned fetchedStrips
+                fetchedStrips.forEach((s, idx) => {
+                    const sId = String(s.strip_id || s.id || `strip-${idx}`);
+                    const alreadyLoaded = loadedLocalStrips.some(ls => String(ls.id || ls.strip_id) === sId);
+                    if (!alreadyLoaded) {
+                        const formatted = {
+                            id: sId,
+                            strip_id: sId,
+                            label: s.strip_name || s.label || `Strip ${idx + 1}`,
+                            channel: Number(s.strip_channel || s.channel || (idx % 16) + 1),
+                            x: parseFloat(s.strip_gridx ?? 40),
+                            y: parseFloat(s.strip_gridy ?? (40 + idx * 35)),
+                            width: parseFloat(s.strip_width ?? 80),
+                            height: parseFloat(s.strip_height ?? 22),
+                            cupboardId: String(s.strip_cupboard_id || '1'),
+                            bins: s.bin_list || s.bins || [],
+                            linkedBins: s.bin_list || s.linkedBins || []
+                        };
+                        loadedLocalStrips.push(formatted);
+                    }
+                });
+
+                if (Object.keys(channelMap).length > 0) {
+                    setChannelAssignments(channelMap);
+                    setLocalChannelAssignments(channelMap);
+                }
+
+                if (loadedLocalStrips.length > 0) {
+                    setLocalLedStrips(loadedLocalStrips);
+                }
+            } catch (err) {
+                console.error("Error matching getStrips & getChannelStrips:", err);
+            } finally {
+                setIsLoadingStripsData(false);
+            }
+        };
+
+        fetchAndMatchStripsAndChannels();
+    }, [selectedController?.id, selectedController?.ctl_id, apiChannels]);
 
     // Computed list of channels to render exclusively from API getChannels data
     const channelsToRender = React.useMemo(() => {
@@ -450,11 +554,7 @@ export default function LedStripsTab({
 
     // ── Draggable Strip Handlers ──────────────────────────────────────────────
     const handleStripMove = React.useCallback((stripId, newX, newY) => {
-        setLocalLedStrips(prev => {
-            const next = prev.map(s => (s.id === stripId || s.strip_id === stripId) ? { ...s, x: newX, y: newY } : s);
-            localStorage.setItem('localLedStrips', JSON.stringify(next));
-            return next;
-        });
+        setLocalLedStrips(prev => prev.map(s => (s.id === stripId || s.strip_id === stripId) ? { ...s, x: newX, y: newY } : s));
     }, []);
 
     const handleCreateStrip = () => {
@@ -479,6 +579,9 @@ export default function LedStripsTab({
         const cId = String(targetCupboard?.id || targetCupboard?.cupboard_id || '1');
         const cName = targetCupboard?.name || 'Cupboard';
 
+        const targetChannelObj = channelsToRender.find(c => c.chNum === assignedChannel);
+        const selectedChannelId = targetChannelObj ? (targetChannelObj.channelId || targetChannelObj.id) : null;
+
         const stripId = `local-strip-${Date.now()}`;
         const label = newStripName.trim() || (addStripMode === 'daisy_chain' ? `${parentStrip?.label || 'Strip'} Ext` : `Strip CH-${String(assignedChannel).padStart(2, '0')}`);
 
@@ -491,6 +594,8 @@ export default function LedStripsTab({
             width: 80,
             height: 22,
             channel: assignedChannel,
+            channelId: selectedChannelId,
+            channel_id: selectedChannelId,
             parentStripId: addStripMode === 'daisy_chain' ? (parentStrip.id || parentStrip.strip_id) : null,
             cupboardId: cId,
             cupboardName: cName,
@@ -500,7 +605,6 @@ export default function LedStripsTab({
 
         const updatedStrips = [...localLedStrips, newStrip];
         setLocalLedStrips(updatedStrips);
-        localStorage.setItem('localLedStrips', JSON.stringify(updatedStrips));
 
         toast.success(`Assigned ${label} to CH-${String(selectedAddChannel).padStart(2, '0')}!`, {
             description: `Target: ${cName}. Drag on cupboard to position.`
@@ -517,14 +621,46 @@ export default function LedStripsTab({
         setShowAssignBinsDialog(true);
     };
 
-    const handleDeleteStrip = (strip) => {
+    const [stripToDelete, setStripToDelete] = useState(null);
+    const [stripDeleteDialogOpen, setStripDeleteDialogOpen] = useState(false);
+    const [isDeletingStrip, setIsDeletingStrip] = useState(false);
+
+    const handlePromptDeleteStrip = (strip) => {
+        setStripToDelete(strip);
+        setStripDeleteDialogOpen(true);
+    };
+
+    const confirmDeleteStrip = async () => {
+        if (!stripToDelete) return;
+        setIsDeletingStrip(true);
+        try {
+            await handleDeleteStrip(stripToDelete);
+            setStripDeleteDialogOpen(false);
+            setStripToDelete(null);
+        } finally {
+            setIsDeletingStrip(false);
+        }
+    };
+
+    const handleDeleteStrip = async (strip) => {
         if (!strip) return;
-        const targetId = strip.id || strip.strip_id;
-        setLocalLedStrips(prev => {
-            const updated = prev.filter(s => String(s.id || s.strip_id) !== String(targetId));
-            try { localStorage.setItem('localLedStrips', JSON.stringify(updated)); } catch (e) { }
-            return updated;
-        });
+        const targetId = strip.strip_id || strip.id;
+
+        if (targetId && !String(targetId).startsWith('local-') && !String(targetId).startsWith('sample-')) {
+            const toastId = toast.loading(`Deleting ${strip.label || 'LED Strip'} via API...`);
+            try {
+                await apiService.deleteStrip(targetId);
+                toast.success(`Strip "${strip.label || 'LED Strip'}" deleted successfully from API`, { id: toastId });
+            } catch (err) {
+                console.error("Error deleting strip via API:", err);
+                toast.error(`Failed to delete strip: ${err.message}`, { id: toastId });
+                return;
+            }
+        } else {
+            toast.success(`Deleted ${strip.label || 'LED Strip'}`);
+        }
+
+        setLocalLedStrips(prev => prev.filter(s => String(s.id || s.strip_id) !== String(targetId)));
         setLocalChannelAssignments(prev => {
             const updated = { ...prev };
             Object.keys(updated).forEach(ch => {
@@ -532,10 +668,8 @@ export default function LedStripsTab({
                     delete updated[ch];
                 }
             });
-            try { localStorage.setItem('localChannelAssignments', JSON.stringify(updated)); } catch (e) { }
             return updated;
         });
-        toast.success(`Deleted ${strip.label || 'LED Strip'}`);
         setShowAssignBinsDialog(false);
         if (refetchStrips) refetchStrips();
     };
@@ -544,21 +678,20 @@ export default function LedStripsTab({
         if (!activeStripForBins) return;
         const targetId = activeStripForBins.id || activeStripForBins.strip_id;
         const chNum = Number(channelNumStr);
-        setLocalLedStrips(prev => {
-            const updated = prev.map(s => String(s.id || s.strip_id) === String(targetId) ? { ...s, channel: chNum } : s);
-            try { localStorage.setItem('localLedStrips', JSON.stringify(updated)); } catch (e) { }
-            return updated;
-        });
+        const targetChannelObj = channelsToRender.find(c => c.chNum === chNum);
+        const targetChannelId = targetChannelObj ? (targetChannelObj.channelId || targetChannelObj.id) : null;
+
+        setLocalLedStrips(prev => prev.map(s => String(s.id || s.strip_id) === String(targetId) ? { ...s, channel: chNum, channelId: targetChannelId, channel_id: targetChannelId } : s));
         if (chNum >= 1 && chNum <= 16) {
+            const updatedStrip = { ...activeStripForBins, channel: chNum, channelId: targetChannelId, channel_id: targetChannelId };
             setChannelAssignments(prev => ({
                 ...prev,
-                [chNum]: activeStripForBins
+                [chNum]: updatedStrip
             }));
-            setLocalChannelAssignments(prev => {
-                const next = { ...prev, [chNum]: activeStripForBins };
-                try { localStorage.setItem('localChannelAssignments', JSON.stringify(next)); } catch (e) { }
-                return next;
-            });
+            setLocalChannelAssignments(prev => ({
+                ...prev,
+                [chNum]: updatedStrip
+            }));
         }
         toast.success(`Reassigned strip to CH-${String(chNum).padStart(2, '0')}`);
     };
@@ -566,28 +699,7 @@ export default function LedStripsTab({
     const handleSaveBinsForStrip = () => {
         if (!activeStripForBins) return;
         const stripId = activeStripForBins.id || activeStripForBins.strip_id;
-        setLocalLedStrips(prev => {
-            const next = prev.map(s => (String(s.id || s.strip_id) === String(stripId)) ? { ...s, bins: selectedBinIds, linkedBins: selectedBinIds } : s);
-            try { localStorage.setItem('localLedStrips', JSON.stringify(next)); } catch (e) { }
-            return next;
-        });
-
-        // Also update cupboardLayouts in localStorage
-        try {
-            const layouts = JSON.parse(localStorage.getItem('cupboardLayouts') || '{}');
-            const cId = String(activeStripForBins.cupboardId || activeStripForBins.cupboard_id || '');
-            if (cId && layouts[cId]) {
-                if (Array.isArray(layouts[cId].ledStrips)) {
-                    layouts[cId].ledStrips = layouts[cId].ledStrips.map(s => {
-                        if (String(s.id || s.strip_id) === String(stripId)) {
-                            return { ...s, bins: selectedBinIds, linkedBins: selectedBinIds };
-                        }
-                        return s;
-                    });
-                }
-                localStorage.setItem('cupboardLayouts', JSON.stringify(layouts));
-            }
-        } catch (e) { }
+        setLocalLedStrips(prev => prev.map(s => (String(s.id || s.strip_id) === String(stripId)) ? { ...s, bins: selectedBinIds, linkedBins: selectedBinIds } : s));
 
         toast.success(`Assigned ${selectedBinIds.length} bin(s) to ${activeStripForBins.label || 'LED Strip'}`);
         setShowAssignBinsDialog(false);
@@ -616,7 +728,6 @@ export default function LedStripsTab({
             setLocalChannelAssignments(prev => {
                 const next = { ...prev };
                 delete next[channelNum];
-                localStorage.setItem('localChannelAssignments', JSON.stringify(next));
                 return next;
             });
             return;
@@ -627,15 +738,14 @@ export default function LedStripsTab({
                 ...prev,
                 [channelNum]: found
             }));
-            setLocalChannelAssignments(prev => {
-                const next = { ...prev, [channelNum]: found };
-                localStorage.setItem('localChannelAssignments', JSON.stringify(next));
-                return next;
-            });
+            setLocalChannelAssignments(prev => ({
+                ...prev,
+                [channelNum]: found
+            }));
         }
     };
 
-    // Persist channel assignments to API
+    // Persist channel assignments to API with 2-step process (createStrip -> createChannelStrip)
     const handleSaveChannelAssignments = async () => {
         if (!selectedController) {
             toast.error("No controller selected.");
@@ -643,17 +753,90 @@ export default function LedStripsTab({
         }
         const toastId = toast.loading("Saving channel strip assignments...");
         try {
-            const assignedCount = Object.keys(effectiveChannelAssignments).length;
-            for (const [channelNum, stripObj] of Object.entries(effectiveChannelAssignments)) {
-                if (stripObj && (stripObj.id || stripObj.strip_id)) {
-                    await apiService.createChannelStrip({
-                        strip_id: String(stripObj.id || stripObj.strip_id),
-                        channel_id: String(channelNum),
-                        strip_order: String(channelNum)
-                    }).catch(() => { });
+            const ctrlId = selectedController.id || selectedController.ctl_id;
+            let currentApiChannels = apiChannels;
+            if (!currentApiChannels || currentApiChannels.length === 0) {
+                try {
+                    const res = await apiService.getChannels(ctrlId);
+                    currentApiChannels = res?.data || (Array.isArray(res) ? res : []);
+                    setApiChannels(currentApiChannels);
+                } catch (e) {
+                    console.error("Error fetching channels on save:", e);
                 }
             }
-            toast.success(`Saved ${assignedCount} channel assignments`, { id: toastId });
+
+            let count = 0;
+            for (const [channelNum, stripObj] of Object.entries(effectiveChannelAssignments)) {
+                if (stripObj) {
+                    let realStripId = stripObj.strip_id || stripObj.id;
+                    const isTempId = !realStripId || String(realStripId).startsWith('local-') || String(realStripId).startsWith('sample-') || isNaN(Number(realStripId));
+
+                    if (isTempId) {
+                        let locId = '1';
+                        try {
+                            const selectedLocationStr = localStorage.getItem('selectedLocation');
+                            if (selectedLocationStr) {
+                                const loc = JSON.parse(selectedLocationStr);
+                                locId = String(loc.pick_location_id || loc.id || '1');
+                            }
+                        } catch (e) { }
+
+                        const rawBins = stripObj.bins || stripObj.linkedBins || stripObj.bin_list || [];
+                        const formattedBins = Array.isArray(rawBins) ? rawBins.map(b => {
+                            if (typeof b === 'object' && b !== null) {
+                                return {
+                                    bin_id: String(b.bin_id || b.id || b.bin_name || b.label || ''),
+                                    bin_name: String(b.bin_name || b.label || b.name || b.bin_id || b.id || '')
+                                };
+                            }
+                            return { bin_id: String(b), bin_name: String(b) };
+                        }) : [];
+
+                        const stripPayload = {
+                            strip_name: String(stripObj.label || stripObj.strip_name || `Strip CH-${channelNum}`),
+                            strip_loc_id: String(stripObj.strip_loc_id || locId),
+                            strip_ctl_id: String(selectedController.id || selectedController.ctl_id || stripObj.strip_ctl_id || '1'),
+                            strip_cupboard_id: String(stripObj.cupboardId || stripObj.cupboard_id || '1'),
+                            strip_shelf_id: String(stripObj.shelfId || stripObj.shelf_id || '1'),
+                            strip_gridx: String(Math.round(stripObj.x ?? 0)),
+                            strip_gridy: String(Math.round(stripObj.y ?? 0)),
+                            strip_width: String(Math.round(stripObj.width || 100)),
+                            strip_height: String(Math.round(stripObj.height || 22)),
+                            strip_org_id: String(stripObj.strip_org_id || "Salem"),
+                            strip_branch_id: String(stripObj.strip_branch_id || "SKSHOSPITAL"),
+                            strip_status: stripObj.strip_status !== undefined ? Boolean(stripObj.strip_status) : true,
+                            bin_list: formattedBins
+                        };
+                        const stripRes = await apiService.createStrip(stripPayload);
+                        const itemData = Array.isArray(stripRes?.data) ? stripRes.data[0] : (Array.isArray(stripRes) ? stripRes[0] : (stripRes?.data || stripRes));
+                        realStripId = String(itemData?.strip_id || itemData?.id || stripRes?.strip_id || stripRes?.id || realStripId);
+                    }
+
+                    // Find matching channel from get-channels data to get its real channel_id (e.g. 33) NOT channel_ctl_id ("1")
+                    const formattedChName = `CHANNEL-${String(channelNum).padStart(2, '0')}`;
+                    const targetChannelObj = (currentApiChannels || []).find(ch =>
+                        String(ch.channel_name || '').toUpperCase() === formattedChName.toUpperCase() ||
+                        String(ch.channel_name || '').toUpperCase() === `CHANNEL-${channelNum}`.toUpperCase()
+                    ) || (currentApiChannels || [])[Number(channelNum) - 1];
+
+                    const resolvedChannelId = String(
+                        targetChannelObj?.channel_id ||
+                        targetChannelObj?.id ||
+                        stripObj.channel_id ||
+                        stripObj.channelId ||
+                        channelNum
+                    );
+
+                    // Send exact payload: strip_id, channel_id, strip_order (without x, y or ctl_id)
+                    await apiService.createChannelStrip({
+                        strip_id: String(realStripId),
+                        channel_id: String(resolvedChannelId),
+                        strip_order: String(channelNum)
+                    });
+                    count++;
+                }
+            }
+            toast.success(`Saved ${count} channel assignments to server`, { id: toastId });
             setShowChannelDialog(false);
             if (refetchStrips) refetchStrips();
         } catch (error) {
@@ -973,34 +1156,125 @@ export default function LedStripsTab({
         );
     }
 
-    const handleSaveSetup = () => {
+    const handleSaveSetup = async () => {
+        const toastId = toast.loading("Saving setup: creating strips and assigning to channels...");
         try {
-            localStorage.setItem('localLedStrips', JSON.stringify(localLedStrips));
-            localStorage.setItem('localChannelAssignments', JSON.stringify(localChannelAssignments));
-            localStorage.setItem('selectedWallNames', JSON.stringify(selectedWallNames));
-            localStorage.setItem('controllerPlacement', controllerPlacement);
-            if (selectedController) {
-                localStorage.setItem('selectedController', JSON.stringify(selectedController));
-            }
+            const itemsToProcess = [];
+            const processedKeys = new Set();
 
-            // Sync strip layouts per cupboard for Monitoring page compatibility
-            const layouts = JSON.parse(localStorage.getItem('cupboardLayouts') || '{}');
-            filteredCupboards.forEach(c => {
-                const cId = c.id || c.cupboard_id;
-                if (cId) {
-                    const cStrips = localLedStrips.filter(s => String(s.cupboardId) === String(cId) || String(s.cupboard_id) === String(cId));
-                    layouts[cId] = {
-                        ...(layouts[cId] || {}),
-                        ledStrips: cStrips
-                    };
+            // 1. Collect assigned strips from localLedStrips
+            localLedStrips.forEach((strip, idx) => {
+                const stripId = String(strip.id || strip.strip_id || '');
+                const channelId = String(strip.channel || 1);
+                if (channelId) {
+                    const key = `${stripId || idx}-${channelId}`;
+                    if (!processedKeys.has(key)) {
+                        processedKeys.add(key);
+                        itemsToProcess.push({
+                            strip,
+                            channelId,
+                            order: String(strip.order || strip.strip_order || (idx + 1))
+                        });
+                    }
                 }
             });
-            localStorage.setItem('cupboardLayouts', JSON.stringify(layouts));
 
-            toast.success("Hardware LED configuration saved successfully! Setup synced with Monitoring page.");
+            // 2. Collect assigned channel strips from effectiveChannelAssignments
+            Object.entries(effectiveChannelAssignments).forEach(([channelNum, stripObj]) => {
+                if (stripObj) {
+                    const stripId = String(stripObj.id || stripObj.strip_id || '');
+                    const channelId = String(channelNum);
+                    const key = `${stripId || channelNum}-${channelId}`;
+                    if (!processedKeys.has(key)) {
+                        processedKeys.add(key);
+                        itemsToProcess.push({
+                            strip: stripObj,
+                            channelId,
+                            order: String(channelNum)
+                        });
+                    }
+                }
+            });
+
+            if (itemsToProcess.length === 0) {
+                toast.info("No channel strip assignments to save.", { id: toastId });
+                return;
+            }
+
+            let successCount = 0;
+            for (const item of itemsToProcess) {
+                const { strip, channelId, order } = item;
+
+                // ACTION 1: Create the strip first to get proper strip_id from backend
+                let realStripId = strip.strip_id || strip.id;
+                const isTempId = !realStripId || String(realStripId).startsWith('local-') || String(realStripId).startsWith('sample-') || isNaN(Number(realStripId));
+
+                if (isTempId) {
+                    let locId = '1';
+                    try {
+                        const selectedLocationStr = localStorage.getItem('selectedLocation');
+                        if (selectedLocationStr) {
+                            const loc = JSON.parse(selectedLocationStr);
+                            locId = String(loc.pick_location_id || loc.id || '1');
+                        }
+                    } catch (e) { }
+
+                    const rawBins = strip.bins || strip.linkedBins || strip.bin_list || [];
+                    const formattedBins = Array.isArray(rawBins) ? rawBins.map(b => {
+                        if (typeof b === 'object' && b !== null) {
+                            return {
+                                bin_id: String(b.bin_id || b.id || b.bin_name || b.label || ''),
+                                bin_name: String(b.bin_name || b.label || b.name || b.bin_id || b.id || '')
+                            };
+                        }
+                        return { bin_id: String(b), bin_name: String(b) };
+                    }) : [];
+
+                    const stripPayload = {
+                        strip_name: String(strip.label || strip.strip_name || strip.name || `Strip CH-${channelId}`),
+                        strip_loc_id: String(strip.strip_loc_id || locId),
+                        strip_ctl_id: String(selectedController?.id || selectedController?.ctl_id || strip.strip_ctl_id || '1'),
+                        strip_cupboard_id: String(strip.cupboardId || strip.cupboard_id || '1'),
+                        strip_shelf_id: String(strip.shelfId || strip.shelf_id || '1'),
+                        strip_gridx: String(Math.round(strip.x ?? 0)),
+                        strip_gridy: String(Math.round(strip.y ?? 0)),
+                        strip_width: String(Math.round(strip.width || 100)),
+                        strip_height: String(Math.round(strip.height || 22)),
+                        strip_org_id: String(strip.strip_org_id || "Salem"),
+                        strip_branch_id: String(strip.strip_branch_id || "SKSHOSPITAL"),
+                        strip_status: strip.strip_status !== undefined ? Boolean(strip.strip_status) : true,
+                        bin_list: formattedBins
+                    };
+
+                    const stripRes = await apiService.createStrip(stripPayload);
+                    const itemData = Array.isArray(stripRes?.data) ? stripRes.data[0] : (Array.isArray(stripRes) ? stripRes[0] : (stripRes?.data || stripRes));
+                    realStripId = String(
+                        itemData?.strip_id ||
+                        itemData?.id ||
+                        stripRes?.strip_id ||
+                        stripRes?.id ||
+                        realStripId
+                    );
+                }
+
+                // ACTION 2: Create the channelstrip mapping using the proper realStripId from Action 1
+                const channelStripPayload = {
+                    strip_id: String(realStripId),
+                    channel_id: String(channelId),
+                    strip_order: String(order),
+                    x: String(Math.round(strip.x ?? 0)),
+                    y: String(Math.round(strip.y ?? 0))
+                };
+
+                await apiService.createChannelStrip(channelStripPayload);
+                successCount++;
+            }
+
+            toast.success(`Successfully created and linked ${successCount} strip(s) to channel(s)!`, { id: toastId });
+            if (refetchStrips) refetchStrips();
         } catch (err) {
-            console.error("Error saving setup:", err);
-            toast.error("Failed to save hardware setup to storage.");
+            console.error("Error in two-step strip creation:", err);
+            toast.error(`Failed to save setup: ${err.message || 'API error'}`, { id: toastId });
         }
     };
 
@@ -1945,7 +2219,7 @@ export default function LedStripsTab({
                             <Button
                                 size="sm"
                                 variant="destructive"
-                                onClick={() => handleDeleteStrip(activeStripForBins)}
+                                onClick={() => handlePromptDeleteStrip(activeStripForBins)}
                                 className="gap-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs"
                             >
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -1971,6 +2245,19 @@ export default function LedStripsTab({
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            <ConfirmDialog
+                open={stripDeleteDialogOpen}
+                onOpenChange={setStripDeleteDialogOpen}
+                title="Delete LED Strip"
+                description={`Are you sure you want to delete "${stripToDelete?.label || 'this LED strip'}"? This action cannot be undone and will permanently remove it from the API.`}
+                confirmText="Delete"
+                cancelText="Cancel"
+                variant="destructive"
+                isLoading={isDeletingStrip}
+                onConfirm={confirmDeleteStrip}
+                onCancel={() => setStripToDelete(null)}
+            />
         </div>
     );
 }

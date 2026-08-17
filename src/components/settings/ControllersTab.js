@@ -72,6 +72,28 @@ export default function ControllersTab({ controllersData, syncControllers, refet
     const [channelToDelete, setChannelToDelete] = useState(null); // { ctrlId, channelId, channelName }
     const [isDeletingChannel, setIsDeletingChannel] = useState(false);
 
+    // Delete Strip confirmation state
+    const [stripToDelete, setStripToDelete] = useState(null); // { id, label }
+    const [stripDeleteDialogOpen, setStripDeleteDialogOpen] = useState(false);
+    const [isDeletingStrip, setIsDeletingStrip] = useState(false);
+
+    const handlePromptDeleteStrip = (stripId, stripLabel) => {
+        setStripToDelete({ id: stripId, label: stripLabel || 'LED Strip' });
+        setStripDeleteDialogOpen(true);
+    };
+
+    const confirmDeleteStrip = async () => {
+        if (!stripToDelete) return;
+        setIsDeletingStrip(true);
+        try {
+            await handleRemoveStripFromPort(stripToDelete.id);
+            setStripDeleteDialogOpen(false);
+            setStripToDelete(null);
+        } finally {
+            setIsDeletingStrip(false);
+        }
+    };
+
     const handleDeleteChannel = (ctrlId, port) => {
         const channelId = port.channel_id || port.id;
         if (!channelId) {
@@ -171,7 +193,65 @@ export default function ControllersTab({ controllersData, syncControllers, refet
         }
     };
 
-    const toggleExpandController = async (ctrlId) => {
+    // Track initializing channels per controller
+    const [initializingCtrlIds, setInitializingCtrlIds] = useState({});
+
+    // Function to initialize default channels (e.g., 16 channels) for a controller
+    const handleInitializeChannels = async (ctrl) => {
+        if (!ctrl || !ctrl.id) return;
+        const ctrlId = ctrl.id;
+        const count = parseInt(ctrl.channels || ctrl.ctl_channels || 16, 10);
+
+        setInitializingCtrlIds(prev => ({ ...prev, [ctrlId]: true }));
+        const toastId = toast.loading(`Initializing ${count} channels for ${ctrl.name || 'Controller'}...`);
+
+        try {
+            const createdChannels = [];
+            for (let i = 1; i <= count; i++) {
+                const num = String(i).padStart(2, '0');
+                const channelName = `CHANNEL-${num}`;
+                const payload = {
+                    channel_name: channelName,
+                    channel_ledcount: "0",
+                    channel_stripcount: "0",
+                    channel_ctl_id: String(ctrlId)
+                };
+
+                const cRes = await apiService.createChannel(payload);
+                const channelId = cRes?.data?.channel_id || cRes?.channel_id || cRes?.id || Math.random().toString(36).substr(2, 9);
+                createdChannels.push({
+                    id: channelId,
+                    channel_id: channelId,
+                    channel_name: channelName,
+                    channel_ledcount: 0,
+                    channel_stripcount: 0,
+                    status: 'Idle',
+                    strips: []
+                });
+            }
+
+            setControllerPortsMap(prev => ({
+                ...prev,
+                [ctrlId]: createdChannels
+            }));
+
+            if (refetchControllers) {
+                await refetchControllers();
+            }
+
+            toast.success(`Successfully initialized ${createdChannels.length} channels for ${ctrl.name}`, { id: toastId });
+        } catch (error) {
+            console.error("Error initializing channels:", error);
+            toast.error(`Failed to initialize channels: ${error.message}`, { id: toastId });
+        } finally {
+            setInitializingCtrlIds(prev => ({ ...prev, [ctrlId]: false }));
+        }
+    };
+
+    const toggleExpandController = async (ctrl) => {
+        const ctrlId = typeof ctrl === 'object' ? ctrl.id : ctrl;
+        const ctrlObj = typeof ctrl === 'object' ? ctrl : controllersData.find(c => String(c.id) === String(ctrlId));
+
         setExpandedControllers(prev => {
             return { ...prev, [ctrlId]: !prev[ctrlId] };
         });
@@ -180,18 +260,26 @@ export default function ControllersTab({ controllersData, syncControllers, refet
             try {
                 const res = await apiService.getChannels(ctrlId);
                 const channelsList = res?.data || (Array.isArray(res) ? res : []);
-                const mappedChannels = channelsList.map(ch => ({
-                    ...ch,
-                    channel_name: ch.channel_name || ch.name || '',
-                    channel_ledcount: parseInt(ch.channel_ledcount || 0, 10),
-                    channel_stripcount: parseInt(ch.channel_stripcount || 0, 10),
-                    status: parseInt(ch.channel_stripcount || 0, 10) > 0 ? 'Active' : 'Idle',
-                    strips: ch.strips || []
-                }));
-                setControllerPortsMap(prev => ({
-                    ...prev,
-                    [ctrlId]: mappedChannels
-                }));
+
+                if (channelsList.length === 0 && ctrlObj) {
+                    // When getChannels returns 0 data, automatically run channel initialization function using controller's channel count
+                    await handleInitializeChannels(ctrlObj);
+                } else {
+                    const mappedChannels = channelsList.map(ch => ({
+                        ...ch,
+                        id: ch.channel_id || ch.id,
+                        channel_id: ch.channel_id || ch.id,
+                        channel_name: ch.channel_name || ch.name || '',
+                        channel_ledcount: parseInt(ch.channel_ledcount || 0, 10),
+                        channel_stripcount: parseInt(ch.channel_stripcount || 0, 10),
+                        status: parseInt(ch.channel_stripcount || 0, 10) > 0 ? 'Active' : 'Idle',
+                        strips: ch.strips || []
+                    }));
+                    setControllerPortsMap(prev => ({
+                        ...prev,
+                        [ctrlId]: mappedChannels
+                    }));
+                }
             } catch (error) {
                 console.error("Error fetching channels:", error);
                 toast.error("Failed to fetch channels");
@@ -486,34 +574,44 @@ export default function ControllersTab({ controllersData, syncControllers, refet
         }
     };
 
-    // Delete strip from sheet list
-    const handleRemoveStripFromPort = (stripId) => {
+    // Delete strip from sheet list using API
+    const handleRemoveStripFromPort = async (stripId) => {
         if (!selectedPortView) return;
         const { ctrlId, portIndex } = selectedPortView;
+        const toastId = toast.loading("Deleting strip via API...");
 
-        setControllerPortsMap(prev => {
-            const currentPorts = prev[ctrlId] || [];
-            const updatedPorts = currentPorts.map((p, idx) => {
-                if (idx !== portIndex) return p;
-                const nextStrips = p.strips.filter(s => s.id !== stripId);
-                return {
-                    ...p,
-                    strips: nextStrips,
-                    channel_stripcount: nextStrips.length,
-                    channel_ledcount: nextStrips.reduce((acc, s) => acc + s.ledCount, 0),
-                    status: nextStrips.length > 0 ? 'Active' : 'Idle'
-                };
+        try {
+            if (stripId && !String(stripId).startsWith('local-') && !String(stripId).startsWith('sample-')) {
+                await apiService.deleteStrip(stripId);
+            }
+
+            setControllerPortsMap(prev => {
+                const currentPorts = prev[ctrlId] || [];
+                const updatedPorts = currentPorts.map((p, idx) => {
+                    if (idx !== portIndex) return p;
+                    const nextStrips = (p.strips || []).filter(s => String(s.id) !== String(stripId));
+                    return {
+                        ...p,
+                        strips: nextStrips,
+                        channel_stripcount: nextStrips.length,
+                        channel_ledcount: nextStrips.reduce((acc, s) => acc + (s.ledCount || 0), 0),
+                        status: nextStrips.length > 0 ? 'Active' : 'Idle'
+                    };
+                });
+
+                setSelectedPortView(sp => ({
+                    ...sp,
+                    strips: sp.strips.filter(s => String(s.id) !== String(stripId))
+                }));
+
+                return { ...prev, [ctrlId]: updatedPorts };
             });
 
-            setSelectedPortView(sp => ({
-                ...sp,
-                strips: sp.strips.filter(s => s.id !== stripId)
-            }));
-
-            return { ...prev, [ctrlId]: updatedPorts };
-        });
-
-        toast.success("Strip removed from port");
+            toast.success("Strip deleted successfully from API", { id: toastId });
+        } catch (error) {
+            console.error("Error deleting strip:", error);
+            toast.error(`Failed to delete strip: ${error.message}`, { id: toastId });
+        }
     };
 
     const handleAddController = () => {
@@ -1104,6 +1202,15 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                                                 {strip.shelf || '-'} ({strip.linkedBins || 0} Bins)
                                             </div>
                                         </div>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => handlePromptDeleteStrip(strip.id, strip.label)}
+                                            className="h-8 w-8 p-0 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded transition-colors"
+                                            title="Delete Strip"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </Button>
                                     </div>
                                 ))
                             )}
@@ -1175,6 +1282,19 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                 isLoading={isDeletingChannel}
                 onConfirm={confirmDeleteChannel}
                 onCancel={() => setChannelToDelete(null)}
+            />
+
+            <ConfirmDialog
+                open={stripDeleteDialogOpen}
+                onOpenChange={setStripDeleteDialogOpen}
+                title="Delete Strip"
+                description={`Are you sure you want to delete ${stripToDelete?.label || 'this LED strip'}? This action cannot be undone and will delete the strip via API.`}
+                confirmText="Delete"
+                cancelText="Cancel"
+                variant="destructive"
+                isLoading={isDeletingStrip}
+                onConfirm={confirmDeleteStrip}
+                onCancel={() => setStripToDelete(null)}
             />
         </div>
     );

@@ -139,10 +139,19 @@ export const apiService = {
         return handleResponse(response);
     },
     createChannelStrip: async (payload) => {
-        return { success: true, data: payload };
+        const response = await fetch(`${API_URL}/config/create-channelstrip`, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify(payload)
+        });
+        return handleResponse(response);
     },
     getChannelStrips: async (channelId) => {
-        return { success: true, data: [] };
+        const url = channelId ? `${API_URL}/config/get-channelstrip-channelid?channelid=${channelId}` : `${API_URL}/config/get-channelstrips`;
+        const response = await fetch(url, {
+            headers: getHeaders()
+        });
+        return handleResponse(response);
     },
 
     // Walls
@@ -245,18 +254,36 @@ export const apiService = {
         return handleResponse(response);
     },
 
-    // Strips (Static Handling)
+    // Strips
     getStrips: async (locId = 'All') => {
-        return { success: true, data: [] };
+        const response = await fetch(`${API_URL}/config/get-strips?location=${locId}`, {
+            headers: getHeaders()
+        });
+        return handleResponse(response);
     },
     createStrip: async (payload) => {
-        return { success: true, data: payload };
+        const bodyPayload = Array.isArray(payload) ? payload : [payload];
+        const response = await fetch(`${API_URL}/config/create-strip`, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify(bodyPayload)
+        });
+        return handleResponse(response);
     },
     updateStrip: async (id, payload) => {
-        return { success: true, data: payload };
+        const response = await fetch(`${API_URL}/config/update-strip/${id}`, {
+            method: 'PUT',
+            headers: getHeaders(),
+            body: JSON.stringify(payload)
+        });
+        return handleResponse(response);
     },
     deleteStrip: async (id) => {
-        return { success: true };
+        const response = await fetch(`${API_URL}/config/delete-strip/${id}`, {
+            method: 'DELETE',
+            headers: getHeaders()
+        });
+        return handleResponse(response);
     },
 
     // Bins
