@@ -156,7 +156,7 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                 const selectedLocationStr = localStorage.getItem('selectedLocation');
                 if (selectedLocationStr) {
                     const loc = JSON.parse(selectedLocationStr);
-                    locId = loc.pick_location_id || loc.id || 'All';
+                    locId = loc.phr_location_id || 'All';
                 }
             } catch (e) { }
 
@@ -168,7 +168,24 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
             try {
                 const res = await apiService.getBins(locId, targetShelfId);
                 if (res && res.success && Array.isArray(res.data)) {
-                    const mappedBins = res.data.map((b, idx) => {
+                    const cCtlId = String(cupboard?.cupboard_ctl_id || cupboard?.controller_id || shelf?.shelf_ctl_id || '').trim();
+                    const cId = String(cupboard?.cupboard_id || cupboard?.id || '').trim();
+                    const cName = String(cupboard?.cupboard_name || cupboard?.name || '').trim();
+
+                    const filteredBins = res.data.filter(b => {
+                        const bLocId = String(b.bin_loc_id || b.loc_id || '').trim();
+                        if (bLocId && locId && locId !== 'All' && bLocId !== String(locId).trim()) return false;
+
+                        const bCtlId = String(b.bin_ctl_id || b.ctl_id || '').trim();
+                        if (bCtlId && cCtlId && bCtlId !== '0' && cCtlId !== '0' && bCtlId !== cCtlId) return false;
+
+                        const bCupId = String(b.bin_cupboard_id || b.cupboard_id || '').trim();
+                        if (bCupId && (cId || cName) && bCupId !== cId && bCupId !== cName) return false;
+
+                        return true;
+                    });
+
+                    const mappedBins = filteredBins.map((b, idx) => {
                         const hasGridX = b.bin_gridx !== undefined && b.bin_gridx !== null && b.bin_gridx !== '' && !isNaN(parseFloat(b.bin_gridx));
                         const hasGridY = b.bin_gridy !== undefined && b.bin_gridy !== null && b.bin_gridy !== '' && !isNaN(parseFloat(b.bin_gridy));
                         const isPlaced = hasGridX && hasGridY && (b.bin_status !== false && b.bin_status !== 'False');
@@ -185,6 +202,7 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                             bin_order: b.bin_order,
                             bin_phr_id: b.bin_phr_id || b.phr_id || "",
                             bin_shelf_phr_id: b.bin_shelf_phr_id || b.bin_shelf_id || targetShelfId,
+                            bin_ctl_id: b.bin_ctl_id || b.ctl_id || shelf?.shelf_ctl_id || cupboard?.cupboard_ctl_id || cupboard?.controller_id || "",
                             bin_org_id: b.bin_org_id || "skshospital",
                             bin_branch_id: b.bin_branch_id || "Salem",
                             bin_status: b.bin_status !== undefined ? b.bin_status : true,
@@ -424,7 +442,7 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
             const selectedLocationStr = localStorage.getItem('selectedLocation');
             if (selectedLocationStr) {
                 const loc = JSON.parse(selectedLocationStr);
-                locId = loc.pick_location_id || loc.id || '';
+                locId = loc.phr_location_id || '';
             }
         } catch (e) { }
 
@@ -437,10 +455,30 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
 
                 if (!binId) continue;
 
+                const targetCtlId = String(
+                    bin.bin_ctl_id ||
+                    bin.ctl_id ||
+                    shelf?.shelf_ctl_id ||
+                    cupboard?.cupboard_ctl_id ||
+                    cupboard?.ctl_id ||
+                    cupboard?.controller_id ||
+                    cupboard?.controller ||
+                    ''
+                ).trim();
+
+                const targetShelfPhrId = String(
+                    bin.bin_shelf_phr_id ||
+                    bin.bin_shelf_id ||
+                    shelf?.shelf_phr_id ||
+                    shelf?.shelf_id ||
+                    ''
+                ).trim();
+
                 const payload = {
                     bin_name: String(bin.label || bin.bin_name || `Bin ${idx + 1}`),
                     bin_loc_id: String(bin.bin_loc_id || locId),
-                    bin_shelf_id: String(bin.bin_shelf_id || bin.bin_shelf_phr_id || shelf.shelf_phr_id || ''),
+                    bin_shelf_phr_id: targetShelfPhrId,
+                    bin_ctl_id: targetCtlId,
                     bin_gridx: String(Math.round(bin.x || 0)),
                     bin_gridy: String(Math.round(bin.y || 0)),
                     bin_width: String(Math.round(bin.width || 80)),

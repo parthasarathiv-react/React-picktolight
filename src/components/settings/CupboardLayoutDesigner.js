@@ -13,7 +13,7 @@ const MIN_COLS = 8;
 const ROW_LABEL_W = 24;
 const DRAG_THRESHOLD = 5; // pixels moved before it counts as a drag
 
-export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, syncCupboards, onDirtyChange }) {
+export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, syncCupboards, onDirtyChange, refetchCupboards }) {
     const [canvasCupboards, setCanvasCupboards] = useState([]);
     const [dragging, setDragging] = useState(null);
     const [selectedCanvasId, setSelectedCanvasId] = useState(null);
@@ -200,7 +200,7 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
             if (selectedLocationStr) {
                 try {
                     const loc = JSON.parse(selectedLocationStr);
-                    locId = loc.pick_location_id || '';
+                    locId = loc.phr_location_id || '';
                 } catch (e) { }
             }
 
@@ -286,6 +286,9 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
             const otherCupboards = cupboardsData.filter(c => c.wall !== wall.name);
             const newGlobalState = [...otherCupboards, ...updatedCupboards];
             syncCupboards(newGlobalState);
+            if (refetchCupboards) {
+                await refetchCupboards();
+            }
 
             setIsDirty(false);
             setSaveFlash(true);

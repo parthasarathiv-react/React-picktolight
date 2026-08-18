@@ -273,7 +273,7 @@ export default function Monitoring() {
             const selectedLocationStr = localStorage.getItem('selectedLocation');
             if (selectedLocationStr) {
                 const loc = JSON.parse(selectedLocationStr);
-                return loc.pick_location_id || '';
+                return loc.phr_location_id || '';
             }
         } catch (e) { }
         return '';
@@ -287,9 +287,14 @@ export default function Monitoring() {
             if (!data.success || !data.data) throw new Error("Failed to fetch controllers");
             return data.data.map(c => ({
                 id: c.ctl_id || c.id || Math.random().toString(36).substr(2, 9),
+                ctl_id: c.ctl_id || c.id,
                 name: c.ctl_name,
                 ip: c.ctl_ip,
                 port: c.ctl_port,
+                ctl_loc_id: c.ctl_loc_id,
+                ctl_channels: c.ctl_channels,
+                position: c.ctl_position && c.ctl_position !== 'none' ? c.ctl_position : 'left',
+                ctl_position: c.ctl_position || 'none',
                 status: (c.ctl_status === 'True' || c.ctl_status === true || c.ctl_status === 'Online') ? 'Online' : 'Offline'
             }));
         },
@@ -391,12 +396,36 @@ export default function Monitoring() {
 
                 let shelfLayout = [];
                 if (rawShelves && Array.isArray(rawShelves)) {
-                    const cId = String(c.cupboard_id || c.id || '');
-                    const cName = String(c.cupboard_name || c.name || '');
+                    const cId = String(c.cupboard_id || c.id || '').trim();
+                    const cName = String(c.cupboard_name || c.name || '').trim();
 
                     const matchingShelves = rawShelves.filter(s => {
                         const sCupId = String(s.shelf_cupboard_id || '').trim();
-                        return sCupId !== '' && (sCupId === cId || sCupId === cName);
+                        if (sCupId) {
+                            return (
+                                sCupId === cId ||
+                                sCupId === cName ||
+                                (c.cupboard_id !== undefined && sCupId === String(c.cupboard_id).trim()) ||
+                                (c.id !== undefined && sCupId === String(c.id).trim()) ||
+                                (c.name !== undefined && sCupId === String(c.name).trim()) ||
+                                (c.cupboard_name !== undefined && sCupId === String(c.cupboard_name).trim())
+                            );
+                        }
+
+                        // Fallback matching when shelf_cupboard_id is missing from GET API:
+                        const sWallId = String(s.shelf_wall_id || '').trim();
+                        const sCtlId = String(s.shelf_ctl_id || '').trim();
+                        const cWallId = String(c.cupboard_wall_id || c.wall_id || '').trim();
+                        const cCtlId = String(c.cupboard_ctl_id || c.controller_id || '').trim();
+
+                        if (sWallId && cWallId && sWallId === cWallId) return true;
+                        if (sCtlId && cCtlId && sCtlId === cCtlId) return true;
+
+                        if (rawCupboards && rawCupboards.length === 1) {
+                            return true;
+                        }
+
+                        return false;
                     });
 
                     if (matchingShelves.length > 0) {
@@ -414,52 +443,102 @@ export default function Monitoring() {
                             let bins = [];
                             if (rawBins && Array.isArray(rawBins)) {
                                 const matchingBins = rawBins.filter(b => {
-                                    const bShelfId = String(b.bin_shelf_id || '').trim();
-                                    const bPhrId = String(b.bin_phr_id || '').trim();
-                                    const sPhrId = String(s.shelf_phr_id || '').trim();
+                                    // 1. Match Location ID
+                                    const bLocId = String(b.bin_loc_id || b.loc_id || '').trim();
+                                    const currentLocIdStr = String(locId || '').trim();
+                                    if (bLocId && currentLocIdStr && currentLocIdStr !== 'All' && bLocId !== currentLocIdStr) {
+                                        return false;
+                                    }
+
+                                    // 2. Match Controller ID
+                                    const bCtlId = String(b.bin_ctl_id || b.ctl_id || '').trim();
+                                    const cCtlId = String(c.cupboard_ctl_id || c.controller_id || s.shelf_ctl_id || '').trim();
+                                    if (bCtlId && cCtlId && bCtlId !== '0' && cCtlId !== '0' && bCtlId !== cCtlId) {
+                                        return false;
+                                    }
+
+                                    // 3. Match Cupboard ID (if present on bin)
+                                    const bCupId = String(b.bin_cupboard_id || b.cupboard_id || '').trim();
+                                    const cId = String(c.cupboard_id || c.id || '').trim();
+                                    const cName = String(c.cupboard_name || c.name || '').trim();
+                                    if (bCupId && (cId || cName)) {
+                                        if (bCupId !== cId && bCupId !== cName) {
+                                            return false;
+                                        }
+                                    }
+
+                                    // 4. Match Pharmacy Shelf ID / Shelf ID
+                                    const bShelfPhrId = String(b.bin_shelf_phr_id || '').trim();
+                                    const bShelfId = String(b.bin_shelf_id || b.shelf_id || '').trim();
+                                    const bPhrId = String(b.bin_phr_id || b.phr_id || '').trim();
+
+                                    const sPhrId = String(s.shelf_phr_id || s.phr_id || '').trim();
                                     const sShelfId = String(s.shelf_id || s.id || '').trim();
                                     const sRealId = String(realId || '').trim();
-                                    const sName = String(s.shelf_name || '').trim();
+                                    const sName = String(s.shelf_name || s.name || '').trim();
 
                                     const isShelfMatch = (
+                                        (bShelfPhrId !== '' && (
+                                            bShelfPhrId === sPhrId ||
+                                            bShelfPhrId === sShelfId ||
+                                            bShelfPhrId === sRealId ||
+                                            bShelfPhrId === sName
+                                        )) ||
                                         (bShelfId !== '' && (
                                             bShelfId === sPhrId ||
                                             bShelfId === sShelfId ||
                                             bShelfId === sRealId ||
                                             bShelfId === sName
                                         )) ||
-                                        (sPhrId !== '' && bPhrId !== '' && bPhrId === sPhrId)
+                                        (bPhrId !== '' && sPhrId !== '' && bPhrId === sPhrId)
                                     );
 
-                                    const hasGridAndSize = (
-                                        b.bin_gridx !== undefined && b.bin_gridx !== null && String(b.bin_gridx).trim() !== '' &&
-                                        b.bin_gridy !== undefined && b.bin_gridy !== null && String(b.bin_gridy).trim() !== '' &&
-                                        b.bin_width !== undefined && b.bin_width !== null && String(b.bin_width).trim() !== '' &&
-                                        b.bin_height !== undefined && b.bin_height !== null && String(b.bin_height).trim() !== ''
-                                    );
+                                    if (!isShelfMatch) {
+                                        return false;
+                                    }
 
                                     const isPlacedBin = b.placed !== false && b.bin_status !== false && String(b.bin_status).toLowerCase() !== 'false';
 
-                                    return isShelfMatch && hasGridAndSize && isPlacedBin;
+                                    return isPlacedBin;
+                                });
+
+                                // Sort matching bins sequentially (by order / id / name)
+                                matchingBins.sort((a, b) => {
+                                    const orderA = Number(a.bin_order !== undefined ? a.bin_order : 999);
+                                    const orderB = Number(b.bin_order !== undefined ? b.bin_order : 999);
+                                    if (orderA !== orderB) return orderA - orderB;
+                                    return String(a.bin_name || a.bin_id || '').localeCompare(String(b.bin_name || b.bin_id || ''), undefined, { numeric: true });
                                 });
 
                                 if (matchingBins.length > 0) {
-                                    bins = matchingBins.map((b, bIdx) => ({
-                                        id: String(b.bin_id || `bin-${bIdx}`),
-                                        bin_id: b.bin_id,
-                                        label: b.bin_name || `Bin ${bIdx + 1}`,
-                                        x: parseFloat(b.bin_gridx) || 10,
-                                        y: parseFloat(b.bin_gridy) || 10,
-                                        width: parseFloat(b.bin_width) || 80,
-                                        height: parseFloat(b.bin_height) || 48,
-                                        placed: true,
-                                        bin_order: b.bin_order,
-                                        bin_phr_id: b.bin_phr_id || b.phr_id || "",
-                                        bin_org_id: b.bin_org_id || "skshospital",
-                                        bin_branch_id: b.bin_branch_id || "Salem",
-                                        bin_status: b.bin_status,
-                                        bin_shelf_id: b.bin_shelf_id
-                                    }));
+                                    bins = matchingBins.map((b, bIdx) => {
+                                        const defaultWidth = 80;
+                                        const defaultHeight = 44;
+                                        const gap = 10;
+                                        const hasX = b.bin_gridx !== undefined && b.bin_gridx !== null && String(b.bin_gridx).trim() !== '' && !isNaN(parseFloat(b.bin_gridx));
+                                        const hasY = b.bin_gridy !== undefined && b.bin_gridy !== null && String(b.bin_gridy).trim() !== '' && !isNaN(parseFloat(b.bin_gridy));
+                                        const hasW = b.bin_width !== undefined && b.bin_width !== null && String(b.bin_width).trim() !== '' && !isNaN(parseFloat(b.bin_width));
+                                        const hasH = b.bin_height !== undefined && b.bin_height !== null && String(b.bin_height).trim() !== '' && !isNaN(parseFloat(b.bin_height));
+
+                                        return {
+                                            id: String(b.bin_id || `bin-${bIdx}`),
+                                            bin_id: b.bin_id,
+                                            label: b.bin_name || `Bin ${bIdx + 1}`,
+                                            x: hasX ? parseFloat(b.bin_gridx) : (10 + bIdx * (defaultWidth + gap)),
+                                            y: hasY ? parseFloat(b.bin_gridy) : 6,
+                                            width: hasW ? parseFloat(b.bin_width) : defaultWidth,
+                                            height: hasH ? parseFloat(b.bin_height) : defaultHeight,
+                                            placed: true,
+                                            bin_order: b.bin_order !== undefined ? b.bin_order : bIdx + 1,
+                                            bin_phr_id: b.bin_phr_id || b.phr_id || "",
+                                            bin_shelf_phr_id: b.bin_shelf_phr_id || b.bin_shelf_id || s.shelf_phr_id || s.shelf_id || "",
+                                            bin_ctl_id: b.bin_ctl_id || b.ctl_id || s.shelf_ctl_id || c.cupboard_ctl_id || c.controller_id || "",
+                                            bin_org_id: b.bin_org_id || "skshospital",
+                                            bin_branch_id: b.bin_branch_id || "Salem",
+                                            bin_status: b.bin_status,
+                                            bin_shelf_id: b.bin_shelf_id || s.shelf_id
+                                        };
+                                    });
                                 }
                             }
 
@@ -474,16 +553,38 @@ export default function Monitoring() {
                                             String(ls.label || ls.shelf_name || '') === String(s.shelf_name || '')
                                         );
                                         if (lsShelf && lsShelf.bins && Array.isArray(lsShelf.bins)) {
-                                            bins = lsShelf.bins.filter(b =>
-                                                b.placed !== false &&
-                                                b.x !== undefined && b.x !== null &&
-                                                b.y !== undefined && b.y !== null &&
-                                                b.width !== undefined && b.width !== null &&
-                                                b.height !== undefined && b.height !== null
-                                            );
+                                            bins = lsShelf.bins.filter(b => b.placed !== false).map((b, bIdx) => ({
+                                                ...b,
+                                                id: String(b.id || b.bin_id || `bin-${bIdx}`),
+                                                label: b.label || b.bin_name || `Bin ${bIdx + 1}`,
+                                                x: (b.x !== undefined && b.x !== null && !isNaN(parseFloat(b.x))) ? parseFloat(b.x) : (10 + bIdx * 90),
+                                                y: (b.y !== undefined && b.y !== null && !isNaN(parseFloat(b.y))) ? parseFloat(b.y) : 6,
+                                                width: (b.width !== undefined && b.width !== null && !isNaN(parseFloat(b.width))) ? parseFloat(b.width) : 80,
+                                                height: (b.height !== undefined && b.height !== null && !isNaN(parseFloat(b.height))) ? parseFloat(b.height) : 44
+                                            }));
                                         }
                                     }
                                 } catch (e) { }
+                            }
+
+                            if (bins.length === 0) {
+                                const defaultCount = 4;
+                                const defaultWidth = 80;
+                                const defaultHeight = 44;
+                                const gap = 10;
+                                for (let bIdx = 0; bIdx < defaultCount; bIdx++) {
+                                    bins.push({
+                                        id: `${realId}-bin-${bIdx + 1}`,
+                                        bin_id: `${realId}-bin-${bIdx + 1}`,
+                                        label: `${s.shelf_name || 'Bin'} ${String.fromCharCode(65 + bIdx)}`,
+                                        x: 10 + bIdx * (defaultWidth + gap),
+                                        y: 6,
+                                        width: defaultWidth,
+                                        height: defaultHeight,
+                                        placed: true,
+                                        bin_order: bIdx + 1
+                                    });
+                                }
                             }
 
                             return {
@@ -887,31 +988,31 @@ export default function Monitoring() {
                     <>
                         {/* Canvas */}
                         <Card className="flex-1 overflow-hidden bg-ot-surface-bottom relative p-0 flex flex-col border-ot-border">
-                    {viewMode === '3d' ? (
-                        <Suspense fallback={<Canvas3DLoader />}>
-                            <Cupboard3D
-                                cupboards={cupboards}
-                                controllerName={selectedController.name}
-                                selectedCupboard={selectedCupboard}
-                                activeCupboardIdx={activeCupboardIdx}
-                                onSelectCupboard={setActiveCupboardIdx}
-                            />
-                        </Suspense>
-                    ) : (
-                        cupboards.length > 0 ? (
-                            <div
-                                ref={containerRef}
-                                className={cn(
-                                    "flex-1 relative overflow-hidden bg-ot-surface-bottom flex w-full h-full p-2 select-none",
-                                    controllerPlacement === 'left' && "flex-row",
-                                    controllerPlacement === 'right' && "flex-row-reverse",
-                                    controllerPlacement === 'top' && "flex-col",
-                                    controllerPlacement === 'bottom' && "flex-col-reverse"
-                                )}
-                            >
-                                {/* SVG Animated Wires */}
-                                <svg className="absolute inset-0 pointer-events-none z-20 w-full h-full overflow-hidden" style={{ overflow: 'hidden' }}>
-                                    <style>{`
+                            {viewMode === '3d' ? (
+                                <Suspense fallback={<Canvas3DLoader />}>
+                                    <Cupboard3D
+                                        cupboards={cupboards}
+                                        controllerName={selectedController.name}
+                                        selectedCupboard={selectedCupboard}
+                                        activeCupboardIdx={activeCupboardIdx}
+                                        onSelectCupboard={setActiveCupboardIdx}
+                                    />
+                                </Suspense>
+                            ) : (
+                                cupboards.length > 0 ? (
+                                    <div
+                                        ref={containerRef}
+                                        className={cn(
+                                            "flex-1 relative overflow-hidden bg-ot-surface-bottom flex w-full h-full p-2 select-none",
+                                            controllerPlacement === 'left' && "flex-row",
+                                            controllerPlacement === 'right' && "flex-row-reverse",
+                                            controllerPlacement === 'top' && "flex-col",
+                                            controllerPlacement === 'bottom' && "flex-col-reverse"
+                                        )}
+                                    >
+                                        {/* SVG Animated Wires */}
+                                        <svg className="absolute inset-0 pointer-events-none z-20 w-full h-full overflow-hidden" style={{ overflow: 'hidden' }}>
+                                            <style>{`
                                         @keyframes wireFlowMon {
                                             from { stroke-dashoffset: 24; }
                                             to { stroke-dashoffset: 0; }
@@ -920,293 +1021,293 @@ export default function Monitoring() {
                                             animation: wireFlowMon 1s linear infinite;
                                         }
                                     `}</style>
-                                    <defs>
-                                        <filter id="glowMon" x="-20%" y="-20%" width="140%" height="140%">
-                                            <feGaussianBlur stdDeviation="3" result="blur" />
-                                            <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                                        </filter>
-                                    </defs>
-                                    {wirePaths.map(w => {
-                                        const chNum = Number(w.ch) || 1;
-                                        const palette = CHANNEL_PALETTES[(chNum - 1) % CHANNEL_PALETTES.length] || CHANNEL_PALETTES[0];
-                                        return (
-                                            <g key={w.id || w.ch}>
-                                                <path d={w.d} fill="none" stroke={palette.hex} strokeWidth="5" strokeOpacity="0.4" filter="url(#glowMon)" />
-                                                <path d={w.d} fill="none" stroke={palette.hex} strokeWidth="2.5" strokeDasharray="8 4" className="animate-wire-flow-mon" />
-                                                <circle cx={w.x1} cy={w.y1} r="4.5" fill={palette.hex} stroke="#ffffff" strokeWidth="1.5" />
-                                                <circle cx={w.x2} cy={w.y2} r="4.5" fill={palette.hex} stroke="#ffffff" strokeWidth="1.5" />
-                                            </g>
-                                        );
-                                    })}
-                                </svg>
+                                            <defs>
+                                                <filter id="glowMon" x="-20%" y="-20%" width="140%" height="140%">
+                                                    <feGaussianBlur stdDeviation="3" result="blur" />
+                                                    <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                                                </filter>
+                                            </defs>
+                                            {wirePaths.map(w => {
+                                                const chNum = Number(w.ch) || 1;
+                                                const palette = CHANNEL_PALETTES[(chNum - 1) % CHANNEL_PALETTES.length] || CHANNEL_PALETTES[0];
+                                                return (
+                                                    <g key={w.id || w.ch}>
+                                                        <path d={w.d} fill="none" stroke={palette.hex} strokeWidth="5" strokeOpacity="0.4" filter="url(#glowMon)" />
+                                                        <path d={w.d} fill="none" stroke={palette.hex} strokeWidth="2.5" strokeDasharray="8 4" className="animate-wire-flow-mon" />
+                                                        <circle cx={w.x1} cy={w.y1} r="4.5" fill={palette.hex} stroke="#ffffff" strokeWidth="1.5" />
+                                                        <circle cx={w.x2} cy={w.y2} r="4.5" fill={palette.hex} stroke="#ffffff" strokeWidth="1.5" />
+                                                    </g>
+                                                );
+                                            })}
+                                        </svg>
 
-                                {/* 16-Channel High-Fidelity PCB Controller Board */}
-                                <div className={cn(
-                                    "z-30 p-3 shrink-0 flex flex-col justify-between border-2 border-emerald-500/40 bg-gradient-to-b from-[#092e20] via-[#041d13] to-[#010e08] shadow-[inset_0_2px_4px_rgba(255,255,255,0.15),_inset_0_-2px_4px_rgba(0,0,0,0.8),_0_12px_35px_rgba(0,0,0,0.8),_0_0_20px_rgba(16,185,129,0.25)] transition-all duration-300 relative overflow-hidden rounded-2xl my-2 ml-2",
-                                    (controllerPlacement === 'left' || controllerPlacement === 'right') ? "w-56 h-[calc(100%-16px)]" : "w-full h-40 border-b"
-                                )}>
-                                    {/* 3D Screws */}
-                                    <div className="absolute top-2 left-2 w-3 h-3 rounded-full bg-gradient-to-br from-amber-200 via-amber-400 to-amber-700 border border-amber-500/80 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9),_0_1px_3px_rgba(0,0,0,0.8)] flex items-center justify-center pointer-events-none">
-                                        <div className="w-1.5 h-0.5 bg-amber-950 rounded-full rotate-45" />
-                                    </div>
-                                    <div className="absolute top-2 right-2 w-3 h-3 rounded-full bg-gradient-to-br from-amber-200 via-amber-400 to-amber-700 border border-amber-500/80 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9),_0_1px_3px_rgba(0,0,0,0.8)] flex items-center justify-center pointer-events-none">
-                                        <div className="w-1.5 h-0.5 bg-amber-950 rounded-full -rotate-45" />
-                                    </div>
-                                    <div className="absolute bottom-2 left-2 w-3 h-3 rounded-full bg-gradient-to-br from-amber-200 via-amber-400 to-amber-700 border border-amber-500/80 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9),_0_1px_3px_rgba(0,0,0,0.8)] flex items-center justify-center pointer-events-none">
-                                        <div className="w-1.5 h-0.5 bg-amber-950 rounded-full -rotate-45" />
-                                    </div>
-                                    <div className="absolute bottom-2 right-2 w-3 h-3 rounded-full bg-gradient-to-br from-amber-200 via-amber-400 to-amber-700 border border-amber-500/80 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9),_0_1px_3px_rgba(0,0,0,0.8)] flex items-center justify-center pointer-events-none">
-                                        <div className="w-1.5 h-0.5 bg-amber-950 rounded-full rotate-45" />
-                                    </div>
-
-                                    {/* PCB Etch Background */}
-                                    <div className="absolute inset-0 opacity-15 pointer-events-none bg-[radial-gradient(#10b981_1px,transparent_1px)] [background-size:8px_8px]" />
-
-                                    {/* PCB Header Info */}
-                                    <div className="flex items-center justify-between border-b border-emerald-500/30 pb-2 pt-1 px-3 mb-1.5 relative z-10">
-                                        <div className="flex items-center gap-1.5">
-                                            <div className="w-6 h-6 rounded-md bg-gradient-to-b from-emerald-500/30 to-emerald-900/40 border border-emerald-400/50 flex items-center justify-center text-emerald-300 shadow-[0_2px_4px_rgba(0,0,0,0.5)]">
-                                                <Cpu className="w-3.5 h-3.5" />
+                                        {/* 16-Channel High-Fidelity PCB Controller Board */}
+                                        <div className={cn(
+                                            "z-30 p-3 shrink-0 flex flex-col justify-between border-2 border-emerald-500/40 bg-gradient-to-b from-[#092e20] via-[#041d13] to-[#010e08] shadow-[inset_0_2px_4px_rgba(255,255,255,0.15),_inset_0_-2px_4px_rgba(0,0,0,0.8),_0_12px_35px_rgba(0,0,0,0.8),_0_0_20px_rgba(16,185,129,0.25)] transition-all duration-300 relative overflow-hidden rounded-2xl my-2 ml-2",
+                                            (controllerPlacement === 'left' || controllerPlacement === 'right') ? "w-56 h-[calc(100%-16px)]" : "w-full h-40 border-b"
+                                        )}>
+                                            {/* 3D Screws */}
+                                            <div className="absolute top-2 left-2 w-3 h-3 rounded-full bg-gradient-to-br from-amber-200 via-amber-400 to-amber-700 border border-amber-500/80 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9),_0_1px_3px_rgba(0,0,0,0.8)] flex items-center justify-center pointer-events-none">
+                                                <div className="w-1.5 h-0.5 bg-amber-950 rounded-full rotate-45" />
                                             </div>
-                                            <div>
-                                                <h4 className="text-[11px] font-black text-emerald-300 tracking-wider uppercase font-mono leading-tight drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">16-CH PCB MODULE</h4>
-                                                <div className="text-[9px] text-emerald-400/80 font-mono font-medium">
-                                                    {selectedController ? (selectedController.ip || selectedController.name) : '192.168.1.100'}
-                                                </div>
+                                            <div className="absolute top-2 right-2 w-3 h-3 rounded-full bg-gradient-to-br from-amber-200 via-amber-400 to-amber-700 border border-amber-500/80 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9),_0_1px_3px_rgba(0,0,0,0.8)] flex items-center justify-center pointer-events-none">
+                                                <div className="w-1.5 h-0.5 bg-amber-950 rounded-full -rotate-45" />
                                             </div>
-                                        </div>
-                                        <div className="flex items-center gap-1">
-                                            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                                            <span className="text-[8px] font-mono font-bold text-emerald-400 uppercase tracking-widest">LIVE</span>
-                                        </div>
-                                    </div>
+                                            <div className="absolute bottom-2 left-2 w-3 h-3 rounded-full bg-gradient-to-br from-amber-200 via-amber-400 to-amber-700 border border-amber-500/80 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9),_0_1px_3px_rgba(0,0,0,0.8)] flex items-center justify-center pointer-events-none">
+                                                <div className="w-1.5 h-0.5 bg-amber-950 rounded-full -rotate-45" />
+                                            </div>
+                                            <div className="absolute bottom-2 right-2 w-3 h-3 rounded-full bg-gradient-to-br from-amber-200 via-amber-400 to-amber-700 border border-amber-500/80 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9),_0_1px_3px_rgba(0,0,0,0.8)] flex items-center justify-center pointer-events-none">
+                                                <div className="w-1.5 h-0.5 bg-amber-950 rounded-full rotate-45" />
+                                            </div>
 
-                                    {/* 16 Channel Sockets Grid */}
-                                    <div className={cn(
-                                        "grid gap-1.5 overflow-y-auto pr-1 flex-1 relative z-10",
-                                        (controllerPlacement === 'left' || controllerPlacement === 'right') ? "grid-cols-1" : "grid-cols-8"
-                                    )}>
-                                        {Array.from({ length: 16 }, (_, i) => i + 1).map((chNum) => {
-                                            const assigned = allSavedStrips.find(s => {
-                                                const sCh = Number(s.channel) || (s.channel ? parseInt(String(s.channel).replace(/\D/g, ''), 10) : null);
-                                                return sCh === chNum;
-                                            }) || channelAssignments[chNum];
+                                            {/* PCB Etch Background */}
+                                            <div className="absolute inset-0 opacity-15 pointer-events-none bg-[radial-gradient(#10b981_1px,transparent_1px)] [background-size:8px_8px]" />
 
-                                            const isConnected = !!assigned;
-                                            const palette = CHANNEL_PALETTES[(chNum - 1) % CHANNEL_PALETTES.length];
-
-                                            return (
-                                                <div
-                                                    key={chNum}
-                                                    id={`monitoring-port-socket-${chNum}`}
-                                                    className={cn(
-                                                        "group relative flex items-center justify-between px-2 py-1.5 rounded-xl transition-all border select-none",
-                                                        isConnected
-                                                            ? `bg-gradient-to-r ${palette.bgGrad} ${palette.border} ${palette.glow}`
-                                                            : "bg-gradient-to-b from-[#0a1017] via-[#04070d] to-[#09111b] border-slate-700/80 text-slate-400"
-                                                    )}
-                                                >
-                                                    <div className="flex items-center gap-1.5 font-mono text-[10px] font-bold">
-                                                        <span className={cn(
-                                                            "w-2.5 h-2.5 rounded-full shrink-0 border border-black/40",
-                                                            isConnected ? `${palette.dot} animate-pulse` : "bg-slate-700"
-                                                        )} />
-                                                        <span className={isConnected ? `${palette.text} font-black drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]` : "text-slate-300"}>
-                                                            CH-{String(chNum).padStart(2, '0')}
-                                                        </span>
+                                            {/* PCB Header Info */}
+                                            <div className="flex items-center justify-between border-b border-emerald-500/30 pb-2 pt-1 px-3 mb-1.5 relative z-10">
+                                                <div className="flex items-center gap-1.5">
+                                                    <div className="w-6 h-6 rounded-md bg-gradient-to-b from-emerald-500/30 to-emerald-900/40 border border-emerald-400/50 flex items-center justify-center text-emerald-300 shadow-[0_2px_4px_rgba(0,0,0,0.5)]">
+                                                        <Cpu className="w-3.5 h-3.5" />
                                                     </div>
-                                                    <div className={cn(
-                                                        "text-[9px] font-mono opacity-90 truncate max-w-[55px] text-right font-semibold",
-                                                        isConnected ? palette.text : "text-slate-500"
-                                                    )}>
-                                                        {assigned ? (assigned.label || `Strip ${chNum}`) : 'Idle'}
+                                                    <div>
+                                                        <h4 className="text-[11px] font-black text-emerald-300 tracking-wider uppercase font-mono leading-tight drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">16-CH PCB MODULE</h4>
+                                                        <div className="text-[9px] text-emerald-400/80 font-mono font-medium">
+                                                            {selectedController ? (selectedController.ip || selectedController.name) : '192.168.1.100'}
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            );
-                                        })}
-                                    </div>
+                                                <div className="flex items-center gap-1">
+                                                    <div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                                                    <span className="text-[8px] font-mono font-bold text-emerald-400 uppercase tracking-widest">LIVE</span>
+                                                </div>
+                                            </div>
 
-                                    {/* Screw Terminal Footer */}
-                                    <div className="pt-2 mt-1 border-t border-emerald-500/30 flex items-center justify-between text-[9px] text-emerald-400/80 font-mono px-2 relative z-10">
-                                        <div className="flex items-center gap-1">
-                                            <span className="px-1.5 py-0.5 rounded-md bg-gradient-to-b from-emerald-900/80 to-emerald-950 border border-emerald-500/40 text-[8px] font-bold text-emerald-300 shadow-[inset_0_1px_2px_rgba(0,0,0,0.6)]">
-                                                GND | VCC | DATA
-                                            </span>
+                                            {/* 16 Channel Sockets Grid */}
+                                            <div className={cn(
+                                                "grid gap-1.5 overflow-y-auto pr-1 flex-1 relative z-10",
+                                                (controllerPlacement === 'left' || controllerPlacement === 'right') ? "grid-cols-1" : "grid-cols-8"
+                                            )}>
+                                                {Array.from({ length: 16 }, (_, i) => i + 1).map((chNum) => {
+                                                    const assigned = allSavedStrips.find(s => {
+                                                        const sCh = Number(s.channel) || (s.channel ? parseInt(String(s.channel).replace(/\D/g, ''), 10) : null);
+                                                        return sCh === chNum;
+                                                    }) || channelAssignments[chNum];
+
+                                                    const isConnected = !!assigned;
+                                                    const palette = CHANNEL_PALETTES[(chNum - 1) % CHANNEL_PALETTES.length];
+
+                                                    return (
+                                                        <div
+                                                            key={chNum}
+                                                            id={`monitoring-port-socket-${chNum}`}
+                                                            className={cn(
+                                                                "group relative flex items-center justify-between px-2 py-1.5 rounded-xl transition-all border select-none",
+                                                                isConnected
+                                                                    ? `bg-gradient-to-r ${palette.bgGrad} ${palette.border} ${palette.glow}`
+                                                                    : "bg-gradient-to-b from-[#0a1017] via-[#04070d] to-[#09111b] border-slate-700/80 text-slate-400"
+                                                            )}
+                                                        >
+                                                            <div className="flex items-center gap-1.5 font-mono text-[10px] font-bold">
+                                                                <span className={cn(
+                                                                    "w-2.5 h-2.5 rounded-full shrink-0 border border-black/40",
+                                                                    isConnected ? `${palette.dot} animate-pulse` : "bg-slate-700"
+                                                                )} />
+                                                                <span className={isConnected ? `${palette.text} font-black drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]` : "text-slate-300"}>
+                                                                    CH-{String(chNum).padStart(2, '0')}
+                                                                </span>
+                                                            </div>
+                                                            <div className={cn(
+                                                                "text-[9px] font-mono opacity-90 truncate max-w-[55px] text-right font-semibold",
+                                                                isConnected ? palette.text : "text-slate-500"
+                                                            )}>
+                                                                {assigned ? (assigned.label || `Strip ${chNum}`) : 'Idle'}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            {/* Screw Terminal Footer */}
+                                            <div className="pt-2 mt-1 border-t border-emerald-500/30 flex items-center justify-between text-[9px] text-emerald-400/80 font-mono px-2 relative z-10">
+                                                <div className="flex items-center gap-1">
+                                                    <span className="px-1.5 py-0.5 rounded-md bg-gradient-to-b from-emerald-900/80 to-emerald-950 border border-emerald-500/40 text-[8px] font-bold text-emerald-300 shadow-[inset_0_1px_2px_rgba(0,0,0,0.6)]">
+                                                        GND | VCC | DATA
+                                                    </span>
+                                                </div>
+                                                <span className="text-emerald-300 font-bold text-[9px] drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+                                                    {allSavedStrips.length}/16 Active
+                                                </span>
+                                            </div>
                                         </div>
-                                        <span className="text-emerald-300 font-bold text-[9px] drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
-                                            {allSavedStrips.length}/16 Active
-                                        </span>
+
+                                        {/* Cupboard 2D Stage */}
+                                        <div className="flex-1 p-4 overflow-auto flex flex-col justify-center items-center relative w-full h-full">
+                                            <Cupboard2D
+                                                cupboards={cupboards}
+                                                controllerName={selectedController.name}
+                                                selectedCupboard={selectedCupboard}
+                                                activeCupboardIdx={activeCupboardIdx}
+                                                onSelectCupboard={setActiveCupboardIdx}
+                                                layoutMode={layoutMode}
+                                                key={selectedController.name}
+                                                hideInternalWires={true}
+                                                onZoomChange={() => calculateWirePaths()}
+                                            />
+                                        </div>
                                     </div>
-                                </div>
-
-                                {/* Cupboard 2D Stage */}
-                                <div className="flex-1 p-4 overflow-auto flex flex-col justify-center items-center relative w-full h-full">
-                                    <Cupboard2D
-                                        cupboards={cupboards}
-                                        controllerName={selectedController.name}
-                                        selectedCupboard={selectedCupboard}
-                                        activeCupboardIdx={activeCupboardIdx}
-                                        onSelectCupboard={setActiveCupboardIdx}
-                                        layoutMode={layoutMode}
-                                        key={selectedController.name}
-                                        hideInternalWires={true}
-                                        onZoomChange={() => calculateWirePaths()}
-                                    />
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="flex items-center justify-center h-full text-muted-foreground">
-                                No cupboards assigned to this controller.
-                            </div>
-                        )
-                    )}
-                </Card>
-
-                {/* Hierarchy Sidebar */}
-                <Card className={cn(
-                    "flex-shrink-0 flex flex-col overflow-hidden transition-all duration-300 ease-in-out",
-                    controlsVisible ? "w-80 opacity-100" : "w-0 opacity-0 border-transparent pointer-events-none"
-                )}>
-                    <div className={cn(
-                        "h-[57px] border-b border-ot-border bg-ot-surface-elev-top font-semibold text-white flex items-center px-4 transition-all duration-300",
-                        controlsVisible ? "opacity-100" : "opacity-0"
-                    )}>
-                        <div className="flex items-center gap-2 whitespace-nowrap">
-                            <MonitorPlay className="w-4 h-4 text-ot-action shrink-0" />
-                            <span>Hierarchy Navigator</span>
-                        </div>
-                    </div>
-                    <CardContent className={cn(
-                        "p-0 overflow-auto transition-all duration-300",
-                        controlsVisible ? "flex-1 opacity-100" : "h-0 opacity-0 pointer-events-none"
-                    )}>
-                        <div className="divide-y divide-ot-border">
-                            {hierarchy.length > 0 ? (
-                                hierarchy.map((controller) => {
-                                    const isSelectedController = selectedController.name === controller.name;
-                                    const isControllerExpanded = expandedControllers.has(controller.name);
-                                    return (
-                                        <Collapsible
-                                            key={controller.name}
-                                            open={isControllerExpanded}
-                                            onOpenChange={(isOpen) => handleToggleController(controller.name, isOpen)}
-                                            className="border-b border-ot-border"
-                                        >
-                                            <CollapsibleTrigger asChild>
-                                                <Button
-                                                    variant="ghost"
-                                                    className={cn(
-                                                        "w-full h-auto px-4 py-4 text-left flex items-center justify-between gap-3 transition-colors rounded-none",
-                                                        isControllerExpanded ? 'bg-ot-surface-bottom/70 hover:bg-ot-surface-bottom/70' : 'hover:bg-ot-surface-bottom/80',
-                                                        isSelectedController ? 'bg-ot-action/10 border-l-2 border-l-ot-action text-ot-action hover:bg-ot-action/15 hover:text-ot-action' : ''
-                                                    )}
-                                                >
-                                                    <div className="min-w-0 flex-1">
-                                                        <div className={cn(
-                                                            'font-medium text-sm truncate text-left',
-                                                            isSelectedController ? 'text-ot-action' : 'text-white'
-                                                        )}>{controller.name}</div>
-                                                        <p className="text-xs text-muted-foreground mt-1 truncate text-left font-normal">{controller.cupboards.length} cupboards</p>
-                                                    </div>
-                                                    <ChevronRight className={cn(
-                                                        'w-4 h-4 transition-transform shrink-0',
-                                                        isControllerExpanded && 'rotate-90 text-ot-action',
-                                                        !isControllerExpanded && !isSelectedController && 'text-muted-foreground'
-                                                    )} />
-                                                </Button>
-                                            </CollapsibleTrigger>
-                                            <CollapsibleContent>
-                                                {controller.walls.length > 0 && (
-                                                    <div className="mt-2 mb-2 space-y-2 pl-4 pr-3">
-                                                        {controller.walls.map(wall => {
-                                                            const isWallExpanded = expandedWalls.has(wall.name);
-                                                            const isSelectedWall = controller.name === selectedControllerName && wall.name === selectedWallName;
-                                                            return (
-                                                                <Collapsible
-                                                                    key={wall.id}
-                                                                    open={isWallExpanded}
-                                                                    onOpenChange={(isOpen) => handleToggleWall(wall.name, isOpen)}
-                                                                    className="space-y-1"
-                                                                >
-                                                                    <CollapsibleTrigger asChild>
-                                                                        <Button
-                                                                            variant="ghost"
-                                                                            className={cn(
-                                                                                "w-full h-auto flex items-center justify-between text-xs font-semibold px-3 py-1.5 rounded-md transition-colors gap-2",
-                                                                                selectedWallNames.includes(wall.name)
-                                                                                    ? 'bg-ot-action/20 text-ot-action hover:bg-ot-action/25 hover:text-ot-action'
-                                                                                    : 'bg-ot-surface-top/50 text-white/70 hover:bg-ot-surface-top hover:text-white'
-                                                                            )}
-                                                                        >
-                                                                            <div className="flex items-center gap-2 flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
-                                                                                <input
-                                                                                    type="checkbox"
-                                                                                    id={`chk-wall-${wall.id}`}
-                                                                                    checked={selectedWallNames.includes(wall.name)}
-                                                                                    onChange={() => toggleWallSelection(wall.name)}
-                                                                                    className="w-3.5 h-3.5 rounded border-ot-border text-ot-action focus:ring-ot-action/50 accent-[#22d3ee] cursor-pointer shrink-0"
-                                                                                />
-                                                                                <span className="truncate flex-1 text-left">{wall.name}</span>
-                                                                            </div>
-                                                                            <ChevronRight className={cn('w-3 h-3 transition-transform shrink-0', isWallExpanded ? (isSelectedWall ? 'rotate-90 text-ot-action' : 'rotate-90 text-white') : 'text-muted-foreground')} />
-                                                                        </Button>
-                                                                    </CollapsibleTrigger>
-                                                                    <CollapsibleContent>
-                                                                        <div className="space-y-1 pl-2 border-l border-ot-border/50">
-                                                                            {wall.cupboards.map((cupboard, cbIdxInWall) => {
-                                                                                const isActiveCupboard = controller.name === selectedControllerName && wall.name === selectedWallName && cbIdxInWall === activeCupboardIdx;
-                                                                                const eanCount = eanCountFor(cupboard.id);
-                                                                                return (
-                                                                                    <div key={cupboard.id} className="space-y-1">
-                                                                                        <Button
-                                                                                            variant="ghost"
-                                                                                            onClick={() => {
-                                                                                                if (controller.name !== selectedControllerName) {
-                                                                                                    handleToggleController(controller.name, true);
-                                                                                                }
-                                                                                                if (wall.name !== selectedWallName) {
-                                                                                                    handleToggleWall(wall.name, true);
-                                                                                                }
-                                                                                                handleSelectCupboard(cbIdxInWall);
-                                                                                            }}
-                                                                                            className={cn(
-                                                                                                "w-full h-auto px-3 py-2 rounded-md text-xs flex items-center justify-between transition-all",
-                                                                                                isActiveCupboard
-                                                                                                    ? 'bg-ot-action/15 border border-ot-action/50 text-ot-action hover:bg-ot-action/20 hover:text-ot-action'
-                                                                                                    : 'bg-ot-surface-bottom border border-ot-border text-muted-foreground hover:text-white hover:border-ot-action/30'
-                                                                                            )}
-                                                                                        >
-                                                                                            <span className="truncate flex-1 text-left font-normal">{cupboard.name}</span>
-                                                                                            <span className={cn(
-                                                                                                'px-2 py-0.5 rounded text-[10px] font-mono shrink-0 font-medium',
-                                                                                                eanCount > 0 ? 'bg-ot-action/20 text-ot-action' : 'bg-ot-surface-top text-muted-foreground'
-                                                                                            )}>
-                                                                                                {eanCount} EAN{eanCount !== 1 ? 's' : ''}
-                                                                                            </span>
-                                                                                        </Button>
-                                                                                    </div>
-                                                                                );
-                                                                            })}
-                                                                        </div>
-                                                                    </CollapsibleContent>
-                                                                </Collapsible>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                )}
-                                            </CollapsibleContent>
-                                        </Collapsible>
-                                    );
-                                })
-                            ) : (
-                                <div className="px-4 py-4 text-sm text-muted-foreground">No controllers available.</div>
+                                ) : (
+                                    <div className="flex items-center justify-center h-full text-muted-foreground">
+                                        No cupboards assigned to this controller.
+                                    </div>
+                                )
                             )}
-                        </div>
-                    </CardContent>
-                </Card>
-            </>
-            )}
+                        </Card>
+
+                        {/* Hierarchy Sidebar */}
+                        <Card className={cn(
+                            "flex-shrink-0 flex flex-col overflow-hidden transition-all duration-300 ease-in-out",
+                            controlsVisible ? "w-80 opacity-100" : "w-0 opacity-0 border-transparent pointer-events-none"
+                        )}>
+                            <div className={cn(
+                                "h-[57px] border-b border-ot-border bg-ot-surface-elev-top font-semibold text-white flex items-center px-4 transition-all duration-300",
+                                controlsVisible ? "opacity-100" : "opacity-0"
+                            )}>
+                                <div className="flex items-center gap-2 whitespace-nowrap">
+                                    <MonitorPlay className="w-4 h-4 text-ot-action shrink-0" />
+                                    <span>Hierarchy Navigator</span>
+                                </div>
+                            </div>
+                            <CardContent className={cn(
+                                "p-0 overflow-auto transition-all duration-300",
+                                controlsVisible ? "flex-1 opacity-100" : "h-0 opacity-0 pointer-events-none"
+                            )}>
+                                <div className="divide-y divide-ot-border">
+                                    {hierarchy.length > 0 ? (
+                                        hierarchy.map((controller) => {
+                                            const isSelectedController = selectedController.name === controller.name;
+                                            const isControllerExpanded = expandedControllers.has(controller.name);
+                                            return (
+                                                <Collapsible
+                                                    key={controller.name}
+                                                    open={isControllerExpanded}
+                                                    onOpenChange={(isOpen) => handleToggleController(controller.name, isOpen)}
+                                                    className="border-b border-ot-border"
+                                                >
+                                                    <CollapsibleTrigger asChild>
+                                                        <Button
+                                                            variant="ghost"
+                                                            className={cn(
+                                                                "w-full h-auto px-4 py-4 text-left flex items-center justify-between gap-3 transition-colors rounded-none",
+                                                                isControllerExpanded ? 'bg-ot-surface-bottom/70 hover:bg-ot-surface-bottom/70' : 'hover:bg-ot-surface-bottom/80',
+                                                                isSelectedController ? 'bg-ot-action/10 border-l-2 border-l-ot-action text-ot-action hover:bg-ot-action/15 hover:text-ot-action' : ''
+                                                            )}
+                                                        >
+                                                            <div className="min-w-0 flex-1">
+                                                                <div className={cn(
+                                                                    'font-medium text-sm truncate text-left',
+                                                                    isSelectedController ? 'text-ot-action' : 'text-white'
+                                                                )}>{controller.name}</div>
+                                                                <p className="text-xs text-muted-foreground mt-1 truncate text-left font-normal">{controller.cupboards.length} cupboards</p>
+                                                            </div>
+                                                            <ChevronRight className={cn(
+                                                                'w-4 h-4 transition-transform shrink-0',
+                                                                isControllerExpanded && 'rotate-90 text-ot-action',
+                                                                !isControllerExpanded && !isSelectedController && 'text-muted-foreground'
+                                                            )} />
+                                                        </Button>
+                                                    </CollapsibleTrigger>
+                                                    <CollapsibleContent>
+                                                        {controller.walls.length > 0 && (
+                                                            <div className="mt-2 mb-2 space-y-2 pl-4 pr-3">
+                                                                {controller.walls.map(wall => {
+                                                                    const isWallExpanded = expandedWalls.has(wall.name);
+                                                                    const isSelectedWall = controller.name === selectedControllerName && wall.name === selectedWallName;
+                                                                    return (
+                                                                        <Collapsible
+                                                                            key={wall.id}
+                                                                            open={isWallExpanded}
+                                                                            onOpenChange={(isOpen) => handleToggleWall(wall.name, isOpen)}
+                                                                            className="space-y-1"
+                                                                        >
+                                                                            <CollapsibleTrigger asChild>
+                                                                                <Button
+                                                                                    variant="ghost"
+                                                                                    className={cn(
+                                                                                        "w-full h-auto flex items-center justify-between text-xs font-semibold px-3 py-1.5 rounded-md transition-colors gap-2",
+                                                                                        selectedWallNames.includes(wall.name)
+                                                                                            ? 'bg-ot-action/20 text-ot-action hover:bg-ot-action/25 hover:text-ot-action'
+                                                                                            : 'bg-ot-surface-top/50 text-white/70 hover:bg-ot-surface-top hover:text-white'
+                                                                                    )}
+                                                                                >
+                                                                                    <div className="flex items-center gap-2 flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
+                                                                                        <input
+                                                                                            type="checkbox"
+                                                                                            id={`chk-wall-${wall.id}`}
+                                                                                            checked={selectedWallNames.includes(wall.name)}
+                                                                                            onChange={() => toggleWallSelection(wall.name)}
+                                                                                            className="w-3.5 h-3.5 rounded border-ot-border text-ot-action focus:ring-ot-action/50 accent-[#22d3ee] cursor-pointer shrink-0"
+                                                                                        />
+                                                                                        <span className="truncate flex-1 text-left">{wall.name}</span>
+                                                                                    </div>
+                                                                                    <ChevronRight className={cn('w-3 h-3 transition-transform shrink-0', isWallExpanded ? (isSelectedWall ? 'rotate-90 text-ot-action' : 'rotate-90 text-white') : 'text-muted-foreground')} />
+                                                                                </Button>
+                                                                            </CollapsibleTrigger>
+                                                                            <CollapsibleContent>
+                                                                                <div className="space-y-1 pl-2 border-l border-ot-border/50">
+                                                                                    {wall.cupboards.map((cupboard, cbIdxInWall) => {
+                                                                                        const isActiveCupboard = controller.name === selectedControllerName && wall.name === selectedWallName && cbIdxInWall === activeCupboardIdx;
+                                                                                        const eanCount = eanCountFor(cupboard.id);
+                                                                                        return (
+                                                                                            <div key={cupboard.id} className="space-y-1">
+                                                                                                <Button
+                                                                                                    variant="ghost"
+                                                                                                    onClick={() => {
+                                                                                                        if (controller.name !== selectedControllerName) {
+                                                                                                            handleToggleController(controller.name, true);
+                                                                                                        }
+                                                                                                        if (wall.name !== selectedWallName) {
+                                                                                                            handleToggleWall(wall.name, true);
+                                                                                                        }
+                                                                                                        handleSelectCupboard(cbIdxInWall);
+                                                                                                    }}
+                                                                                                    className={cn(
+                                                                                                        "w-full h-auto px-3 py-2 rounded-md text-xs flex items-center justify-between transition-all",
+                                                                                                        isActiveCupboard
+                                                                                                            ? 'bg-ot-action/15 border border-ot-action/50 text-ot-action hover:bg-ot-action/20 hover:text-ot-action'
+                                                                                                            : 'bg-ot-surface-bottom border border-ot-border text-muted-foreground hover:text-white hover:border-ot-action/30'
+                                                                                                    )}
+                                                                                                >
+                                                                                                    <span className="truncate flex-1 text-left font-normal">{cupboard.name}</span>
+                                                                                                    <span className={cn(
+                                                                                                        'px-2 py-0.5 rounded text-[10px] font-mono shrink-0 font-medium',
+                                                                                                        eanCount > 0 ? 'bg-ot-action/20 text-ot-action' : 'bg-ot-surface-top text-muted-foreground'
+                                                                                                    )}>
+                                                                                                        {eanCount} EAN{eanCount !== 1 ? 's' : ''}
+                                                                                                    </span>
+                                                                                                </Button>
+                                                                                            </div>
+                                                                                        );
+                                                                                    })}
+                                                                                </div>
+                                                                            </CollapsibleContent>
+                                                                        </Collapsible>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        )}
+                                                    </CollapsibleContent>
+                                                </Collapsible>
+                                            );
+                                        })
+                                    ) : (
+                                        <div className="px-4 py-4 text-sm text-muted-foreground">No controllers available.</div>
+                                    )}
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </>
+                )}
+            </div>
         </div>
-    </div>
     );
 }

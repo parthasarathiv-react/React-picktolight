@@ -41,6 +41,21 @@ export default function Settings() {
         if (tabId === 'leds') {
             setIsLedDesignerActive(false);
         }
+
+        // Trigger GET API refetches for the selected tab context
+        if (typeof refetchControllers === 'function') refetchControllers();
+        if (['walls', 'cupboards', 'shelves', 'bins', 'led-setup', 'leds'].includes(tabId)) {
+            if (typeof refetchWalls === 'function') refetchWalls();
+        }
+        if (['cupboards', 'shelves', 'bins', 'led-setup', 'leds'].includes(tabId)) {
+            if (typeof refetchCupboards === 'function') refetchCupboards();
+        }
+        if (['shelves', 'bins', 'leds'].includes(tabId)) {
+            if (typeof refetchShelves === 'function') refetchShelves();
+        }
+        if (['bins', 'leds'].includes(tabId)) {
+            if (typeof refetchBins === 'function') refetchBins();
+        }
     };
 
     const [controllersData, setControllersData] = useState([]);
@@ -51,7 +66,7 @@ export default function Settings() {
             const selectedLocationStr = localStorage.getItem('selectedLocation');
             if (selectedLocationStr) {
                 const loc = JSON.parse(selectedLocationStr);
-                return loc.pick_location_id || '';
+                return loc.phr_location_id || '';
             }
         } catch (e) { }
         return '';
@@ -65,10 +80,15 @@ export default function Settings() {
             if (!data.success || !data.data) throw new Error("Failed to fetch controllers");
             return data.data.map(c => ({
                 id: c.ctl_id || c.id || Math.random().toString(36).substr(2, 9),
+                ctl_id: c.ctl_id || c.id,
                 name: c.ctl_name,
                 ip: c.ctl_ip,
                 port: c.ctl_port,
+                ctl_loc_id: c.ctl_loc_id,
+                ctl_channels: c.ctl_channels,
                 channels: c.ctl_channels || 16,
+                position: c.ctl_position && c.ctl_position !== 'none' ? c.ctl_position : 'left',
+                ctl_position: c.ctl_position || 'none',
                 status: (c.ctl_status === 'True' || c.ctl_status === true || c.ctl_status === 'Online') ? 'Online' : 'Offline'
             }));
         },
@@ -76,7 +96,7 @@ export default function Settings() {
     });
 
     const shouldFetchWalls = ['walls', 'cupboards', 'shelves', 'bins', 'led-setup', 'leds'].includes(activeTab);
-    const { data: rawWalls, isFetching: isFetchingWalls, error: errorWalls } = useQuery({
+    const { data: rawWalls, isFetching: isFetchingWalls, error: errorWalls, refetch: refetchWalls } = useQuery({
         queryKey: ['walls', locId],
         queryFn: async () => {
             if (!locId) return [];
@@ -88,7 +108,7 @@ export default function Settings() {
     });
 
     const shouldFetchCupboards = ['cupboards', 'shelves', 'bins', 'led-setup', 'leds'].includes(activeTab);
-    const { data: rawCupboards, isFetching: isFetchingCupboards, error: errorCupboards } = useQuery({
+    const { data: rawCupboards, isFetching: isFetchingCupboards, error: errorCupboards, refetch: refetchCupboards } = useQuery({
         queryKey: ['cupboards', locId],
         queryFn: async () => {
             if (!locId) return [];
@@ -110,6 +130,7 @@ export default function Settings() {
         },
         enabled: !!locId && shouldFetchShelves,
     });
+    console.log("rawShelves", rawShelves);
 
     const shouldFetchBins = ['bins', 'leds'].includes(activeTab);
     const { data: rawBins, isFetching: isFetchingBins, error: errorBins, refetch: refetchBins } = useQuery({
@@ -126,7 +147,7 @@ export default function Settings() {
     const rawStrips = [];
     const isFetchingStrips = false;
     const errorStrips = null;
-    const refetchStrips = () => {};
+    const refetchStrips = () => { };
 
     useEffect(() => {
         if (fetchedControllers) {
@@ -168,73 +189,154 @@ export default function Settings() {
 
                 let shelfLayout = [];
                 if (rawShelves && Array.isArray(rawShelves)) {
-                    const cId = String(c.cupboard_id || c.id || '');
-                    const cName = String(c.cupboard_name || c.name || '');
+                    const cId = String(c.cupboard_id || c.id || '').trim();
+                    const cName = String(c.cupboard_name || c.name || '').trim();
 
                     const matchingShelves = rawShelves.filter(s => {
+                        const sLocId = String(s.shelf_loc_id || '').trim();
+                        if (sLocId && locId && sLocId !== String(locId).trim()) {
+                            return false;
+                        }
+
                         const sCupId = String(s.shelf_cupboard_id || '').trim();
-                        return sCupId !== '' && (sCupId === cId || sCupId === cName);
+                        if (sCupId) {
+                            return (
+                                sCupId === cId ||
+                                sCupId === cName ||
+                                (c.cupboard_id !== undefined && sCupId === String(c.cupboard_id).trim()) ||
+                                (c.id !== undefined && sCupId === String(c.id).trim()) ||
+                                (c.name !== undefined && sCupId === String(c.name).trim()) ||
+                                (c.cupboard_name !== undefined && sCupId === String(c.cupboard_name).trim())
+                            );
+                        }
+
+                        // Fallback matching when shelf_cupboard_id is missing from GET API:
+                        const sWallId = String(s.shelf_wall_id || '').trim();
+                        const sCtlId = String(s.shelf_ctl_id || '').trim();
+                        const cWallId = String(c.cupboard_wall_id || c.wall_id || '').trim();
+                        const cCtlId = String(c.cupboard_ctl_id || c.controller_id || '').trim();
+
+                        if (sWallId && cWallId && sWallId === cWallId) return true;
+                        if (sCtlId && cCtlId && sCtlId === cCtlId) return true;
+
+                        if (rawCupboards && rawCupboards.length === 1) {
+                            return true;
+                        }
+
+                        return false;
                     });
 
                     if (matchingShelves.length > 0) {
                         shelfLayout = matchingShelves.map((s, idx) => {
                             const realId = (s.shelf_id !== undefined && s.shelf_id !== null) ? String(s.shelf_id) : ((s.id !== undefined && s.id !== null) ? String(s.id) : `shelf-${idx}`);
-                            
+
                             const isAssigned = (s.shelf_status === 'True' || s.shelf_status === true || s.shelf_status === 'Active');
                             const hasGridX = s.shelf_gridx !== undefined && s.shelf_gridx !== null && s.shelf_gridx !== '' && !isNaN(parseFloat(s.shelf_gridx));
                             const hasGridY = s.shelf_gridy !== undefined && s.shelf_gridy !== null && s.shelf_gridy !== '' && !isNaN(parseFloat(s.shelf_gridy));
                             const hasWidth = s.shelf_width !== undefined && s.shelf_width !== null && s.shelf_width !== '' && !isNaN(parseFloat(s.shelf_width));
                             const hasHeight = s.shelf_height !== undefined && s.shelf_height !== null && s.shelf_height !== '' && !isNaN(parseFloat(s.shelf_height));
 
+                            const isPlaced = s.placed !== false;
+
                             let bins = [];
                             if (rawBins && Array.isArray(rawBins)) {
                                 const matchingBins = rawBins.filter(b => {
-                                    const bShelfId = String(b.bin_shelf_id || '').trim();
-                                    const bPhrId = String(b.bin_phr_id || '').trim();
-                                    const sPhrId = String(s.shelf_phr_id || '').trim();
+                                    // 1. Match Location ID
+                                    const bLocId = String(b.bin_loc_id || b.loc_id || '').trim();
+                                    const currentLocIdStr = String(locId || '').trim();
+                                    if (bLocId && currentLocIdStr && currentLocIdStr !== 'All' && bLocId !== currentLocIdStr) {
+                                        return false;
+                                    }
+
+                                    // 2. Match Controller ID
+                                    const bCtlId = String(b.bin_ctl_id || b.ctl_id || '').trim();
+                                    const cCtlId = String(c.cupboard_ctl_id || c.controller_id || s.shelf_ctl_id || '').trim();
+                                    if (bCtlId && cCtlId && bCtlId !== '0' && cCtlId !== '0' && bCtlId !== cCtlId) {
+                                        return false;
+                                    }
+
+                                    // 3. Match Cupboard ID (if present on bin)
+                                    const bCupId = String(b.bin_cupboard_id || b.cupboard_id || '').trim();
+                                    const cId = String(c.cupboard_id || c.id || '').trim();
+                                    const cName = String(c.cupboard_name || c.name || '').trim();
+                                    if (bCupId && (cId || cName)) {
+                                        if (bCupId !== cId && bCupId !== cName) {
+                                            return false;
+                                        }
+                                    }
+
+                                    // 4. Match Pharmacy Shelf ID / Shelf ID
+                                    const bShelfPhrId = String(b.bin_shelf_phr_id || '').trim();
+                                    const bShelfId = String(b.bin_shelf_id || b.shelf_id || '').trim();
+                                    const bPhrId = String(b.bin_phr_id || b.phr_id || '').trim();
+
+                                    const sPhrId = String(s.shelf_phr_id || s.phr_id || '').trim();
                                     const sShelfId = String(s.shelf_id || s.id || '').trim();
                                     const sRealId = String(realId || '').trim();
-                                    const sName = String(s.shelf_name || '').trim();
+                                    const sName = String(s.shelf_name || s.name || '').trim();
 
                                     const isShelfMatch = (
+                                        (bShelfPhrId !== '' && (
+                                            bShelfPhrId === sPhrId ||
+                                            bShelfPhrId === sShelfId ||
+                                            bShelfPhrId === sRealId ||
+                                            bShelfPhrId === sName
+                                        )) ||
                                         (bShelfId !== '' && (
                                             bShelfId === sPhrId ||
                                             bShelfId === sShelfId ||
                                             bShelfId === sRealId ||
                                             bShelfId === sName
                                         )) ||
-                                        (sPhrId !== '' && bPhrId !== '' && bPhrId === sPhrId)
+                                        (bPhrId !== '' && sPhrId !== '' && bPhrId === sPhrId)
                                     );
 
-                                    const hasGridAndSize = (
-                                        b.bin_gridx !== undefined && b.bin_gridx !== null && String(b.bin_gridx).trim() !== '' &&
-                                        b.bin_gridy !== undefined && b.bin_gridy !== null && String(b.bin_gridy).trim() !== '' &&
-                                        b.bin_width !== undefined && b.bin_width !== null && String(b.bin_width).trim() !== '' &&
-                                        b.bin_height !== undefined && b.bin_height !== null && String(b.bin_height).trim() !== ''
-                                    );
+                                    if (!isShelfMatch) {
+                                        return false;
+                                    }
 
                                     const isPlacedBin = b.placed !== false && b.bin_status !== false && String(b.bin_status).toLowerCase() !== 'false';
 
-                                    return isShelfMatch && hasGridAndSize && isPlacedBin;
+                                    return isPlacedBin;
+                                });
+
+                                // Sort matching bins sequentially (by order / id / name)
+                                matchingBins.sort((a, b) => {
+                                    const orderA = Number(a.bin_order !== undefined ? a.bin_order : 999);
+                                    const orderB = Number(b.bin_order !== undefined ? b.bin_order : 999);
+                                    if (orderA !== orderB) return orderA - orderB;
+                                    return String(a.bin_name || a.bin_id || '').localeCompare(String(b.bin_name || b.bin_id || ''), undefined, { numeric: true });
                                 });
 
                                 if (matchingBins.length > 0) {
-                                    bins = matchingBins.map((b, bIdx) => ({
-                                        id: String(b.bin_id || `bin-${bIdx}`),
-                                        bin_id: b.bin_id,
-                                        label: b.bin_name || `Bin ${bIdx + 1}`,
-                                        x: parseFloat(b.bin_gridx) || 10,
-                                        y: parseFloat(b.bin_gridy) || 10,
-                                        width: parseFloat(b.bin_width) || 80,
-                                        height: parseFloat(b.bin_height) || 48,
-                                        placed: true,
-                                        bin_order: b.bin_order,
-                                        bin_phr_id: b.bin_phr_id || b.phr_id || "",
-                                        bin_org_id: b.bin_org_id || "skshospital",
-                                        bin_branch_id: b.bin_branch_id || "Salem",
-                                        bin_status: b.bin_status,
-                                        bin_shelf_id: b.bin_shelf_id
-                                    }));
+                                    bins = matchingBins.map((b, bIdx) => {
+                                        const defaultWidth = 80;
+                                        const defaultHeight = 44;
+                                        const gap = 10;
+                                        const hasX = b.bin_gridx !== undefined && b.bin_gridx !== null && String(b.bin_gridx).trim() !== '' && !isNaN(parseFloat(b.bin_gridx));
+                                        const hasY = b.bin_gridy !== undefined && b.bin_gridy !== null && String(b.bin_gridy).trim() !== '' && !isNaN(parseFloat(b.bin_gridy));
+                                        const hasW = b.bin_width !== undefined && b.bin_width !== null && String(b.bin_width).trim() !== '' && !isNaN(parseFloat(b.bin_width));
+                                        const hasH = b.bin_height !== undefined && b.bin_height !== null && String(b.bin_height).trim() !== '' && !isNaN(parseFloat(b.bin_height));
+
+                                        return {
+                                            id: String(b.bin_id || `bin-${bIdx}`),
+                                            bin_id: b.bin_id,
+                                            label: b.bin_name || `Bin ${bIdx + 1}`,
+                                            x: hasX ? parseFloat(b.bin_gridx) : (10 + bIdx * (defaultWidth + gap)),
+                                            y: hasY ? parseFloat(b.bin_gridy) : 6,
+                                            width: hasW ? parseFloat(b.bin_width) : defaultWidth,
+                                            height: hasH ? parseFloat(b.bin_height) : defaultHeight,
+                                            placed: true,
+                                            bin_order: b.bin_order !== undefined ? b.bin_order : bIdx + 1,
+                                            bin_phr_id: b.bin_phr_id || b.phr_id || "",
+                                            bin_shelf_phr_id: b.bin_shelf_phr_id || b.bin_shelf_id || s.shelf_phr_id || s.shelf_id || "",
+                                            bin_ctl_id: b.bin_ctl_id || b.ctl_id || s.shelf_ctl_id || c.cupboard_ctl_id || c.controller_id || "",
+                                            bin_org_id: b.bin_org_id || "skshospital",
+                                            bin_branch_id: b.bin_branch_id || "Salem",
+                                            bin_status: b.bin_status,
+                                            bin_shelf_id: b.bin_shelf_id || s.shelf_id
+                                        };
+                                    });
                                 }
                             }
 
@@ -249,16 +351,38 @@ export default function Settings() {
                                             String(ls.label || ls.shelf_name || '') === String(s.shelf_name || '')
                                         );
                                         if (lsShelf && lsShelf.bins && Array.isArray(lsShelf.bins)) {
-                                            bins = lsShelf.bins.filter(b =>
-                                                b.placed !== false &&
-                                                b.x !== undefined && b.x !== null &&
-                                                b.y !== undefined && b.y !== null &&
-                                                b.width !== undefined && b.width !== null &&
-                                                b.height !== undefined && b.height !== null
-                                            );
+                                            bins = lsShelf.bins.filter(b => b.placed !== false).map((b, bIdx) => ({
+                                                ...b,
+                                                id: String(b.id || b.bin_id || `bin-${bIdx}`),
+                                                label: b.label || b.bin_name || `Bin ${bIdx + 1}`,
+                                                x: (b.x !== undefined && b.x !== null && !isNaN(parseFloat(b.x))) ? parseFloat(b.x) : (10 + bIdx * 90),
+                                                y: (b.y !== undefined && b.y !== null && !isNaN(parseFloat(b.y))) ? parseFloat(b.y) : 6,
+                                                width: (b.width !== undefined && b.width !== null && !isNaN(parseFloat(b.width))) ? parseFloat(b.width) : 80,
+                                                height: (b.height !== undefined && b.height !== null && !isNaN(parseFloat(b.height))) ? parseFloat(b.height) : 44
+                                            }));
                                         }
                                     }
                                 } catch (e) { }
+                            }
+
+                            if (bins.length === 0) {
+                                const defaultCount = 4;
+                                const defaultWidth = 80;
+                                const defaultHeight = 44;
+                                const gap = 10;
+                                for (let bIdx = 0; bIdx < defaultCount; bIdx++) {
+                                    bins.push({
+                                        id: `${realId}-bin-${bIdx + 1}`,
+                                        bin_id: `${realId}-bin-${bIdx + 1}`,
+                                        label: `${s.shelf_name || 'Bin'} ${String.fromCharCode(65 + bIdx)}`,
+                                        x: 10 + bIdx * (defaultWidth + gap),
+                                        y: 6,
+                                        width: defaultWidth,
+                                        height: defaultHeight,
+                                        placed: true,
+                                        bin_order: bIdx + 1
+                                    });
+                                }
                             }
 
                             return {
@@ -269,7 +393,7 @@ export default function Settings() {
                                 y: hasGridY ? parseFloat(s.shelf_gridy) : (20 + idx * 56),
                                 width: hasWidth ? parseFloat(s.shelf_width) : 560,
                                 height: hasHeight ? parseFloat(s.shelf_height) : 48,
-                                placed: true,
+                                placed: isPlaced,
                                 shelf_order: s.shelf_order,
                                 shelf_phr_id: s.shelf_phr_id || s.phr_id || "",
                                 shelf_org_id: s.shelf_org_id || "skshospital",
@@ -382,7 +506,7 @@ export default function Settings() {
                     shelfLayout: shelfLayout,
                     ledStrips: ledStrips
                 };
-                
+
                 try {
                     const layouts = JSON.parse(localStorage.getItem('cupboardLayouts') || '{}');
                     if (layouts[cupboardObj.id]) {
@@ -419,6 +543,8 @@ export default function Settings() {
     const [selectedCupboardForShelves, setSelectedCupboardForShelves] = useState(null);
     const [selectedShelfForBins, setSelectedShelfForBins] = useState(null);
     const [selectedCupboardForLeds, setSelectedCupboardForLeds] = useState(null);
+
+    console.log("selectedCupboardForShelves", selectedCupboardForShelves);
 
     // Persistent filter states across navigation
     const [cupboardFilterController, setCupboardFilterController] = useState(() => {
@@ -606,116 +732,123 @@ export default function Settings() {
                         <>
                             {/* Controllers tab */}
                             {activeTab === 'controllers' && (
-                        <ControllersTab
-                            controllersData={controllersData}
-                            syncControllers={syncControllers}
-                            refetchControllers={refetchControllers}
-                        />
-                    )}
+                                <ControllersTab
+                                    controllersData={controllersData}
+                                    syncControllers={syncControllers}
+                                    refetchControllers={refetchControllers}
+                                />
+                            )}
 
-                    {/* Walls tab — controller picker */}
-                    {activeTab === 'walls' && !selectedController && (
-                        <WallsTab
-                            controllersData={controllersData}
-                            onSelectController={handleSelectController}
-                        />
-                    )}
+                            {/* Walls tab — controller picker */}
+                            {activeTab === 'walls' && !selectedController && (
+                                <WallsTab
+                                    controllersData={controllersData}
+                                    onSelectController={handleSelectController}
+                                    refetchControllers={refetchControllers}
+                                    refetchWalls={refetchWalls}
+                                />
+                            )}
 
-                    {/* Walls tab — full designer (no sidebar) */}
-                    {isWallDesignerMode && (
-                        <WallLayoutDesigner
-                            controller={selectedController}
-                            onBack={handleBackFromDesigner}
-                            wallsData={wallsData}
-                            syncWalls={syncWalls}
-                        />
-                    )}
+                            {/* Walls tab — full designer (no sidebar) */}
+                            {isWallDesignerMode && (
+                                <WallLayoutDesigner
+                                    controller={selectedController}
+                                    onBack={handleBackFromDesigner}
+                                    wallsData={wallsData}
+                                    syncWalls={syncWalls}
+                                    refetchWalls={refetchWalls}
+                                    refetchControllers={refetchControllers}
+                                />
+                            )}
 
-                    {/* Cupboards tab */}
-                    {activeTab === 'cupboards' && (
-                        <CupboardsTab
-                            cupboardsData={cupboardsData}
-                            syncCupboards={syncCupboards}
-                            controllersData={controllersData}
-                            wallsData={wallsData}
-                            selectedWall={selectedWallForCupboards}
-                            onSelectWall={handleSelectWallForCupboards}
-                            filterController={cupboardFilterController}
-                            onFilterControllerChange={handleCupboardFilterControllerChange}
-                        />
-                    )}
+                            {/* Cupboards tab */}
+                            {activeTab === 'cupboards' && (
+                                <CupboardsTab
+                                    cupboardsData={cupboardsData}
+                                    syncCupboards={syncCupboards}
+                                    controllersData={controllersData}
+                                    wallsData={wallsData}
+                                    selectedWall={selectedWallForCupboards}
+                                    onSelectWall={handleSelectWallForCupboards}
+                                    filterController={cupboardFilterController}
+                                    onFilterControllerChange={handleCupboardFilterControllerChange}
+                                    refetchCupboards={refetchCupboards}
+                                    refetchWalls={refetchWalls}
+                                    refetchControllers={refetchControllers}
+                                />
+                            )}
 
-                    {/* Shelves tab */}
-                    {activeTab === 'shelves' && (
-                        <ShelvesTab
-                            cupboardsData={cupboardsData}
-                            syncCupboards={syncCupboards}
-                            selectedCupboard={selectedCupboardForShelves}
-                            onSelectCupboard={handleSelectCupboardForShelves}
-                            wallsData={wallsData}
-                            controllersData={controllersData}
-                            refetchShelves={refetchShelves}
-                            filterController={shelfFilterController}
-                            onFilterControllerChange={handleShelfFilterControllerChange}
-                            filterWall={shelfFilterWall}
-                            onFilterWallChange={handleShelfFilterWallChange}
-                        />
-                    )}
+                            {/* Shelves tab */}
+                            {activeTab === 'shelves' && (
+                                <ShelvesTab
+                                    cupboardsData={cupboardsData}
+                                    syncCupboards={syncCupboards}
+                                    selectedCupboard={selectedCupboardForShelves}
+                                    onSelectCupboard={handleSelectCupboardForShelves}
+                                    wallsData={wallsData}
+                                    controllersData={controllersData}
+                                    refetchShelves={refetchShelves}
+                                    filterController={shelfFilterController}
+                                    onFilterControllerChange={handleShelfFilterControllerChange}
+                                    filterWall={shelfFilterWall}
+                                    onFilterWallChange={handleShelfFilterWallChange}
+                                />
+                            )}
 
-                    {/* Bins tab */}
-                    {activeTab === 'bins' && (
-                        <BinsTab
-                            cupboardsData={cupboardsData}
-                            syncCupboards={syncCupboards}
-                            selectedShelfContext={selectedShelfForBins}
-                            onSelectShelfContext={setSelectedShelfForBins}
-                            wallsData={wallsData}
-                            controllersData={controllersData}
-                            refetchBins={refetchBins}
-                            filterController={binFilterController}
-                            onFilterControllerChange={handleBinFilterControllerChange}
-                            filterWall={binFilterWall}
-                            onFilterWallChange={handleBinFilterWallChange}
-                            filterCupboard={binFilterCupboard}
-                            onFilterCupboardChange={handleBinFilterCupboardChange}
-                        />
-                    )}
+                            {/* Bins tab */}
+                            {activeTab === 'bins' && (
+                                <BinsTab
+                                    cupboardsData={cupboardsData}
+                                    syncCupboards={syncCupboards}
+                                    selectedShelfContext={selectedShelfForBins}
+                                    onSelectShelfContext={setSelectedShelfForBins}
+                                    wallsData={wallsData}
+                                    controllersData={controllersData}
+                                    refetchBins={refetchBins}
+                                    filterController={binFilterController}
+                                    onFilterControllerChange={handleBinFilterControllerChange}
+                                    filterWall={binFilterWall}
+                                    onFilterWallChange={handleBinFilterWallChange}
+                                    filterCupboard={binFilterCupboard}
+                                    onFilterCupboardChange={handleBinFilterCupboardChange}
+                                />
+                            )}
 
-                    {/* LED Setup tab */}
-                    {activeTab === 'led-setup' && (
-                        <LedSetupTab
-                            cupboardsData={cupboardsData}
-                            syncCupboards={syncCupboards}
-                            locId={locId}
-                        />
-                    )}
+                            {/* LED Setup tab */}
+                            {activeTab === 'led-setup' && (
+                                <LedSetupTab
+                                    cupboardsData={cupboardsData}
+                                    syncCupboards={syncCupboards}
+                                    locId={locId}
+                                />
+                            )}
 
-                    {/* LED Strips tab */}
-                    {activeTab === 'leds' && (
-                        <LedStripsTab
-                            cupboardsData={cupboardsData}
-                            syncCupboards={syncCupboards}
-                            selectedCupboard={selectedCupboardForLeds}
-                            onSelectCupboard={setSelectedCupboardForLeds}
-                            wallsData={wallsData}
-                            controllersData={controllersData}
-                            refetchStrips={refetchStrips}
-                            filterController={ledFilterController}
-                            onFilterControllerChange={handleLedFilterControllerChange}
-                            filterWall={ledFilterWall}
-                            onFilterWallChange={handleLedFilterWallChange}
-                            onBack={() => setIsLedDesignerActive(false)}
-                            onOpenDesigner={() => setIsLedDesignerActive(true)}
-                            isDesignerActive={isLedDesignerActive}
-                            onGoToBins={(targetCupboard) => {
-                                handleTabChange('bins');
-                                if (targetCupboard) {
-                                    const cupName = targetCupboard.name || targetCupboard.cupboard_name || 'all';
-                                    handleBinFilterCupboardChange(cupName);
-                                }
-                            }}
-                        />
-                    )}
+                            {/* LED Strips tab */}
+                            {activeTab === 'leds' && (
+                                <LedStripsTab
+                                    cupboardsData={cupboardsData}
+                                    syncCupboards={syncCupboards}
+                                    selectedCupboard={selectedCupboardForLeds}
+                                    onSelectCupboard={setSelectedCupboardForLeds}
+                                    wallsData={wallsData}
+                                    controllersData={controllersData}
+                                    refetchStrips={refetchStrips}
+                                    filterController={ledFilterController}
+                                    onFilterControllerChange={handleLedFilterControllerChange}
+                                    filterWall={ledFilterWall}
+                                    onFilterWallChange={handleLedFilterWallChange}
+                                    onBack={() => setIsLedDesignerActive(false)}
+                                    onOpenDesigner={() => setIsLedDesignerActive(true)}
+                                    isDesignerActive={isLedDesignerActive}
+                                    onGoToBins={(targetCupboard) => {
+                                        handleTabChange('bins');
+                                        if (targetCupboard) {
+                                            const cupName = targetCupboard.name || targetCupboard.cupboard_name || 'all';
+                                            handleBinFilterCupboardChange(cupName);
+                                        }
+                                    }}
+                                />
+                            )}
                         </>
                     )}
                 </div>

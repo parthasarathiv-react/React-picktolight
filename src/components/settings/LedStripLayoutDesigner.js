@@ -178,7 +178,7 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
                 const selectedLocationStr = localStorage.getItem('selectedLocation');
                 if (selectedLocationStr) {
                     const loc = JSON.parse(selectedLocationStr);
-                    locId = loc.pick_location_id || loc.id || 'All';
+                    locId = loc.phr_location_id || 'All';
                 }
             } catch (e) { }
 
@@ -586,7 +586,7 @@ export default function LedStripLayoutDesigner({ cupboard, onBack, cupboardsData
             const selectedLocationStr = localStorage.getItem('selectedLocation');
             if (selectedLocationStr) {
                 const loc = JSON.parse(selectedLocationStr);
-                locId = loc.pick_location_id || loc.id || '';
+                locId = loc.phr_location_id || '';
             }
         } catch (e) { }
 

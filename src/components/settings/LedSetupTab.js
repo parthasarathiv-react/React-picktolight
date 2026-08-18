@@ -70,7 +70,7 @@ export default function LedSetupTab({ locId: propLocId }) {
         return null;
     });
 
-    const activeLocId = propLocId || selectedLocation?.pick_location_id || 'All';
+    const activeLocId = propLocId || selectedLocation?.phr_location_id || 'All';
     const activeLocName = selectedLocation?.pick_location_name || 'Selected Location';
 
     // API Colors state

@@ -39,7 +39,32 @@ export default function ControllersTab({ controllersData, syncControllers, refet
     const [editingController, setEditingController] = useState(null);
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [controllerToDelete, setControllerToDelete] = useState(null);
+    const [formErrors, setFormErrors] = useState({});
     console.log("controllersData", controllersData);
+
+    const validateControllerForm = (name, ip, port) => {
+        const errors = {};
+        if (!name || !name.trim()) {
+            errors.name = "Controller Name is required.";
+        }
+
+        const ipTrimmed = (ip || '').trim();
+        const ipv4Regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+        if (!ipTrimmed) {
+            errors.ip = "IP Address is required.";
+        } else if (!ipv4Regex.test(ipTrimmed)) {
+            errors.ip = "Please enter a valid IPv4 address (e.g. 192.168.1.100).";
+        }
+
+        const portNum = Number(port);
+        if (!port || String(port).trim() === '') {
+            errors.port = "Port is required.";
+        } else if (isNaN(portNum) || portNum < 1 || portNum > 65535 || !Number.isInteger(portNum)) {
+            errors.port = "Port must be a valid number between 1 and 65535.";
+        }
+
+        return errors;
+    };
 
     // Expandable controllers state
     const [expandedControllers, setExpandedControllers] = useState({});
@@ -339,7 +364,24 @@ export default function ControllersTab({ controllersData, syncControllers, refet
     // Open Add Strip Modal & fetch strips from API matching strip_ctl_id and identify assigned channel strips
     const handleOpenAddStripModal = async (ctrlId, portIndex, portObjParam) => {
         const portObj = typeof portObjParam === 'object' ? portObjParam : { channel_name: portObjParam };
-        const channelId = portObj.channel_id || portObj.id || (portObj.channel_name ? portObj.channel_name.replace('CHANNEL-', '') : null);
+        let channelId = portObj.channel_id || portObj.id;
+
+        if (!channelId) {
+            let ctrlChannels = controllerPortsMap[ctrlId];
+            if (!ctrlChannels || ctrlChannels.length === 0) {
+                try {
+                    const res = await apiService.getChannels(ctrlId);
+                    ctrlChannels = res?.data || (Array.isArray(res) ? res : []);
+                } catch (e) { }
+            }
+            const matchedCh = (ctrlChannels || []).find(ch =>
+                String(ch.channel_name || '').toUpperCase() === (portObj.channel_name || '').toUpperCase() ||
+                String(ch.channel_name || '').toUpperCase() === `CHANNEL-${String(portIndex + 1).padStart(2, '0')}`.toUpperCase()
+            ) || (ctrlChannels || [])[portIndex];
+
+            channelId = matchedCh?.channel_id || matchedCh?.id || (portObj.channel_name ? portObj.channel_name.replace('CHANNEL-', '') : null);
+        }
+
         const portName = portObj.channel_name || `Port #${portIndex + 1}`;
 
         setTargetPortInfo({ ctrlId, portIndex, portName, channelId });
@@ -354,8 +396,8 @@ export default function ControllersTab({ controllersData, syncControllers, refet
             if (selectedLocationStr) {
                 try {
                     const selectedLocation = JSON.parse(selectedLocationStr);
-                    if (selectedLocation.pick_location_id) {
-                        locId = String(selectedLocation.pick_location_id);
+                    if (selectedLocation.phr_location_id) {
+                        locId = String(selectedLocation.phr_location_id);
                     }
                 } catch (e) { }
             }
@@ -375,7 +417,7 @@ export default function ControllersTab({ controllersData, syncControllers, refet
             // 2. Fetch assigned channel strips from GET API to identify already assigned strips
             if (channelId) {
                 try {
-                    const csRes = await apiService.getChannelStrips(channelId);
+                    const csRes = await apiService.getChannelStrips(channelId, ctrlId);
                     const csData = csRes?.data || (Array.isArray(csRes) ? csRes : []);
                     const alreadyAssignedIds = csData.map(cs => String(cs.strip_id || cs.id || cs.stripId));
                     setAlreadyAssignedStripIds(alreadyAssignedIds);
@@ -432,7 +474,27 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                 return;
             }
 
-            const effectiveChannelId = channelId || '1';
+            let effectiveChannelId = channelId;
+            if (!effectiveChannelId || String(effectiveChannelId).length <= 2) {
+                let channelsList = controllerPortsMap[ctrlId];
+                if (!channelsList || channelsList.length === 0) {
+                    try {
+                        const res = await apiService.getChannels(ctrlId);
+                        channelsList = res?.data || (Array.isArray(res) ? res : []);
+                    } catch (e) { }
+                }
+                const targetCh = (channelsList || []).find(ch =>
+                    String(ch.channel_id || ch.id) === String(effectiveChannelId) ||
+                    String(ch.channel_name || '').toUpperCase() === String(portName || '').toUpperCase() ||
+                    String(ch.channel_name || '').toUpperCase() === `CHANNEL-${String(portIndex + 1).padStart(2, '0')}`.toUpperCase()
+                ) || (channelsList || [])[portIndex];
+
+                if (targetCh && (targetCh.channel_id || targetCh.id)) {
+                    effectiveChannelId = targetCh.channel_id || targetCh.id;
+                }
+            }
+
+            if (!effectiveChannelId) effectiveChannelId = '1';
 
             // Call POST API /config/create-channelstrip ONLY for newly selected strips
             for (let idx = 0; idx < selectedStripsData.length; idx++) {
@@ -442,7 +504,8 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                 const payload = {
                     strip_id: stripIdStr,
                     channel_id: String(effectiveChannelId),
-                    strip_order: String(alreadyAssignedStripIds.length + idx + 1)
+                    strip_order: String(alreadyAssignedStripIds.length + idx + 1),
+                    ctl_id: String(selectedControllerForStrips?.id || selectedControllerForStrips?.ctl_id || '')
                 };
 
                 await apiService.createChannelStrip(payload);
@@ -513,7 +576,22 @@ export default function ControllersTab({ controllersData, syncControllers, refet
         const portObj = portObjParam || ctrlPorts[portIndex];
         if (!portObj) return;
 
-        const channelId = portObj.channel_id || portObj.id || (portObj.channel_name ? portObj.channel_name.replace('CHANNEL-', '') : '1');
+        let channelId = portObj.channel_id || portObj.id;
+        if (!channelId || String(channelId).length <= 2) {
+            let ctrlChannels = controllerPortsMap[ctrl.id];
+            if (!ctrlChannels || ctrlChannels.length === 0) {
+                try {
+                    const res = await apiService.getChannels(ctrl.id);
+                    ctrlChannels = res?.data || (Array.isArray(res) ? res : []);
+                } catch (e) { }
+            }
+            const matchedCh = (ctrlChannels || []).find(ch =>
+                String(ch.channel_name || '').toUpperCase() === (portObj.channel_name || '').toUpperCase() ||
+                String(ch.channel_name || '').toUpperCase() === `CHANNEL-${String(portIndex + 1).padStart(2, '0')}`.toUpperCase()
+            ) || (ctrlChannels || [])[portIndex];
+
+            channelId = matchedCh?.channel_id || matchedCh?.id || (portObj.channel_name ? portObj.channel_name.replace('CHANNEL-', '') : '1');
+        }
 
         setSelectedPortView({
             ctrlId: ctrl.id,
@@ -532,14 +610,14 @@ export default function ControllersTab({ controllersData, syncControllers, refet
             if (selectedLocationStr) {
                 try {
                     const selectedLocation = JSON.parse(selectedLocationStr);
-                    if (selectedLocation.pick_location_id) {
-                        locId = String(selectedLocation.pick_location_id);
+                    if (selectedLocation.phr_location_id) {
+                        locId = String(selectedLocation.phr_location_id);
                     }
                 } catch (e) { }
             }
 
             // 1. Fetch channel strip mappings from GET API
-            const csRes = await apiService.getChannelStrips(channelId);
+            const csRes = await apiService.getChannelStrips(channelId, activeViewPort?.ctl_id || activeViewPort?.controller_id);
             const csList = csRes?.data || (Array.isArray(csRes) ? csRes : []);
 
             // 2. Fetch full strips to enrich names, LEDs, shelves, bins
@@ -616,27 +694,40 @@ export default function ControllersTab({ controllersData, syncControllers, refet
 
     const handleAddController = () => {
         setEditingController(null);
+        setFormErrors({});
         setShowControllerForm(true);
     };
 
     const handleEditController = (ctrl) => {
         setEditingController(ctrl);
+        setFormErrors({});
         setShowControllerForm(true);
     };
 
     const handleCancelForm = () => {
         setShowControllerForm(false);
         setEditingController(null);
+        setFormErrors({});
     };
 
     const handleControllerSubmit = async (e) => {
         e.preventDefault();
         const data = new FormData(e.currentTarget);
-        const name = data.get('name');
-        const ip = data.get('ip');
-        const port = data.get('port');
+        const name = (data.get('name') || '').trim();
+        const ip = (data.get('ip') || '').trim();
+        const port = (data.get('port') || '').trim();
         const channels = parseInt(data.get('channels') || '16', 10);
         const status = data.get('status') === 'ACTIVE' ? 'Online' : 'Offline';
+
+        const errors = validateControllerForm(name, ip, port);
+        if (Object.keys(errors).length > 0) {
+            setFormErrors(errors);
+            const firstErrKey = Object.keys(errors)[0];
+            toast.error(errors[firstErrKey]);
+            return;
+        }
+
+        setFormErrors({});
 
         if (editingController) {
             try {
@@ -645,7 +736,7 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                 if (selectedLocationStr) {
                     try {
                         const selectedLocation = JSON.parse(selectedLocationStr);
-                        ctl_loc_id = String(selectedLocation.pick_location_id || '');
+                        ctl_loc_id = String(selectedLocation.phr_location_id || '');
                     } catch (e) { }
                 }
 
@@ -655,6 +746,7 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                     ctl_port: parseInt(port, 10),
                     ctl_loc_id: ctl_loc_id,
                     ctl_channels: String(channels),
+                    ctl_position: editingController.ctl_position || editingController.position || "none",
                     ctl_status: status === 'Online' ? "True" : "False"
                 };
 
@@ -679,7 +771,7 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                 if (selectedLocationStr) {
                     try {
                         const selectedLocation = JSON.parse(selectedLocationStr);
-                        ctl_loc_id = String(selectedLocation.pick_location_id || '');
+                        ctl_loc_id = String(selectedLocation.phr_location_id || '');
                     } catch (e) { }
                 }
 
@@ -689,6 +781,7 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                     ctl_port: parseInt(port, 10),
                     ctl_loc_id: ctl_loc_id,
                     ctl_channels: String(channels),
+                    ctl_position: "none",
                     ctl_status: status === 'Online' ? "True" : "False"
                 };
 
@@ -795,20 +888,62 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
                                     <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">Name</label>
-                                    <Input name="name" defaultValue={editingController ? editingController.name : ''} placeholder="e.g. Controller A" className="bg-ot-surface-bottom border-ot-border" required />
+                                    <Input
+                                        name="name"
+                                        defaultValue={editingController ? editingController.name : ''}
+                                        placeholder="e.g. Controller A"
+                                        className={cn(
+                                            "bg-ot-surface-bottom border-ot-border text-white placeholder:text-slate-400 placeholder:opacity-90",
+                                            formErrors.name && "border-red-500 focus-visible:ring-red-500"
+                                        )}
+                                        onChange={() => {
+                                            if (formErrors.name) setFormErrors(prev => ({ ...prev, name: null }));
+                                        }}
+                                    />
+                                    {formErrors.name && (
+                                        <p className="text-xs text-red-400 mt-1">{formErrors.name}</p>
+                                    )}
                                 </div>
                                 <div className="space-y-2">
                                     <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">IP Address</label>
-                                    <Input name="ip" defaultValue={editingController ? editingController.ip : ''} placeholder="192.168.1.100" className="bg-ot-surface-bottom border-ot-border" required />
+                                    <Input
+                                        name="ip"
+                                        defaultValue={editingController ? editingController.ip : ''}
+                                        placeholder="e.g.192.168.1.100"
+                                        className={cn(
+                                            "bg-ot-surface-bottom border-ot-border text-white font-mono placeholder:text-slate-400 placeholder:opacity-90",
+                                            formErrors.ip && "border-red-500 focus-visible:ring-red-500"
+                                        )}
+                                        onChange={() => {
+                                            if (formErrors.ip) setFormErrors(prev => ({ ...prev, ip: null }));
+                                        }}
+                                    />
+                                    {formErrors.ip && (
+                                        <p className="text-xs text-red-400 mt-1">{formErrors.ip}</p>
+                                    )}
                                 </div>
                                 <div className="space-y-2">
                                     <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">Port</label>
-                                    <Input name="port" defaultValue={editingController ? editingController.port : '8080'} placeholder="8080" className="bg-ot-surface-bottom border-ot-border" required />
+                                    <Input
+                                        name="port"
+                                        defaultValue={editingController ? editingController.port : ''}
+                                        placeholder="e.g. 8080"
+                                        className={cn(
+                                            "bg-ot-surface-bottom border-ot-border text-white font-mono placeholder:text-slate-400 placeholder:opacity-90",
+                                            formErrors.port && "border-red-500 focus-visible:ring-red-500"
+                                        )}
+                                        onChange={() => {
+                                            if (formErrors.port) setFormErrors(prev => ({ ...prev, port: null }));
+                                        }}
+                                    />
+                                    {formErrors.port && (
+                                        <p className="text-xs text-red-400 mt-1">{formErrors.port}</p>
+                                    )}
                                 </div>
 
                                 <div className="space-y-2">
                                     <label className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">Channels</label>
-                                    <Input name="channels" type="number" defaultValue={editingController ? (editingController.channels || editingController.ctl_channels || 16) : 16} placeholder="16" className="bg-ot-surface-bottom border-ot-border opacity-50 cursor-not-allowed" readOnly required />
+                                    <Input name="channels" type="number" defaultValue={editingController ? (editingController.channels || editingController.ctl_channels || 16) : 16} placeholder="16" className="bg-ot-surface-bottom border-ot-border opacity-50 cursor-not-allowed text-white placeholder:text-slate-400" readOnly />
                                 </div>
 
                                 <div className="space-y-2 col-span-2 sm:col-span-1">

@@ -14,7 +14,7 @@ const MIN_ROWS = 10;
 const ROW_LABEL_W = 24;   // px for A–N labels on the left
 const COL_LABEL_H = 18;   // px for 1–N labels on top
 
-export default function WallLayoutDesigner({ controller, onBack, wallsData, syncWalls, onDirtyChange }) {
+export default function WallLayoutDesigner({ controller, onBack, wallsData, syncWalls, onDirtyChange, refetchWalls }) {
     const [canvasWalls, setCanvasWalls] = useState([]);
     const [dragging, setDragging] = useState(null);
     const [selectedWallId, setSelectedWallId] = useState(null);
@@ -253,7 +253,7 @@ export default function WallLayoutDesigner({ controller, onBack, wallsData, sync
             if (selectedLocationStr) {
                 try {
                     const loc = JSON.parse(selectedLocationStr);
-                    locId = loc.pick_location_id || '';
+                    locId = loc.phr_location_id || '';
                 } catch (e) { }
             }
 
@@ -311,6 +311,9 @@ export default function WallLayoutDesigner({ controller, onBack, wallsData, sync
             }
 
             // Sync globally by re-fetching
+            if (refetchWalls) {
+                await refetchWalls();
+            }
             const res = await apiService.getWalls(locId);
             if (res && res.success && res.data) {
                 // We don't have access to full controllersData here, but we only really need it for mapping controller name.

@@ -24,6 +24,9 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
     const [isDirty, setIsDirty] = useState(false);
     const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
 
+
+    console.log("cupboard", cupboard);
+
     useEffect(() => {
         if (onDirtyChange) {
             onDirtyChange(isDirty);
@@ -41,13 +44,89 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
     });
 
     useEffect(() => {
-        if (cupboard && cupboard.shelfLayout && Array.isArray(cupboard.shelfLayout)) {
-            setShelfBlocks(cupboard.shelfLayout.map(s => ({
-                ...s,
-                placed: s.placed !== undefined ? s.placed : true,
-            })));
-        }
-    }, [cupboard?.shelfLayout]);
+        const fetchLocationShelves = async () => {
+            let locId = 'All';
+            try {
+                const selectedLocationStr = localStorage.getItem('selectedLocation');
+                if (selectedLocationStr) {
+                    const loc = JSON.parse(selectedLocationStr);
+                    locId = loc.phr_location_id || 'All';
+                }
+            } catch (e) { }
+
+            const targetCupId = String(cupboard?.cupboard_id || cupboard?.id || '').trim();
+            const targetCupName = String(cupboard?.cupboard_name || cupboard?.name || '').trim();
+
+            try {
+                const res = await apiService.getShelves(locId);
+                if (res && res.success && Array.isArray(res.data)) {
+                    const placedMap = new Map();
+                    (cupboard?.shelfLayout || []).forEach(s => {
+                        const sid = String(s.shelf_id || s.id);
+                        placedMap.set(sid, s);
+                    });
+
+                    const merged = res.data.map((s, idx) => {
+                        const realId = (s.shelf_id !== undefined && s.shelf_id !== null) ? String(s.shelf_id) : ((s.id !== undefined && s.id !== null) ? String(s.id) : `shelf-${idx}`);
+
+                        const sCupId = String(s.shelf_cupboard_id || '').trim();
+                        const isCupMatch = sCupId !== '' && (
+                            sCupId === targetCupId ||
+                            sCupId === targetCupName ||
+                            (cupboard?.cupboard_id && sCupId === String(cupboard.cupboard_id)) ||
+                            (cupboard?.id && sCupId === String(cupboard.id))
+                        );
+
+                        const existingPlaced = placedMap.get(realId);
+                        if (existingPlaced) {
+                            return {
+                                ...existingPlaced,
+                                placed: true
+                            };
+                        }
+
+                        const hasGridX = s.shelf_gridx !== undefined && s.shelf_gridx !== null && s.shelf_gridx !== '' && !isNaN(parseFloat(s.shelf_gridx));
+                        const hasGridY = s.shelf_gridy !== undefined && s.shelf_gridy !== null && s.shelf_gridy !== '' && !isNaN(parseFloat(s.shelf_gridy));
+                        const hasWidth = s.shelf_width !== undefined && s.shelf_width !== null && s.shelf_width !== '' && !isNaN(parseFloat(s.shelf_width));
+                        const hasHeight = s.shelf_height !== undefined && s.shelf_height !== null && s.shelf_height !== '' && !isNaN(parseFloat(s.shelf_height));
+
+                        return {
+                            id: realId,
+                            shelf_id: s.shelf_id || s.id || realId,
+                            label: s.shelf_name || `Shelf ${idx + 1}`,
+                            x: hasGridX ? parseFloat(s.shelf_gridx) : 20,
+                            y: hasGridY ? parseFloat(s.shelf_gridy) : (20 + idx * 56),
+                            width: hasWidth ? parseFloat(s.shelf_width) : 560,
+                            height: hasHeight ? parseFloat(s.shelf_height) : 48,
+                            placed: isCupMatch,
+                            shelf_order: s.shelf_order,
+                            shelf_phr_id: s.shelf_phr_id || s.phr_id || "",
+                            shelf_org_id: s.shelf_org_id || "skshospital",
+                            shelf_branch_id: s.shelf_branch_id || "Salem",
+                            shelf_status: s.shelf_status
+                        };
+                    });
+
+                    setShelfBlocks(merged);
+                } else if (cupboard && cupboard.shelfLayout && Array.isArray(cupboard.shelfLayout)) {
+                    setShelfBlocks(cupboard.shelfLayout.map(s => ({
+                        ...s,
+                        placed: s.placed !== undefined ? s.placed : true,
+                    })));
+                }
+            } catch (err) {
+                console.error("Failed to fetch location shelves for designer:", err);
+                if (cupboard && cupboard.shelfLayout && Array.isArray(cupboard.shelfLayout)) {
+                    setShelfBlocks(cupboard.shelfLayout.map(s => ({
+                        ...s,
+                        placed: s.placed !== undefined ? s.placed : true,
+                    })));
+                }
+            }
+        };
+
+        fetchLocationShelves();
+    }, [cupboard?.id, cupboard?.cupboard_id]);
 
     const [dragging, setDragging] = useState(null); // { id, type: 'move'|'resize-n'|'resize-s'|'resize-e'|'resize-w', offsetX, offsetY, startX, startY, startW, startH }
     const [selectedId, setSelectedId] = useState(null);
@@ -372,7 +451,7 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
             if (selectedLocationStr) {
                 try {
                     const loc = JSON.parse(selectedLocationStr);
-                    locId = loc.pick_location_id || '';
+                    locId = loc.phr_location_id || '';
                 } catch (e) { }
             }
 
@@ -739,71 +818,71 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                                             </span>
                                         </div>
 
-                                    {/* Disable button */}
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); handleDisableShelf(shelf); }}
-                                        onPointerDown={(e) => e.stopPropagation()}
-                                        className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-amber-500/80 hover:bg-amber-500 text-white flex items-center justify-center z-30 opacity-0 hover:opacity-100 transition-opacity shadow-lg"
-                                        style={{ pointerEvents: 'auto' }}
-                                        title="Disable Shelf"
-                                    >
-                                        <Ban className="w-3 h-3" />
-                                    </button>
+                                        {/* Disable button */}
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); handleDisableShelf(shelf); }}
+                                            onPointerDown={(e) => e.stopPropagation()}
+                                            className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-amber-500/80 hover:bg-amber-500 text-white flex items-center justify-center z-30 opacity-0 hover:opacity-100 transition-opacity shadow-lg"
+                                            style={{ pointerEvents: 'auto' }}
+                                            title="Disable Shelf"
+                                        >
+                                            <Ban className="w-3 h-3" />
+                                        </button>
 
-                                    {/* ─── Resize Handles (4 edges + 4 corners) ──────────── */}
-                                    {/* North edge */}
-                                    <div
-                                        onMouseDown={(e) => handleMouseDown(e, shelf.id, 'resize-n')}
-                                        className="absolute left-2 right-2 -top-[3px] h-[6px] cursor-n-resize z-30 group"
-                                    >
-                                        <div className="absolute inset-x-0 top-[2px] h-[2px] bg-ot-action/0 group-hover:bg-ot-action/60 transition-colors rounded-full" />
-                                    </div>
-                                    {/* South edge */}
-                                    <div
-                                        onMouseDown={(e) => handleMouseDown(e, shelf.id, 'resize-s')}
-                                        className="absolute left-2 right-2 -bottom-[3px] h-[6px] cursor-s-resize z-30 group"
-                                    >
-                                        <div className="absolute inset-x-0 bottom-[2px] h-[2px] bg-ot-action/0 group-hover:bg-ot-action/60 transition-colors rounded-full" />
-                                    </div>
-                                    {/* West edge */}
-                                    <div
-                                        onMouseDown={(e) => handleMouseDown(e, shelf.id, 'resize-w')}
-                                        className="absolute top-2 bottom-2 -left-[3px] w-[6px] cursor-w-resize z-30 group"
-                                    >
-                                        <div className="absolute inset-y-0 left-[2px] w-[2px] bg-ot-action/0 group-hover:bg-ot-action/60 transition-colors rounded-full" />
-                                    </div>
-                                    {/* East edge */}
-                                    <div
-                                        onMouseDown={(e) => handleMouseDown(e, shelf.id, 'resize-e')}
-                                        className="absolute top-2 bottom-2 -right-[3px] w-[6px] cursor-e-resize z-30 group"
-                                    >
-                                        <div className="absolute inset-y-0 right-[2px] w-[2px] bg-ot-action/0 group-hover:bg-ot-action/60 transition-colors rounded-full" />
-                                    </div>
+                                        {/* ─── Resize Handles (4 edges + 4 corners) ──────────── */}
+                                        {/* North edge */}
+                                        <div
+                                            onMouseDown={(e) => handleMouseDown(e, shelf.id, 'resize-n')}
+                                            className="absolute left-2 right-2 -top-[3px] h-[6px] cursor-n-resize z-30 group"
+                                        >
+                                            <div className="absolute inset-x-0 top-[2px] h-[2px] bg-ot-action/0 group-hover:bg-ot-action/60 transition-colors rounded-full" />
+                                        </div>
+                                        {/* South edge */}
+                                        <div
+                                            onMouseDown={(e) => handleMouseDown(e, shelf.id, 'resize-s')}
+                                            className="absolute left-2 right-2 -bottom-[3px] h-[6px] cursor-s-resize z-30 group"
+                                        >
+                                            <div className="absolute inset-x-0 bottom-[2px] h-[2px] bg-ot-action/0 group-hover:bg-ot-action/60 transition-colors rounded-full" />
+                                        </div>
+                                        {/* West edge */}
+                                        <div
+                                            onMouseDown={(e) => handleMouseDown(e, shelf.id, 'resize-w')}
+                                            className="absolute top-2 bottom-2 -left-[3px] w-[6px] cursor-w-resize z-30 group"
+                                        >
+                                            <div className="absolute inset-y-0 left-[2px] w-[2px] bg-ot-action/0 group-hover:bg-ot-action/60 transition-colors rounded-full" />
+                                        </div>
+                                        {/* East edge */}
+                                        <div
+                                            onMouseDown={(e) => handleMouseDown(e, shelf.id, 'resize-e')}
+                                            className="absolute top-2 bottom-2 -right-[3px] w-[6px] cursor-e-resize z-30 group"
+                                        >
+                                            <div className="absolute inset-y-0 right-[2px] w-[2px] bg-ot-action/0 group-hover:bg-ot-action/60 transition-colors rounded-full" />
+                                        </div>
 
-                                    {/* Corner handles (visible dots) */}
-                                    {/* NW */}
-                                    <div
-                                        onMouseDown={(e) => handleMouseDown(e, shelf.id, 'resize-nw')}
-                                        className="absolute -top-[4px] -left-[4px] w-[8px] h-[8px] rounded-full bg-ot-action/60 hover:bg-ot-action border border-ot-action cursor-nw-resize z-40 transition-colors"
-                                    />
-                                    {/* NE */}
-                                    <div
-                                        onMouseDown={(e) => handleMouseDown(e, shelf.id, 'resize-ne')}
-                                        className="absolute -top-[4px] -right-[4px] w-[8px] h-[8px] rounded-full bg-ot-action/60 hover:bg-ot-action border border-ot-action cursor-ne-resize z-40 transition-colors"
-                                    />
-                                    {/* SW */}
-                                    <div
-                                        onMouseDown={(e) => handleMouseDown(e, shelf.id, 'resize-sw')}
-                                        className="absolute -bottom-[4px] -left-[4px] w-[8px] h-[8px] rounded-full bg-ot-action/60 hover:bg-ot-action border border-ot-action cursor-sw-resize z-40 transition-colors"
-                                    />
-                                    {/* SE */}
-                                    <div
-                                        onMouseDown={(e) => handleMouseDown(e, shelf.id, 'resize-se')}
-                                        className="absolute -bottom-[4px] -right-[4px] w-[8px] h-[8px] rounded-full bg-ot-action/60 hover:bg-ot-action border border-ot-action cursor-se-resize z-40 transition-colors"
-                                    />
-                                </div>
-                            );
-                        })}
+                                        {/* Corner handles (visible dots) */}
+                                        {/* NW */}
+                                        <div
+                                            onMouseDown={(e) => handleMouseDown(e, shelf.id, 'resize-nw')}
+                                            className="absolute -top-[4px] -left-[4px] w-[8px] h-[8px] rounded-full bg-ot-action/60 hover:bg-ot-action border border-ot-action cursor-nw-resize z-40 transition-colors"
+                                        />
+                                        {/* NE */}
+                                        <div
+                                            onMouseDown={(e) => handleMouseDown(e, shelf.id, 'resize-ne')}
+                                            className="absolute -top-[4px] -right-[4px] w-[8px] h-[8px] rounded-full bg-ot-action/60 hover:bg-ot-action border border-ot-action cursor-ne-resize z-40 transition-colors"
+                                        />
+                                        {/* SW */}
+                                        <div
+                                            onMouseDown={(e) => handleMouseDown(e, shelf.id, 'resize-sw')}
+                                            className="absolute -bottom-[4px] -left-[4px] w-[8px] h-[8px] rounded-full bg-ot-action/60 hover:bg-ot-action border border-ot-action cursor-sw-resize z-40 transition-colors"
+                                        />
+                                        {/* SE */}
+                                        <div
+                                            onMouseDown={(e) => handleMouseDown(e, shelf.id, 'resize-se')}
+                                            className="absolute -bottom-[4px] -right-[4px] w-[8px] h-[8px] rounded-full bg-ot-action/60 hover:bg-ot-action border border-ot-action cursor-se-resize z-40 transition-colors"
+                                        />
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 </div>
