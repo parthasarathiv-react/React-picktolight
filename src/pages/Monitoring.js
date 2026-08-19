@@ -48,25 +48,188 @@ export default function Monitoring() {
     const containerRef = React.useRef(null);
     const [wirePaths, setWirePaths] = useState([]);
 
+    const locId = React.useMemo(() => {
+        try {
+            const selectedLocationStr = localStorage.getItem('selectedLocation');
+            if (selectedLocationStr) {
+                const loc = JSON.parse(selectedLocationStr);
+                return loc.phr_location_id || '';
+            }
+        } catch (e) { }
+        return '';
+    }, []);
+
+    const { data: fetchedControllers, isFetching: isFetchingControllers } = useQuery({
+        queryKey: ['controllers', locId],
+        queryFn: async () => {
+            if (!locId) return [];
+            const data = await apiService.getControllers(locId);
+            if (!data.success || !data.data) throw new Error("Failed to fetch controllers");
+            return data.data.map(c => ({
+                id: c.ctl_id || c.id || Math.random().toString(36).substr(2, 9),
+                ctl_id: c.ctl_id || c.id,
+                name: c.ctl_name,
+                ip: c.ctl_ip,
+                port: c.ctl_port,
+                ctl_loc_id: c.ctl_loc_id,
+                ctl_channels: c.ctl_channels,
+                position: c.ctl_position && c.ctl_position !== 'none' ? c.ctl_position : 'left',
+                ctl_position: c.ctl_position || 'none',
+                status: (c.ctl_status === 'True' || c.ctl_status === true || c.ctl_status === 'Online') ? 'Online' : 'Offline'
+            }));
+        },
+        enabled: !!locId,
+    });
+
+    const { data: stripConfigData } = useQuery({
+        queryKey: ['monitoringStripConfig', locId, fetchedControllers],
+        queryFn: async () => {
+            if (!locId) return { channelMap: {}, loadedStrips: [] };
+
+            const channelMap = {};
+            const loadedStrips = [];
+
+            try {
+                const stripsRes = await apiService.getStrips(locId);
+                const fetchedStrips = (stripsRes && stripsRes.success && Array.isArray(stripsRes.data))
+                    ? stripsRes.data
+                    : (Array.isArray(stripsRes?.data) ? stripsRes.data : (Array.isArray(stripsRes) ? stripsRes : []));
+
+                const controllersList = fetchedControllers || [];
+
+                for (const ctrl of controllersList) {
+                    const ctrlId = ctrl.ctl_id || ctrl.id;
+                    if (!ctrlId) continue;
+
+                    try {
+                        const channelsRes = await apiService.getChannels(ctrlId);
+                        const channelsList = channelsRes?.data || (Array.isArray(channelsRes) ? channelsRes : []);
+
+                        if (Array.isArray(channelsList) && channelsList.length > 0) {
+                            for (let idx = 0; idx < channelsList.length; idx++) {
+                                const ch = channelsList[idx];
+                                const chNum = idx + 1;
+                                const channelId = ch.channel_id || ch.id;
+                                if (!channelId) continue;
+
+                                try {
+                                    const csRes = await apiService.getChannelStrips(channelId, ctrlId);
+                                    const csList = (csRes && csRes.success && Array.isArray(csRes.data))
+                                        ? csRes.data
+                                        : (Array.isArray(csRes?.data) ? csRes.data : (Array.isArray(csRes) ? csRes : []));
+
+                                    if (csList && csList.length > 0) {
+                                        csList.forEach(csItem => {
+                                            const csStripId = String(csItem.strip_id || csItem.id || '');
+                                            const matchedStrip = fetchedStrips.find(s => String(s.strip_id || s.id) === csStripId) || {
+                                                id: csStripId,
+                                                strip_id: csStripId,
+                                                strip_name: `Strip ${csStripId}`,
+                                                strip_gridx: csItem.x,
+                                                strip_gridy: csItem.y
+                                            };
+
+                                            const formattedStrip = {
+                                                id: String(matchedStrip.strip_id || matchedStrip.id || csStripId),
+                                                strip_id: String(matchedStrip.strip_id || matchedStrip.id || csStripId),
+                                                label: matchedStrip.strip_name || matchedStrip.label || `Strip CH-${String(chNum).padStart(2, '0')}`,
+                                                channel: chNum,
+                                                channelId: channelId,
+                                                channel_id: channelId,
+                                                colorIndex: loadedStrips.length,
+                                                strip_ctl_id: String(ctrlId),
+                                                parentStripId: matchedStrip.parentStripId || matchedStrip.parent_strip_id || csItem.parent_strip_id || null,
+                                                x: parseFloat(csItem.x ?? matchedStrip.strip_gridx ?? 40),
+                                                y: parseFloat(csItem.y ?? matchedStrip.strip_gridy ?? (40 + idx * 35)),
+                                                width: parseFloat(matchedStrip.strip_width ?? 80),
+                                                height: parseFloat(matchedStrip.strip_height ?? 22),
+                                                cupboardId: String(matchedStrip.strip_cupboard_id || matchedStrip.cupboard_id || csItem.cupboard_id || '1'),
+                                                bins: matchedStrip.bin_list || matchedStrip.bins || [],
+                                                linkedBins: matchedStrip.bin_list || matchedStrip.linkedBins || matchedStrip.bins || []
+                                            };
+
+                                            channelMap[chNum] = formattedStrip;
+                                            loadedStrips.push(formattedStrip);
+                                        });
+                                    }
+                                } catch (e) { }
+                            }
+                        }
+                    } catch (e) { }
+                }
+
+                fetchedStrips.forEach((s, idx) => {
+                    const sId = String(s.strip_id || s.id || `strip-${idx}`);
+                    const alreadyLoaded = loadedStrips.some(ls => String(ls.id || ls.strip_id) === sId);
+                    if (!alreadyLoaded) {
+                        const chNum = Number(s.strip_channel || s.channel || (idx % 16) + 1);
+                        const formatted = {
+                            id: sId,
+                            strip_id: sId,
+                            label: s.strip_name || s.label || `Strip ${idx + 1}`,
+                            channel: chNum,
+                            colorIndex: loadedStrips.length,
+                            parentStripId: s.parentStripId || s.parent_strip_id || null,
+                            x: parseFloat(s.strip_gridx ?? 40),
+                            y: parseFloat(s.strip_gridy ?? (40 + idx * 35)),
+                            width: parseFloat(s.strip_width ?? 80),
+                            height: parseFloat(s.strip_height ?? 22),
+                            cupboardId: String(s.strip_cupboard_id || s.cupboard_id || '1'),
+                            bins: s.bin_list || s.bins || [],
+                            linkedBins: s.bin_list || s.linkedBins || s.bins || []
+                        };
+                        loadedStrips.push(formatted);
+                    }
+                });
+
+                return { channelMap, loadedStrips };
+            } catch (e) {
+                return { channelMap, loadedStrips };
+            }
+        },
+        enabled: !!locId,
+    });
+
     const controllerPlacement = useMemo(() => {
         return localStorage.getItem('controllerPlacement') || 'left';
     }, []);
 
     const channelAssignments = useMemo(() => {
+        let map = {};
+        if (stripConfigData?.channelMap && Object.keys(stripConfigData.channelMap).length > 0) {
+            map = { ...stripConfigData.channelMap };
+        }
         try {
             const saved = localStorage.getItem('localChannelAssignments');
-            if (saved) return JSON.parse(saved);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                map = { ...map, ...parsed };
+            }
         } catch (e) { }
-        return {};
-    }, []);
+        return map;
+    }, [stripConfigData]);
 
     const allSavedStrips = useMemo(() => {
+        let list = [];
+        if (stripConfigData?.loadedStrips && stripConfigData.loadedStrips.length > 0) {
+            list = [...stripConfigData.loadedStrips];
+        }
         try {
             const saved = localStorage.getItem('localLedStrips');
-            if (saved) return JSON.parse(saved);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (Array.isArray(parsed)) {
+                    parsed.forEach(ls => {
+                        const lsId = String(ls.id || ls.strip_id);
+                        if (!list.some(item => String(item.id || item.strip_id) === lsId)) {
+                            list.push(ls);
+                        }
+                    });
+                }
+            }
         } catch (e) { }
-        return [];
-    }, []);
+        return list;
+    }, [stripConfigData]);
 
     const calculateWirePaths = useCallback(() => {
         if (!containerRef.current) return;
@@ -268,38 +431,9 @@ export default function Monitoring() {
         };
     }, [viewMode, calculateWirePaths]);
 
-    const locId = React.useMemo(() => {
-        try {
-            const selectedLocationStr = localStorage.getItem('selectedLocation');
-            if (selectedLocationStr) {
-                const loc = JSON.parse(selectedLocationStr);
-                return loc.phr_location_id || '';
-            }
-        } catch (e) { }
-        return '';
-    }, []);
 
-    const { data: fetchedControllers, isFetching: isFetchingControllers } = useQuery({
-        queryKey: ['controllers', locId],
-        queryFn: async () => {
-            if (!locId) return [];
-            const data = await apiService.getControllers(locId);
-            if (!data.success || !data.data) throw new Error("Failed to fetch controllers");
-            return data.data.map(c => ({
-                id: c.ctl_id || c.id || Math.random().toString(36).substr(2, 9),
-                ctl_id: c.ctl_id || c.id,
-                name: c.ctl_name,
-                ip: c.ctl_ip,
-                port: c.ctl_port,
-                ctl_loc_id: c.ctl_loc_id,
-                ctl_channels: c.ctl_channels,
-                position: c.ctl_position && c.ctl_position !== 'none' ? c.ctl_position : 'left',
-                ctl_position: c.ctl_position || 'none',
-                status: (c.ctl_status === 'True' || c.ctl_status === true || c.ctl_status === 'Online') ? 'Online' : 'Offline'
-            }));
-        },
-        enabled: !!locId,
-    });
+
+
 
     const { data: rawWalls, isFetching: isFetchingWalls } = useQuery({
         queryKey: ['walls', locId],
@@ -345,8 +479,7 @@ export default function Monitoring() {
         enabled: !!locId,
     });
 
-    const rawStrips = [];
-    const isFetchingStrips = false;
+
 
     const [controllersData, setControllersData] = useState([...CONTROLLERS_CONFIG]);
     const [wallsData, setWallsData] = useState([...WALLS_CONFIG]);
@@ -610,87 +743,79 @@ export default function Monitoring() {
                 const shelvesCount = shelfLayout.length;
 
                 let ledStrips = [];
-                if (rawStrips && Array.isArray(rawStrips)) {
-                    const cId = String(c.cupboard_id || c.id || '').trim();
-                    const cName = String(c.cupboard_name || c.name || '').trim();
 
-                    const matchingStrips = rawStrips.filter(s => {
-                        const sCupId = String(s.strip_cupboard_id || '').trim();
-                        if (sCupId) {
-                            return (
-                                sCupId === cId ||
-                                sCupId === cName ||
-                                (c.cupboard_id !== undefined && sCupId === String(c.cupboard_id).trim()) ||
-                                (c.id !== undefined && sCupId === String(c.id).trim()) ||
-                                (c.name !== undefined && sCupId === String(c.name).trim()) ||
-                                (c.cupboard_name !== undefined && sCupId === String(c.cupboard_name).trim())
-                            );
-                        }
+                const cId = String(c.cupboard_id || c.id || '').trim();
+                const cName = String(c.cupboard_name || c.name || '').trim();
 
-                        // Fallback when strip_cupboard_id is missing from GET API:
-                        const sShelfId = String(s.strip_shelf_id || '').trim();
-                        if (sShelfId && shelfLayout && shelfLayout.length > 0) {
-                            const matchesShelf = shelfLayout.some(sh => {
-                                const shId = String(sh.shelf_id || sh.id || '').trim();
-                                const shPhrId = String(sh.shelf_phr_id || '').trim();
-                                const shName = String(sh.label || sh.shelf_name || '').trim();
-                                return sShelfId === shId || sShelfId === shPhrId || sShelfId === shName;
-                            });
-                            if (matchesShelf) return true;
-                        }
-
-                        if (Array.isArray(s.bin_list) && s.bin_list.length > 0 && shelfLayout && shelfLayout.length > 0) {
-                            const matchesBin = s.bin_list.some(b => {
-                                const bId = String(b.bin_id || b.bin_name || '').trim();
-                                return shelfLayout.some(sh =>
-                                    Array.isArray(sh.bins) && sh.bins.some(bn =>
-                                        String(bn.bin_id || bn.id || bn.label || '').trim() === bId
-                                    )
-                                );
-                            });
-                            if (matchesBin) return true;
-                        }
-
-                        if (rawCupboards && rawCupboards.length === 1) {
-                            return true;
-                        }
-
-                        return false;
-                    });
-
-                    if (matchingStrips.length > 0) {
-                        ledStrips = matchingStrips.map((s, idx) => {
-                            const realId = (s.strip_id !== undefined && s.strip_id !== null) ? String(s.strip_id) : ((s.id !== undefined && s.id !== null) ? String(s.id) : `strip-${idx}`);
-                            return {
-                                id: realId,
-                                strip_id: s.strip_id || s.id || realId,
-                                label: s.strip_name || `Strip ${idx + 1}`,
-                                x: (s.strip_gridx !== undefined && s.strip_gridx !== null && !isNaN(parseFloat(s.strip_gridx))) ? parseFloat(s.strip_gridx) : 20,
-                                y: (s.strip_gridy !== undefined && s.strip_gridy !== null && !isNaN(parseFloat(s.strip_gridy))) ? parseFloat(s.strip_gridy) : (20 + idx * 30),
-                                width: (s.strip_width !== undefined && s.strip_width !== null && !isNaN(parseFloat(s.strip_width))) ? parseFloat(s.strip_width) : 100,
-                                height: (s.strip_height !== undefined && s.strip_height !== null && !isNaN(parseFloat(s.strip_height))) ? parseFloat(s.strip_height) : 22,
-                                strip_loc_id: s.strip_loc_id,
-                                strip_cupboard_id: s.strip_cupboard_id,
-                                strip_shelf_id: s.strip_shelf_id,
-                                strip_org_id: s.strip_org_id,
-                                strip_branch_id: s.strip_branch_id,
-                                strip_status: s.strip_status,
-                                linkedBins: Array.isArray(s.bin_list) ? s.bin_list.map(b => b.bin_name || String(b.bin_id)) : []
-                            };
-                        });
+                const matchingStrips = allSavedStrips.filter(s => {
+                    const sCupId = String(s.cupboardId || s.cupboard_id || s.strip_cupboard_id || '').trim();
+                    if (sCupId) {
+                        return (
+                            sCupId === cId ||
+                            sCupId === cName ||
+                            (c.cupboard_id !== undefined && sCupId === String(c.cupboard_id).trim()) ||
+                            (c.id !== undefined && sCupId === String(c.id).trim()) ||
+                            (c.name !== undefined && sCupId === String(c.name).trim()) ||
+                            (c.cupboard_name !== undefined && sCupId === String(c.cupboard_name).trim())
+                        );
                     }
+
+                    const sShelfId = String(s.strip_shelf_id || s.shelf_id || '').trim();
+                    if (sShelfId && shelfLayout && shelfLayout.length > 0) {
+                        const matchesShelf = shelfLayout.some(sh => {
+                            const shId = String(sh.shelf_id || sh.id || '').trim();
+                            const shPhrId = String(sh.shelf_phr_id || '').trim();
+                            const shName = String(sh.label || sh.shelf_name || '').trim();
+                            return sShelfId === shId || sShelfId === shPhrId || sShelfId === shName;
+                        });
+                        if (matchesShelf) return true;
+                    }
+
+                    const sBins = s.bin_list || s.bins || s.linkedBins || [];
+                    if (Array.isArray(sBins) && sBins.length > 0 && shelfLayout && shelfLayout.length > 0) {
+                        const matchesBin = sBins.some(b => {
+                            const bId = typeof b === 'object' ? String(b.bin_id || b.id || b.bin_name || '').trim() : String(b).trim();
+                            return shelfLayout.some(sh =>
+                                Array.isArray(sh.bins) && sh.bins.some(bn =>
+                                    String(bn.bin_id || bn.id || bn.label || '').trim() === bId
+                                )
+                            );
+                        });
+                        if (matchesBin) return true;
+                    }
+
+                    if (rawCupboards && rawCupboards.length === 1) {
+                        return true;
+                    }
+
+                    return false;
+                });
+
+                if (matchingStrips.length > 0) {
+                    ledStrips = [...matchingStrips];
                 }
 
+                // 2. Fallback / Merge with localLedStrips from localStorage if missing or extra strips exist
                 try {
                     const localStripsStr = localStorage.getItem('localLedStrips');
                     if (localStripsStr) {
                         const parsedStrips = JSON.parse(localStripsStr);
                         if (Array.isArray(parsedStrips)) {
-                            const cId = String(c.cupboard_id || c.id || '');
-                            const cName = String(c.cupboard_name || c.name || '');
-                            ledStrips = parsedStrips.filter(s => {
+                            const cId = String(c.cupboard_id || c.id || '').trim();
+                            const cName = String(c.cupboard_name || c.name || '').trim();
+                            const localForCupboard = parsedStrips.filter(s => {
                                 const sCupId = String(s.cupboardId || s.cupboard_id || '').trim();
-                                return sCupId !== '' && (sCupId === cId || sCupId === cName);
+                                if (sCupId !== '') {
+                                    return sCupId === cId || sCupId === cName;
+                                }
+                                return true; // fallback if cupboardId not set
+                            });
+
+                            localForCupboard.forEach(ls => {
+                                const lsId = String(ls.id || ls.strip_id);
+                                if (!ledStrips.some(existing => String(existing.id || existing.strip_id) === lsId)) {
+                                    ledStrips.push(ls);
+                                }
                             });
                         }
                     }
@@ -745,9 +870,9 @@ export default function Monitoring() {
             CUPBOARDS_CONFIG.length = 0;
             mapped.forEach(c => CUPBOARDS_CONFIG.push(c));
         }
-    }, [rawCupboards, rawWalls, fetchedControllers, rawShelves, rawBins, rawStrips]);
+    }, [rawCupboards, rawWalls, fetchedControllers, rawShelves, rawBins, allSavedStrips]);
 
-    const isFetchingAny = isFetchingControllers || isFetchingWalls || isFetchingCupboards || isFetchingShelves || isFetchingBins || isFetchingStrips;
+    const isFetchingAny = isFetchingControllers || isFetchingWalls || isFetchingCupboards || isFetchingShelves || isFetchingBins;
 
     const hierarchy = useMemo(() => {
         const controllersMap = new Map();

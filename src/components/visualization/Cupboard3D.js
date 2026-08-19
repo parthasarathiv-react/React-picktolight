@@ -183,15 +183,38 @@ function LedStrip3D({ strip, stripIdx = 0, canvasWidth, canvasHeight, upperHeigh
 
 const STRIP_COLORS = [
     { name: 'cyan', hex: '#22d3ee' },
-    { name: 'purple', hex: '#c084fc' },
-    { name: 'amber', hex: '#fbbf24' },
     { name: 'emerald', hex: '#34d399' },
+    { name: 'sky', hex: '#38bdf8' },
+    { name: 'amber', hex: '#fbbf24' },
+    { name: 'purple', hex: '#c084fc' },
     { name: 'rose', hex: '#fb7185' },
-    { name: 'blue', hex: '#60a5fa' },
     { name: 'orange', hex: '#fb923c' },
+    { name: 'fuchsia', hex: '#e879f9' },
+    { name: 'teal', hex: '#2dd4bf' },
+    { name: 'indigo', hex: '#818cf8' },
     { name: 'lime', hex: '#a3e635' },
-    { name: 'fuchsia', hex: '#e879f9' }
+    { name: 'yellow', hex: '#facc15' },
+    { name: 'pink', hex: '#f472b6' },
+    { name: 'blue', hex: '#60a5fa' },
+    { name: 'violet', hex: '#a78bfa' },
+    { name: 'cyan-dark', hex: '#06b6d4' }
 ];
+
+function getStripColorIndex(strip, fallbackIndex = 0) {
+    if (strip) {
+        if (strip.colorIndex !== undefined && strip.colorIndex !== null && !isNaN(Number(strip.colorIndex))) {
+            return Math.abs(Number(strip.colorIndex)) % STRIP_COLORS.length;
+        }
+        if (strip.strip_order !== undefined && strip.strip_order !== null && !isNaN(Number(strip.strip_order))) {
+            return Math.abs(Number(strip.strip_order) - 1) % STRIP_COLORS.length;
+        }
+        const ch = strip.channel || strip.channel_id || strip.channelId;
+        if (ch !== undefined && ch !== null && !isNaN(Number(ch)) && Number(ch) > 0) {
+            return (Number(ch) - 1) % STRIP_COLORS.length;
+        }
+    }
+    return Math.abs(fallbackIndex || 0) % STRIP_COLORS.length;
+}
 
 function getStripColor(index) {
     if (index < 0 || isNaN(index)) return STRIP_COLORS[0];
@@ -207,15 +230,25 @@ function findStripForBin(ledStrips, shelf, bin) {
 
     for (let idx = 0; idx < ledStrips.length; idx++) {
         const strip = ledStrips[idx];
-        if (!strip.linkedBins || !Array.isArray(strip.linkedBins)) continue;
+        const linked = strip.linkedBins || strip.bins || strip.bin_list;
+        if (!linked || !Array.isArray(linked)) continue;
 
-        const isMatch = strip.linkedBins.some(lb => {
-            const lbStr = String(lb).trim();
-            if (lbStr === compositeId) return true;
-            if (binIdStr && lbStr === binIdStr) return true;
-            if (binLabelStr && lbStr === binLabelStr) return true;
-            if (lbStr.includes('_')) {
-                const parts = lbStr.split('_');
+        const isMatch = linked.some(lb => {
+            let lbId = '';
+            let lbName = '';
+            if (typeof lb === 'object' && lb !== null) {
+                lbId = String(lb.bin_id || lb.id || '').trim();
+                lbName = String(lb.bin_name || lb.label || lb.name || '').trim();
+            } else {
+                lbId = String(lb).trim();
+                lbName = String(lb).trim();
+            }
+
+            if (lbId && lbId === compositeId) return true;
+            if (binIdStr && (lbId === binIdStr || lbName === binIdStr)) return true;
+            if (binLabelStr && (lbId === binLabelStr || lbName === binLabelStr)) return true;
+            if (lbId.includes('_')) {
+                const parts = lbId.split('_');
                 const lastPart = parts[parts.length - 1];
                 if (lastPart === binIdStr || lastPart === binLabelStr) return true;
             }
@@ -223,7 +256,8 @@ function findStripForBin(ledStrips, shelf, bin) {
         });
 
         if (isMatch) {
-            return { strip, index: idx, theme: getStripColor(idx) };
+            const colorIdx = getStripColorIndex(strip, idx);
+            return { strip, index: idx, theme: getStripColor(colorIdx) };
         }
     }
     return null;

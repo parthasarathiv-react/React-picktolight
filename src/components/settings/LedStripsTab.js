@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
 import {
-    Loader2, Server, Box, LayoutGrid, Layers, Lightbulb, Check, Cpu, Cable, Zap,
+    Loader2, Server, Box, Layers, Lightbulb, Check, Cpu, Cable, Zap,
     Settings2, ArrowRight, RefreshCw, PanelLeft, PanelRight, PanelTop,
-    PanelBottom, Eye, AlertCircle, Plus, Sparkles, Filter, X, ArrowLeft, Trash2, Save, Search, ChevronRight
+    PanelBottom, Eye, AlertCircle, Plus, Sparkles, Filter, X, ArrowLeft, Trash2, Save, Search, ChevronRight, Tag, Edit3
 } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from 'components/ui/card';
@@ -55,17 +55,7 @@ export default function LedStripsTab({
             return null;
         }
     });
-    const [selectedWallNames, setSelectedWallNames] = useState(() => {
-        try {
-            const saved = localStorage.getItem('ledstrip_selectedWallNames');
-            if (saved) return JSON.parse(saved);
-            const legacy = localStorage.getItem('selectedWallNames');
-            if (legacy) return JSON.parse(legacy);
-        } catch (e) {
-            return [];
-        }
-        return [];
-    });
+
     const [controllerPlacement, setControllerPlacement] = useState(() => {
         try {
             const saved = localStorage.getItem('controllerPlacement');
@@ -86,12 +76,6 @@ export default function LedStripsTab({
     }, [selectedController]);
 
     useEffect(() => {
-        if (selectedWallNames && selectedWallNames.length > 0) {
-            try { localStorage.setItem('ledstrip_selectedWallNames', JSON.stringify(selectedWallNames)); } catch (e) { }
-        }
-    }, [selectedWallNames]);
-
-    useEffect(() => {
         if (controllerPlacement) {
             try { localStorage.setItem('controllerPlacement', controllerPlacement); } catch (e) { }
         }
@@ -99,13 +83,13 @@ export default function LedStripsTab({
 
     // ── Dialog Visibility Controls ───────────────────────────────────────────
     const [showControllerDialog, setShowControllerDialog] = useState(false);
-    const [showWallsDialog, setShowWallsDialog] = useState(false);
     const [showPositionDialog, setShowPositionDialog] = useState(false);
     const [showChannelDialog, setShowChannelDialog] = useState(false);
 
     // ── In-Memory State for LED Strips & Channels ────────────────────────────
     const [localLedStrips, setLocalLedStrips] = useState([]);
     const [localChannelAssignments, setLocalChannelAssignments] = useState({});
+    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
     // ── Add Strip & Bin Assignment Dialog States ──────────────────────────────
     const [showAddStripDialog, setShowAddStripDialog] = useState(false);
@@ -117,6 +101,7 @@ export default function LedStripsTab({
 
     const [showAssignBinsDialog, setShowAssignBinsDialog] = useState(false);
     const [activeStripForBins, setActiveStripForBins] = useState(null);
+    const [editingStripName, setEditingStripName] = useState('');
     const [selectedBinIds, setSelectedBinIds] = useState([]);
     const [apiBins, setApiBins] = useState([]);
     const [isLoadingApiBins, setIsLoadingApiBins] = useState(false);
@@ -222,6 +207,8 @@ export default function LedStripsTab({
                                     label: matchedStrip.strip_name || matchedStrip.label || `Strip CH-${String(chNum).padStart(2, '0')}`,
                                     channel: chNum,
                                     channelId: channelId,
+                                    channel_id: channelId,
+                                    colorIndex: loadedLocalStrips.length,
                                     strip_ctl_id: String(ctrlId),
                                     x: parseFloat(csItem.x ?? matchedStrip.strip_gridx ?? 40),
                                     y: parseFloat(csItem.y ?? matchedStrip.strip_gridy ?? (40 + idx * 35)),
@@ -254,6 +241,7 @@ export default function LedStripsTab({
                             strip_id: sId,
                             label: s.strip_name || s.label || `Strip ${idx + 1}`,
                             channel: Number(s.strip_channel || s.channel || (idx % 16) + 1),
+                            colorIndex: loadedLocalStrips.length,
                             x: parseFloat(s.strip_gridx ?? 40),
                             y: parseFloat(s.strip_gridy ?? (40 + idx * 35)),
                             width: parseFloat(s.strip_width ?? 80),
@@ -307,14 +295,12 @@ export default function LedStripsTab({
         });
     }, [apiChannels]);
 
-    // Filter cupboards for selected walls
-    const filteredCupboards = cupboardsData.filter(c =>
-        selectedWallNames.length === 0 || selectedWallNames.includes(c.wall)
-    );
+    // Use all cupboards without wall filtering
+    const filteredCupboards = cupboardsData;
 
     // Merge cupboards with local led strips strictly for selected controller
     const cupboardsWithLocalStrips = React.useMemo(() => {
-        const baseFiltered = cupboardsData.filter(cup => selectedWallNames.includes(cup.wall));
+        const baseFiltered = cupboardsData;
         const selectedCtlId = String(selectedController?.id || selectedController?.ctl_id || '');
 
         return baseFiltered.map(cup => {
@@ -364,7 +350,7 @@ export default function LedStripsTab({
                 ledStrips: cupStrips
             };
         });
-    }, [cupboardsData, selectedWallNames, localLedStrips, selectedController]);
+    }, [cupboardsData, localLedStrips, selectedController]);
 
     // Combine bins from active cupboards layout, API bins, and fallbacks
     const allAvailableBins = React.useMemo(() => {
@@ -456,20 +442,7 @@ export default function LedStripsTab({
         }
     }, [isDesignerActive, isInitialSetupDone, selectedController, controllersData]);
 
-    // Filter walls matching selectedController
-    const filteredWallsForController = React.useMemo(() => {
-        if (!selectedController) return wallsData;
-        const cId = String(selectedController.id || selectedController.ctl_id || '');
-        const cName = String(selectedController.name || '');
 
-        const matched = wallsData.filter(w => {
-            const wCtlId = String(w.controller_id || w.ctl_id || '');
-            const wCtlName = String(w.controller_name || w.controller || '');
-            return (wCtlId && wCtlId === cId) || (wCtlName && wCtlName === cName);
-        });
-
-        return matched.length > 0 ? matched : wallsData;
-    }, [wallsData, selectedController]);
 
     // Handle controller selection
     const handleSelectController = (controller) => {
@@ -477,67 +450,11 @@ export default function LedStripsTab({
         setShowControllerDialog(false);
         try { localStorage.setItem('selectedController', JSON.stringify(controller)); } catch (e) { }
 
-        // Set wall names belonging specifically to this controller
-        const ctrlWalls = wallsData.filter(w =>
-            String(w.controller_id || w.ctl_id) === String(controller.id || controller.ctl_id) ||
-            w.controller_name === controller.name ||
-            w.controller === controller.name
-        );
-        const wallNames = ctrlWalls.map(w => w.name || w.wall_name).filter(Boolean);
-        const finalWallNames = wallNames.length > 0 ? wallNames : (wallsData.length > 0 ? [wallsData[0]?.name || wallsData[0]?.wall_name].filter(Boolean) : []);
-        setSelectedWallNames(finalWallNames);
-        try { localStorage.setItem('selectedWallNames', JSON.stringify(finalWallNames)); } catch (e) { }
-
         // Trigger channel & channelstrip API calls for the selected controller ONLY upon user click
         fetchStripsForController(controller);
-
-        // Proceed to Walls dialog if part of initial setup flow
-        if (!isInitialSetupDone) {
-            setShowWallsDialog(true);
-        }
     };
 
-    // Toggle wall selection in multi-select dialog
-    const toggleWallSelection = (wallName) => {
-        setSelectedWallNames(prev => {
-            const updated = prev.includes(wallName)
-                ? prev.filter(w => w !== wallName)
-                : [...prev, wallName];
-            try { localStorage.setItem('selectedWallNames', JSON.stringify(updated)); } catch (e) { }
-            return updated;
-        });
-    };
 
-    const handleSelectAllWalls = () => {
-        const matchingWalls = filteredWallsForController;
-        let updated = [];
-        if (selectedWallNames.length === matchingWalls.length) {
-            updated = [];
-            toast.info("Deselected all walls.");
-        } else {
-            updated = matchingWalls.map(w => w.name || w.wall_name).filter(Boolean);
-            toast.info(`Selected all ${updated.length} wall(s).`);
-        }
-        setSelectedWallNames(updated);
-        try { localStorage.setItem('selectedWallNames', JSON.stringify(updated)); } catch (e) { }
-    };
-
-    const handleConfirmWalls = () => {
-        setShowWallsDialog(false);
-        try { localStorage.setItem('selectedWallNames', JSON.stringify(selectedWallNames)); } catch (e) { }
-
-        // Filter cupboards based on selected walls
-        const filtered = cupboardsData.filter(cup => selectedWallNames.includes(cup.wall));
-        const firstCupId = filtered[0]?.id || filtered[0]?.cupboard_id;
-        if (firstCupId) {
-            setActiveCupboardIdx(0);
-        }
-
-        // Proceed to Position dialog if part of initial setup flow
-        if (!isInitialSetupDone) {
-            setShowPositionDialog(true);
-        }
-    };
 
     // Effective channel assignments merging API + local storage
     const effectiveChannelAssignments = React.useMemo(() => {
@@ -569,6 +486,7 @@ export default function LedStripsTab({
     // ── Draggable Strip Handlers ──────────────────────────────────────────────
     const handleStripMove = React.useCallback((stripId, newX, newY) => {
         setLocalLedStrips(prev => prev.map(s => (s.id === stripId || s.strip_id === stripId) ? { ...s, x: newX, y: newY } : s));
+        setHasUnsavedChanges(true);
     }, []);
 
     const handleCreateStrip = () => {
@@ -610,6 +528,7 @@ export default function LedStripsTab({
             channel: assignedChannel,
             channelId: selectedChannelId,
             channel_id: selectedChannelId,
+            colorIndex: localLedStrips.length,
             parentStripId: addStripMode === 'daisy_chain' ? (parentStrip.id || parentStrip.strip_id) : null,
             cupboardId: cId,
             cupboardName: cName,
@@ -619,6 +538,7 @@ export default function LedStripsTab({
 
         const updatedStrips = [...localLedStrips, newStrip];
         setLocalLedStrips(updatedStrips);
+        setHasUnsavedChanges(true);
 
         toast.success(`Assigned ${label} to CH-${String(selectedAddChannel).padStart(2, '0')}!`, {
             description: `Target: ${cName}. Drag on cupboard to position.`
@@ -629,8 +549,17 @@ export default function LedStripsTab({
 
     const handleStripDoubleClick = (strip) => {
         setActiveStripForBins(strip);
-        const existingBins = strip.bins || strip.linkedBins || [];
-        setSelectedBinIds(Array.isArray(existingBins) ? existingBins.map(String) : []);
+        setEditingStripName(strip.label || strip.strip_name || '');
+        const existingBins = strip.bins || strip.linkedBins || strip.bin_list || [];
+        const extractedBinIds = Array.isArray(existingBins) ? existingBins.map(b => {
+            if (typeof b === 'object' && b !== null) {
+                const idVal = b.bin_id !== undefined ? b.bin_id : (b.id !== undefined ? b.id : (b.bin_name !== undefined ? b.bin_name : b.label));
+                return typeof idVal === 'object' ? String(idVal?.bin_id || idVal?.id || '') : String(idVal || '');
+            }
+            return String(b || '');
+        }).filter(id => id && id !== '[object Object]') : [];
+
+        setSelectedBinIds(extractedBinIds);
         setBinSearchQuery('');
         setShowAssignBinsDialog(true);
     };
@@ -649,6 +578,7 @@ export default function LedStripsTab({
         setIsDeletingStrip(true);
         try {
             await handleDeleteStrip(stripToDelete);
+            setHasUnsavedChanges(true);
             setStripDeleteDialogOpen(false);
             setStripToDelete(null);
         } finally {
@@ -695,9 +625,9 @@ export default function LedStripsTab({
         const targetChannelObj = channelsToRender.find(c => c.chNum === chNum);
         const targetChannelId = targetChannelObj ? (targetChannelObj.channelId || targetChannelObj.id) : null;
 
-        setLocalLedStrips(prev => prev.map(s => String(s.id || s.strip_id) === String(targetId) ? { ...s, channel: chNum, channelId: targetChannelId, channel_id: targetChannelId } : s));
+        setLocalLedStrips(prev => prev.map(s => String(s.id || s.strip_id) === String(targetId) ? { ...s, channel: chNum, channelId: targetChannelId, channel_id: targetChannelId, isChannelChanged: true } : s));
         if (chNum >= 1 && chNum <= 16) {
-            const updatedStrip = { ...activeStripForBins, channel: chNum, channelId: targetChannelId, channel_id: targetChannelId };
+            const updatedStrip = { ...activeStripForBins, channel: chNum, channelId: targetChannelId, channel_id: targetChannelId, isChannelChanged: true };
             setChannelAssignments(prev => ({
                 ...prev,
                 [chNum]: updatedStrip
@@ -707,15 +637,48 @@ export default function LedStripsTab({
                 [chNum]: updatedStrip
             }));
         }
+        setHasUnsavedChanges(true);
         toast.success(`Reassigned strip to CH-${String(chNum).padStart(2, '0')}`);
     };
 
     const handleSaveBinsForStrip = () => {
         if (!activeStripForBins) return;
         const stripId = activeStripForBins.id || activeStripForBins.strip_id;
-        setLocalLedStrips(prev => prev.map(s => (String(s.id || s.strip_id) === String(stripId)) ? { ...s, bins: selectedBinIds, linkedBins: selectedBinIds } : s));
+        const newName = editingStripName.trim() || activeStripForBins.label || 'LED Strip';
 
-        toast.success(`Assigned ${selectedBinIds.length} bin(s) to ${activeStripForBins.label || 'LED Strip'}`);
+        // Update localLedStrips with the selected bin IDs and updated label/strip_name
+        setLocalLedStrips(prev => prev.map(s =>
+            String(s.id || s.strip_id) === String(stripId)
+                ? { ...s, label: newName, strip_name: newName, bins: selectedBinIds, linkedBins: selectedBinIds }
+                : s
+        ));
+
+        // Also sync bins & name into localChannelAssignments so Save Setup picks them up correctly
+        setLocalChannelAssignments(prev => {
+            const updated = { ...prev };
+            Object.keys(updated).forEach(chNum => {
+                const s = updated[chNum];
+                if (s && String(s.id || s.strip_id) === String(stripId)) {
+                    updated[chNum] = { ...s, label: newName, strip_name: newName, bins: selectedBinIds, linkedBins: selectedBinIds };
+                }
+            });
+            return updated;
+        });
+
+        // Also sync into channelAssignments
+        setChannelAssignments(prev => {
+            const updated = { ...prev };
+            Object.keys(updated).forEach(chNum => {
+                const s = updated[chNum];
+                if (s && String(s.id || s.strip_id) === String(stripId)) {
+                    updated[chNum] = { ...s, label: newName, strip_name: newName, bins: selectedBinIds, linkedBins: selectedBinIds };
+                }
+            });
+            return updated;
+        });
+
+        setHasUnsavedChanges(true);
+        toast.success(`Saved configuration for "${newName}"`);
         setShowAssignBinsDialog(false);
     };
 
@@ -797,14 +760,24 @@ export default function LedStripsTab({
 
                         const rawBins = stripObj.bins || stripObj.linkedBins || stripObj.bin_list || [];
                         const formattedBins = Array.isArray(rawBins) ? rawBins.map(b => {
+                            let binIdStr = '';
+                            let binNameStr = '';
+
                             if (typeof b === 'object' && b !== null) {
-                                return {
-                                    bin_id: String(b.bin_id || b.id || b.bin_name || b.label || ''),
-                                    bin_name: String(b.bin_name || b.label || b.name || b.bin_id || b.id || '')
-                                };
+                                binIdStr = typeof b.bin_id === 'object' ? String(b.bin_id?.bin_id || b.bin_id?.id || '') : String(b.bin_id || b.id || b.bin_name || b.label || b.name || '');
+                                binNameStr = typeof b.bin_name === 'object' ? String(b.bin_name?.bin_name || b.bin_name?.name || '') : String(b.bin_name || b.label || b.name || b.bin_id || b.id || '');
+                            } else {
+                                binIdStr = String(b);
                             }
-                            return { bin_id: String(b), bin_name: String(b) };
-                        }) : [];
+
+                            if (binIdStr === '[object Object]' || !binIdStr) return null;
+
+                            const matched = allAvailableBins.find(ab => String(ab.id) === binIdStr || String(ab.label) === binIdStr);
+                            return {
+                                bin_id: String(matched ? matched.id : binIdStr),
+                                bin_name: String(matched ? matched.label : (binNameStr || binIdStr))
+                            };
+                        }).filter(Boolean) : [];
 
                         const stripPayload = {
                             strip_name: String(stripObj.label || stripObj.strip_name || `Strip CH-${channelNum}`),
@@ -841,13 +814,10 @@ export default function LedStripsTab({
                         channelNum
                     );
 
-                    const ctrlIdStr = String(selectedController?.id || selectedController?.ctl_id || '');
-                    // Send exact payload: strip_id, channel_id, strip_order, ctl_id
                     await apiService.createChannelStrip({
                         strip_id: String(realStripId),
                         channel_id: String(resolvedChannelId),
-                        strip_order: String(channelNum),
-                        ctl_id: ctrlIdStr
+                        strip_order: String(channelNum)
                     });
                     count++;
                 }
@@ -1183,6 +1153,19 @@ export default function LedStripsTab({
             const itemsToProcess = [];
             const processedKeys = new Set();
 
+            // 🔍 DEBUG: log localLedStrips bin state before collecting
+            console.group('%c[SaveSetup] BIN DEBUG — localLedStrips', 'color: cyan; font-weight: bold');
+            localLedStrips.forEach((s, i) => {
+                console.log(`  Strip[${i}] id=${s.id || s.strip_id} label=${s.label} bins=`, s.bins, 'linkedBins=', s.linkedBins);
+            });
+            console.groupEnd();
+
+            console.group('%c[SaveSetup] BIN DEBUG — effectiveChannelAssignments', 'color: orange; font-weight: bold');
+            Object.entries(effectiveChannelAssignments).forEach(([ch, s]) => {
+                if (s) console.log(`  CH-${ch} id=${s.id || s.strip_id} label=${s.label} bins=`, s.bins, 'linkedBins=', s.linkedBins);
+            });
+            console.groupEnd();
+
             // 1. Collect assigned strips from localLedStrips
             localLedStrips.forEach((strip, idx) => {
                 const stripId = String(strip.id || strip.strip_id || '');
@@ -1217,6 +1200,16 @@ export default function LedStripsTab({
                 }
             });
 
+            console.log('%c[SaveSetup] itemsToProcess (with bins):', 'color: lime; font-weight: bold',
+                itemsToProcess.map(it => ({
+                    label: it.strip.label,
+                    id: it.strip.id || it.strip.strip_id,
+                    channel: it.channelId,
+                    bins: it.strip.bins,
+                    linkedBins: it.strip.linkedBins
+                }))
+            );
+
             if (itemsToProcess.length === 0) {
                 toast.info("No channel strip assignments to save.", { id: toastId });
                 return;
@@ -1238,87 +1231,132 @@ export default function LedStripsTab({
             for (const item of itemsToProcess) {
                 const { strip, channelId, order } = item;
 
-                // ACTION 1: Create the strip first to get proper strip_id from backend
-                let realStripId = strip.strip_id || strip.id;
+                // Resolve bins for this strip
+                const rawBins = strip.bins || strip.linkedBins || strip.bin_list || [];
+                const formattedBins = Array.isArray(rawBins) ? rawBins.map(b => {
+                    let binIdStr = '';
+                    let binNameStr = '';
+
+                    if (typeof b === 'object' && b !== null) {
+                        binIdStr = typeof b.bin_id === 'object' ? String(b.bin_id?.bin_id || b.bin_id?.id || '') : String(b.bin_id || b.id || b.bin_name || b.label || b.name || '');
+                        binNameStr = typeof b.bin_name === 'object' ? String(b.bin_name?.bin_name || b.bin_name?.name || '') : String(b.bin_name || b.label || b.name || b.bin_id || b.id || '');
+                    } else {
+                        binIdStr = String(b);
+                    }
+
+                    if (binIdStr === '[object Object]' || !binIdStr) return null;
+
+                    const matched = allAvailableBins.find(ab => String(ab.id) === binIdStr || String(ab.label) === binIdStr);
+                    return {
+                        bin_id: String(matched ? matched.id : binIdStr),
+                        bin_name: String(matched ? matched.label : (binNameStr || binIdStr))
+                    };
+                }).filter(Boolean) : [];
+                console.log(`%c[SaveSetup] Strip "${strip.label}" formattedBins:`, 'color: lime', formattedBins);
+
+                // ACTION 1: Call create-strip for new temp strips or update-strip for existing strips
+                let realStripId = String(strip.strip_id || strip.id || '');
                 const isTempId = !realStripId || String(realStripId).startsWith('local-') || String(realStripId).startsWith('sample-') || isNaN(Number(realStripId));
 
+                let locId = '1';
+                try {
+                    const selectedLocationStr = localStorage.getItem('selectedLocation');
+                    if (selectedLocationStr) {
+                        const loc = JSON.parse(selectedLocationStr);
+                        locId = String(loc.phr_location_id || '1');
+                    }
+                } catch (e) { }
+
+                const stripPayload = {
+                    strip_name: String(strip.label || strip.strip_name || strip.name || `Strip CH-${channelId}`),
+                    strip_loc_id: String(strip.strip_loc_id || locId),
+                    strip_ctl_id: String(selectedController?.id || selectedController?.ctl_id || strip.strip_ctl_id || '1'),
+                    strip_cupboard_id: String(strip.cupboardId || strip.cupboard_id || '1'),
+                    strip_shelf_id: String(strip.shelfId || strip.shelf_id || '1'),
+                    strip_gridx: String(Math.round(strip.x ?? 0)),
+                    strip_gridy: String(Math.round(strip.y ?? 0)),
+                    strip_width: String(Math.round(strip.width || 100)),
+                    strip_height: String(Math.round(strip.height || 22)),
+                    strip_org_id: String(strip.strip_org_id || "Salem"),
+                    strip_branch_id: String(strip.strip_branch_id || "SKSHOSPITAL"),
+                    strip_status: strip.strip_status !== undefined ? Boolean(strip.strip_status) : true,
+                    bin_list: formattedBins
+                };
+
                 if (isTempId) {
-                    let locId = '1';
-                    try {
-                        const selectedLocationStr = localStorage.getItem('selectedLocation');
-                        if (selectedLocationStr) {
-                            const loc = JSON.parse(selectedLocationStr);
-                            locId = String(loc.phr_location_id || '1');
-                        }
-                    } catch (e) { }
-
-                    const rawBins = strip.bins || strip.linkedBins || strip.bin_list || [];
-                    const formattedBins = Array.isArray(rawBins) ? rawBins.map(b => {
-                        if (typeof b === 'object' && b !== null) {
-                            return {
-                                bin_id: String(b.bin_id || b.id || b.bin_name || b.label || ''),
-                                bin_name: String(b.bin_name || b.label || b.name || b.bin_id || b.id || '')
-                            };
-                        }
-                        return { bin_id: String(b), bin_name: String(b) };
-                    }) : [];
-
-                    const stripPayload = {
-                        strip_name: String(strip.label || strip.strip_name || strip.name || `Strip CH-${channelId}`),
-                        strip_loc_id: String(strip.strip_loc_id || locId),
-                        strip_ctl_id: String(selectedController?.id || selectedController?.ctl_id || strip.strip_ctl_id || '1'),
-                        strip_cupboard_id: String(strip.cupboardId || strip.cupboard_id || '1'),
-                        strip_shelf_id: String(strip.shelfId || strip.shelf_id || '1'),
-                        strip_gridx: String(Math.round(strip.x ?? 0)),
-                        strip_gridy: String(Math.round(strip.y ?? 0)),
-                        strip_width: String(Math.round(strip.width || 100)),
-                        strip_height: String(Math.round(strip.height || 22)),
-                        strip_org_id: String(strip.strip_org_id || "Salem"),
-                        strip_branch_id: String(strip.strip_branch_id || "SKSHOSPITAL"),
-                        strip_status: strip.strip_status !== undefined ? Boolean(strip.strip_status) : true,
-                        bin_list: formattedBins
-                    };
-
+                    console.log('%c[SaveSetup] → createStrip payload (new strip):', 'color: cyan', stripPayload);
                     const stripRes = await apiService.createStrip(stripPayload);
                     const itemData = Array.isArray(stripRes?.data) ? stripRes.data[0] : (Array.isArray(stripRes) ? stripRes[0] : (stripRes?.data || stripRes));
-                    realStripId = String(
+                    const newStripId = String(
                         itemData?.strip_id ||
                         itemData?.id ||
                         stripRes?.strip_id ||
                         stripRes?.id ||
-                        realStripId
+                        ''
                     );
+                    if (newStripId && newStripId !== 'undefined' && newStripId !== '') {
+                        realStripId = newStripId;
+                    }
+                    console.log('%c[SaveSetup] → createStrip success, realStripId:', 'color: cyan', realStripId);
+
+                    // Link new strip to channel
+                    const formattedChName = `CHANNEL-${String(channelId).padStart(2, '0')}`;
+                    const targetChannelObj = (currentApiChannels || []).find(ch =>
+                        String(ch.channel_id || ch.id) === String(channelId) ||
+                        String(ch.channel_name || '').toUpperCase() === formattedChName.toUpperCase() ||
+                        String(ch.channel_name || '').toUpperCase() === `CHANNEL-${channelId}`.toUpperCase()
+                    ) || (currentApiChannels || [])[Number(channelId) - 1];
+
+                    const resolvedChannelId = String(
+                        targetChannelObj?.channel_id ||
+                        targetChannelObj?.id ||
+                        channelId
+                    );
+
+                    const ctrlIdStr = String(selectedController?.id || selectedController?.ctl_id || '');
+                    const channelStripPayload = {
+                        strip_id: String(realStripId),
+                        channel_id: String(resolvedChannelId),
+                        strip_order: String(order),
+                        ctl_id: ctrlIdStr
+                    };
+                    console.log('%c[SaveSetup] → createChannelStrip payload for new strip:', 'color: magenta', channelStripPayload);
+                    await apiService.createChannelStrip(channelStripPayload);
+                } else {
+                    console.log('%c[SaveSetup] → updateStrip payload for existing strip:', 'color: cyan', realStripId, stripPayload);
+                    await apiService.updateStrip(realStripId, stripPayload);
+
+                    // Only call createChannelStrip if the channel mapping was explicitly changed for this existing strip
+                    if (strip.isChannelChanged) {
+                        const formattedChName = `CHANNEL-${String(channelId).padStart(2, '0')}`;
+                        const targetChannelObj = (currentApiChannels || []).find(ch =>
+                            String(ch.channel_id || ch.id) === String(channelId) ||
+                            String(ch.channel_name || '').toUpperCase() === formattedChName.toUpperCase() ||
+                            String(ch.channel_name || '').toUpperCase() === `CHANNEL-${channelId}`.toUpperCase()
+                        ) || (currentApiChannels || [])[Number(channelId) - 1];
+
+                        const resolvedChannelId = String(
+                            targetChannelObj?.channel_id ||
+                            targetChannelObj?.id ||
+                            channelId
+                        );
+
+                        const ctrlIdStr = String(selectedController?.id || selectedController?.ctl_id || '');
+                        const channelStripPayload = {
+                            strip_id: String(realStripId),
+                            channel_id: String(resolvedChannelId),
+                            strip_order: String(order),
+                            ctl_id: ctrlIdStr
+                        };
+                        console.log('%c[SaveSetup] → createChannelStrip payload for reassigned channel:', 'color: magenta', channelStripPayload);
+                        await apiService.createChannelStrip(channelStripPayload);
+                    }
                 }
-
-                // ACTION 2: Create the channelstrip mapping using the proper realStripId from Action 1 and channel_id from get-channels API
-                const formattedChName = `CHANNEL-${String(channelId).padStart(2, '0')}`;
-                const targetChannelObj = (currentApiChannels || []).find(ch =>
-                    String(ch.channel_id || ch.id) === String(channelId) ||
-                    String(ch.channel_name || '').toUpperCase() === formattedChName.toUpperCase() ||
-                    String(ch.channel_name || '').toUpperCase() === `CHANNEL-${channelId}`.toUpperCase()
-                ) || (currentApiChannels || [])[Number(channelId) - 1];
-
-                const resolvedChannelId = String(
-                    targetChannelObj?.channel_id ||
-                    targetChannelObj?.id ||
-                    channelId
-                );
-
-                const ctrlIdStr = String(selectedController?.id || selectedController?.ctl_id || '');
-                const channelStripPayload = {
-                    strip_id: String(realStripId),
-                    channel_id: String(resolvedChannelId),
-                    strip_order: String(order),
-                    ctl_id: ctrlIdStr,
-                    x: String(Math.round(strip.x ?? 0)),
-                    y: String(Math.round(strip.y ?? 0))
-                };
-
-                await apiService.createChannelStrip(channelStripPayload);
                 successCount++;
             }
 
-            toast.success(`Successfully created and linked ${successCount} strip(s) to channel(s)!`, { id: toastId });
+            toast.success(`Successfully saved and linked ${successCount} strip(s)!`, { id: toastId });
+            setHasUnsavedChanges(false);
             triggerRefresh();
             if (refetchStrips) refetchStrips();
         } catch (err) {
@@ -1360,16 +1398,7 @@ export default function LedStripsTab({
                         Controller ({selectedController?.name || 'Select'})
                     </Button>
 
-                    {/* Re-trigger Walls Selection */}
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setShowWallsDialog(true)}
-                        className="gap-1.5 border-ot-border bg-ot-surface-top/60 hover:bg-ot-surface-top hover:text-white text-slate-200 text-xs font-medium"
-                    >
-                        <LayoutGrid className="w-3.5 h-3.5 text-ot-action" />
-                        Walls ({selectedWallNames.length})
-                    </Button>
+
 
                     {/* Placement button */}
                     <Button
@@ -1405,7 +1434,13 @@ export default function LedStripsTab({
                     <Button
                         size="sm"
                         onClick={handleSaveSetup}
-                        className="gap-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-lg shadow-blue-600/30"
+                        disabled={!hasUnsavedChanges}
+                        className={cn(
+                            "gap-1.5 text-xs font-bold shadow-lg transition-all",
+                            hasUnsavedChanges
+                                ? "bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/30 cursor-pointer opacity-100"
+                                : "bg-slate-800 text-slate-500 border border-slate-700/50 cursor-not-allowed opacity-60 shadow-none"
+                        )}
                     >
                         <Save className="w-4 h-4" />
                         Save Setup
@@ -1672,81 +1707,7 @@ export default function LedStripsTab({
                 </DialogContent>
             </Dialog>
 
-            {/* ── Dialog 2: Multi-select Walls Modal ───────────────────────────────── */}
-            <Dialog open={showWallsDialog} onOpenChange={setShowWallsDialog}>
-                <DialogContent className="sm:max-w-md bg-ot-surface-top border-ot-border text-white shadow-2xl">
-                    <DialogHeader>
-                        <div className="flex items-center justify-between pb-1">
-                            <span className="text-[10px] uppercase font-mono font-bold tracking-wider px-2 py-0.5 rounded bg-ot-action/20 text-ot-action border border-ot-action/40">
-                                Step 2 of 3
-                            </span>
-                        </div>
-                        <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
-                            <LayoutGrid className="w-5 h-5 text-ot-action" />
-                            Select Walls for {selectedController?.name || 'Controller'}
-                        </DialogTitle>
-                        <DialogDescription className="text-xs text-muted-foreground">
-                            Multi-select walls to view their cupboards and assign LED channels.
-                        </DialogDescription>
-                    </DialogHeader>
 
-                    <div className="space-y-3 py-2">
-                        <div className="flex items-center justify-between px-1">
-                            <span className="text-xs font-semibold uppercase text-muted-foreground">Available Walls:</span>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={handleSelectAllWalls}
-                                className="h-6 text-[11px] text-ot-action hover:bg-ot-action/10"
-                            >
-                                {selectedWallNames.length === filteredWallsForController.length ? 'Deselect All' : 'Select All'}
-                            </Button>
-                        </div>
-
-                        <div className="space-y-2 max-h-60 overflow-y-auto">
-                            {filteredWallsForController.map((wall) => {
-                                const wallName = wall.name || wall.wall_name;
-                                const isChecked = selectedWallNames.includes(wallName);
-                                const cupboardsCount = cupboardsData.filter(c => c.wall === wallName).length;
-                                return (
-                                    <div
-                                        key={wall.id || wallName}
-                                        onClick={() => toggleWallSelection(wallName)}
-                                        className={cn(
-                                            "flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all",
-                                            isChecked
-                                                ? "bg-ot-action/15 border-ot-action/80 text-white"
-                                                : "bg-ot-surface-bottom/60 border-ot-border/60 hover:bg-ot-surface-bottom text-muted-foreground"
-                                        )}
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            <div className={cn(
-                                                "w-5 h-5 rounded flex items-center justify-center border transition-all",
-                                                isChecked ? "bg-ot-action border-ot-action text-white" : "border-ot-border"
-                                            )}>
-                                                {isChecked && <Check className="w-3.5 h-3.5" />}
-                                            </div>
-                                            <span className="font-semibold text-sm text-white">{wallName}</span>
-                                        </div>
-                                        <span className="text-xs font-mono text-muted-foreground">
-                                            {cupboardsCount} Cupboard{cupboardsCount !== 1 ? 's' : ''}
-                                        </span>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-
-                    <DialogFooter>
-                        <Button
-                            onClick={handleConfirmWalls}
-                            className="w-full bg-ot-action text-white hover:bg-ot-action-hover font-bold"
-                        >
-                            Confirm Walls & Load Layout
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
 
             {/* ── Dialog 3: Controller Position Placement Modal ────────────────────── */}
             <Dialog open={showPositionDialog} onOpenChange={setShowPositionDialog}>
@@ -2114,15 +2075,8 @@ export default function LedStripsTab({
 
                     <DialogFooter className="shrink-0 pt-2 border-t border-ot-border/40 gap-2">
                         <Button
-                            variant="outline"
-                            onClick={() => setShowAddStripDialog(false)}
-                            className="border-ot-border text-slate-300"
-                        >
-                            Cancel
-                        </Button>
-                        <Button
                             onClick={handleCreateStrip}
-                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold gap-1.5"
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold gap-1.5 w-full sm:w-auto"
                         >
                             <Check className="w-4 h-4" /> Save & Place Strip
                         </Button>
@@ -2149,6 +2103,21 @@ export default function LedStripsTab({
                     </DialogHeader>
 
                     <div className="flex-1 overflow-y-auto py-3 space-y-4 pr-1">
+                        {/* Section 0: Edit Strip Name */}
+                        <div className="p-3.5 rounded-xl border border-ot-border/50 bg-ot-surface-bottom/60 space-y-2">
+                            <label className="text-xs font-bold text-slate-200 block uppercase tracking-wider font-mono flex items-center gap-1.5">
+                                <Tag className="w-3.5 h-3.5 text-cyan-400" />
+                                Strip Name:
+                            </label>
+                            <input
+                                type="text"
+                                value={editingStripName}
+                                onChange={(e) => setEditingStripName(e.target.value)}
+                                placeholder="Enter LED strip name..."
+                                className="w-full h-9 px-3 bg-ot-surface-top border border-ot-border/80 rounded-lg text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-ot-action font-semibold"
+                            />
+                        </div>
+
                         {/* Section 1: Re-assign Controller Channel */}
                         <div className="p-3 rounded-xl border border-ot-border/50 bg-ot-surface-bottom/60 space-y-2">
                             <label className="text-xs font-bold text-slate-200 block uppercase tracking-wider font-mono flex items-center gap-1.5">
@@ -2254,7 +2223,7 @@ export default function LedStripsTab({
                                     const q = binSearchQuery.toLowerCase();
                                     return b.label.toLowerCase().includes(q) || b.id.toLowerCase().includes(q) || b.shelfName.toLowerCase().includes(q) || b.cupboardName.toLowerCase().includes(q);
                                 }).map(bin => {
-                                    const isSelected = selectedBinIds.includes(bin.id) || selectedBinIds.includes(bin.label);
+                                    const isSelected = selectedBinIds.some(sId => String(sId) === String(bin.id) || String(sId) === String(bin.label));
                                     return (
                                         <button
                                             key={bin.id}
@@ -2311,17 +2280,16 @@ export default function LedStripsTab({
 
                     <DialogFooter className="shrink-0 pt-2 border-t border-ot-border/40 gap-2">
                         <Button
-                            variant="outline"
-                            onClick={() => setShowAssignBinsDialog(false)}
-                            className="border-ot-border text-slate-300"
-                        >
-                            Cancel
-                        </Button>
-                        <Button
                             onClick={handleSaveBinsForStrip}
-                            className="bg-ot-action text-white hover:bg-ot-action-hover font-bold flex-1"
+                            disabled={selectedBinIds.length === 0 && !editingStripName.trim()}
+                            className={cn(
+                                "font-bold flex-1 transition-all",
+                                (selectedBinIds.length > 0 || editingStripName.trim())
+                                    ? "bg-ot-action text-white hover:bg-ot-action-hover shadow-lg cursor-pointer opacity-100"
+                                    : "bg-slate-800 text-slate-500 border border-slate-700/50 cursor-not-allowed opacity-60 shadow-none"
+                            )}
                         >
-                            Save Bin Assignments ({selectedBinIds.length} Bins)
+                            Save Configuration ({selectedBinIds.length} {selectedBinIds.length === 1 ? 'Bin' : 'Bins'})
                         </Button>
                     </DialogFooter>
                 </DialogContent>

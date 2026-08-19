@@ -21,79 +21,39 @@ function getShelfCount(cupboard) {
 }
 
 const STRIP_COLORS = [
-    {
-        name: 'cyan',
-        border: 'border-cyan-400',
-        bgLight: 'bg-cyan-500/25',
-        text: 'text-cyan-400',
-        shadowBin: 'shadow-[0_0_12px_rgba(34,211,238,0.35)]',
-        hex: '#22d3ee'
-    },
-    {
-        name: 'purple',
-        border: 'border-purple-400',
-        bgLight: 'bg-purple-500/25',
-        text: 'text-purple-400',
-        shadowBin: 'shadow-[0_0_12px_rgba(192,132,252,0.35)]',
-        hex: '#c084fc'
-    },
-    {
-        name: 'amber',
-        border: 'border-amber-400',
-        bgLight: 'bg-amber-500/25',
-        text: 'text-amber-400',
-        shadowBin: 'shadow-[0_0_12px_rgba(251,191,36,0.35)]',
-        hex: '#fbbf24'
-    },
-    {
-        name: 'emerald',
-        border: 'border-emerald-400',
-        bgLight: 'bg-emerald-500/25',
-        text: 'text-emerald-400',
-        shadowBin: 'shadow-[0_0_12px_rgba(52,211,153,0.35)]',
-        hex: '#34d399'
-    },
-    {
-        name: 'rose',
-        border: 'border-rose-400',
-        bgLight: 'bg-rose-500/25',
-        text: 'text-rose-400',
-        shadowBin: 'shadow-[0_0_12px_rgba(251,113,133,0.35)]',
-        hex: '#fb7185'
-    },
-    {
-        name: 'blue',
-        border: 'border-blue-400',
-        bgLight: 'bg-blue-500/25',
-        text: 'text-blue-400',
-        shadowBin: 'shadow-[0_0_12px_rgba(96,165,250,0.35)]',
-        hex: '#60a5fa'
-    },
-    {
-        name: 'orange',
-        border: 'border-orange-400',
-        bgLight: 'bg-orange-500/25',
-        text: 'text-orange-400',
-        shadowBin: 'shadow-[0_0_12px_rgba(251,146,60,0.35)]',
-        hex: '#fb923c'
-    },
-    {
-        name: 'lime',
-        border: 'border-lime-400',
-        bgLight: 'bg-lime-500/25',
-        text: 'text-lime-400',
-        shadowBin: 'shadow-[0_0_12px_rgba(163,230,53,0.35)]',
-        hex: '#a3e635'
-    },
-    {
-        name: 'fuchsia',
-        border: 'border-fuchsia-400',
-        bgLight: 'bg-fuchsia-500/25',
-        text: 'text-fuchsia-400',
-        shadowBin: 'shadow-[0_0_12px_rgba(232,121,249,0.35)]',
-        hex: '#e879f9'
-    }
+    { name: 'cyan', border: 'border-cyan-400', bgLight: 'bg-cyan-500/25', text: 'text-cyan-400', shadowBin: 'shadow-[0_0_12px_rgba(34,211,238,0.35)]', hex: '#22d3ee' },
+    { name: 'emerald', border: 'border-emerald-400', bgLight: 'bg-emerald-500/25', text: 'text-emerald-400', shadowBin: 'shadow-[0_0_12px_rgba(52,211,153,0.35)]', hex: '#34d399' },
+    { name: 'sky', border: 'border-sky-400', bgLight: 'bg-sky-500/25', text: 'text-sky-400', shadowBin: 'shadow-[0_0_12px_rgba(56,189,248,0.35)]', hex: '#38bdf8' },
+    { name: 'amber', border: 'border-amber-400', bgLight: 'bg-amber-500/25', text: 'text-amber-400', shadowBin: 'shadow-[0_0_12px_rgba(251,191,36,0.35)]', hex: '#fbbf24' },
+    { name: 'purple', border: 'border-purple-400', bgLight: 'bg-purple-500/25', text: 'text-purple-400', shadowBin: 'shadow-[0_0_12px_rgba(192,132,252,0.35)]', hex: '#c084fc' },
+    { name: 'rose', border: 'border-rose-400', bgLight: 'bg-rose-500/25', text: 'text-rose-400', shadowBin: 'shadow-[0_0_12px_rgba(251,113,133,0.35)]', hex: '#fb7185' },
+    { name: 'orange', border: 'border-orange-400', bgLight: 'bg-orange-500/25', text: 'text-orange-400', shadowBin: 'shadow-[0_0_12px_rgba(251,146,60,0.35)]', hex: '#fb923c' },
+    { name: 'fuchsia', border: 'border-fuchsia-400', bgLight: 'bg-fuchsia-500/25', text: 'text-fuchsia-400', shadowBin: 'shadow-[0_0_12px_rgba(232,121,249,0.35)]', hex: '#e879f9' },
+    { name: 'teal', border: 'border-teal-400', bgLight: 'bg-teal-500/25', text: 'text-teal-400', shadowBin: 'shadow-[0_0_12px_rgba(45,212,191,0.35)]', hex: '#2dd4bf' },
+    { name: 'indigo', border: 'border-indigo-400', bgLight: 'bg-indigo-500/25', text: 'text-indigo-400', shadowBin: 'shadow-[0_0_12px_rgba(129,140,248,0.35)]', hex: '#818cf8' },
+    { name: 'lime', border: 'border-lime-400', bgLight: 'bg-lime-500/25', text: 'text-lime-400', shadowBin: 'shadow-[0_0_12px_rgba(163,230,53,0.35)]', hex: '#a3e635' },
+    { name: 'yellow', border: 'border-yellow-400', bgLight: 'bg-yellow-500/25', text: 'text-yellow-400', shadowBin: 'shadow-[0_0_12px_rgba(250,204,21,0.35)]', hex: '#facc15' },
+    { name: 'pink', border: 'border-pink-400', bgLight: 'bg-pink-500/25', text: 'text-pink-400', shadowBin: 'shadow-[0_0_12px_rgba(244,114,182,0.35)]', hex: '#f472b6' },
+    { name: 'blue', border: 'border-blue-400', bgLight: 'bg-blue-500/25', text: 'text-blue-400', shadowBin: 'shadow-[0_0_12px_rgba(96,165,250,0.35)]', hex: '#60a5fa' },
+    { name: 'violet', border: 'border-violet-400', bgLight: 'bg-violet-500/25', text: 'text-violet-400', shadowBin: 'shadow-[0_0_12px_rgba(167,139,250,0.35)]', hex: '#a78bfa' },
+    { name: 'cyan-dark', border: 'border-cyan-500', bgLight: 'bg-cyan-500/25', text: 'text-cyan-300', shadowBin: 'shadow-[0_0_12px_rgba(6,182,212,0.35)]', hex: '#06b6d4' }
 ];
+
+function getStripColorIndex(strip, fallbackIndex = 0) {
+    if (strip) {
+        if (strip.colorIndex !== undefined && strip.colorIndex !== null && !isNaN(Number(strip.colorIndex))) {
+            return Math.abs(Number(strip.colorIndex)) % STRIP_COLORS.length;
+        }
+        if (strip.strip_order !== undefined && strip.strip_order !== null && !isNaN(Number(strip.strip_order))) {
+            return Math.abs(Number(strip.strip_order) - 1) % STRIP_COLORS.length;
+        }
+        const ch = strip.channel || strip.channel_id || strip.channelId;
+        if (ch !== undefined && ch !== null && !isNaN(Number(ch)) && Number(ch) > 0) {
+            return (Number(ch) - 1) % STRIP_COLORS.length;
+        }
+    }
+    return Math.abs(fallbackIndex || 0) % STRIP_COLORS.length;
+}
 
 function getStripColor(index) {
     if (index < 0 || isNaN(index)) return STRIP_COLORS[0];
@@ -109,16 +69,25 @@ function findStripForBin(ledStrips, shelf, bin) {
 
     for (let idx = 0; idx < ledStrips.length; idx++) {
         const strip = ledStrips[idx];
-        const linked = strip.linkedBins || strip.bins;
+        const linked = strip.linkedBins || strip.bins || strip.bin_list;
         if (!linked || !Array.isArray(linked)) continue;
 
         const isMatch = linked.some(lb => {
-            const lbStr = String(lb).trim();
-            if (lbStr === compositeId) return true;
-            if (binIdStr && lbStr === binIdStr) return true;
-            if (binLabelStr && lbStr === binLabelStr) return true;
-            if (lbStr.includes('_')) {
-                const parts = lbStr.split('_');
+            let lbId = '';
+            let lbName = '';
+            if (typeof lb === 'object' && lb !== null) {
+                lbId = String(lb.bin_id || lb.id || '').trim();
+                lbName = String(lb.bin_name || lb.label || lb.name || '').trim();
+            } else {
+                lbId = String(lb).trim();
+                lbName = String(lb).trim();
+            }
+
+            if (lbId && lbId === compositeId) return true;
+            if (binIdStr && (lbId === binIdStr || lbName === binIdStr)) return true;
+            if (binLabelStr && (lbId === binLabelStr || lbName === binLabelStr)) return true;
+            if (lbId.includes('_')) {
+                const parts = lbId.split('_');
                 const lastPart = parts[parts.length - 1];
                 if (lastPart === binIdStr || lastPart === binLabelStr) return true;
             }
@@ -126,9 +95,7 @@ function findStripForBin(ledStrips, shelf, bin) {
         });
 
         if (isMatch) {
-            const colorIdx = (strip.colorIndex !== undefined && !isNaN(Number(strip.colorIndex)))
-                ? Number(strip.colorIndex)
-                : idx;
+            const colorIdx = getStripColorIndex(strip, idx);
             return { strip, index: idx, theme: getStripColor(colorIdx) };
         }
     }
@@ -513,9 +480,7 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
 
                                     const count = 6;
                                     const colors = (strip.colors && strip.colors.length > 0) ? strip.colors : savedColors;
-                                    const colorIdx = (strip.colorIndex !== undefined && !isNaN(Number(strip.colorIndex)))
-                                        ? Number(strip.colorIndex)
-                                        : stripIdx;
+                                    const colorIdx = getStripColorIndex(strip, stripIdx);
                                     const colorTheme = getStripColor(colorIdx);
                                     const cupId = cupboard.id || cupboard.cupboard_id || 'c';
                                     const sId = strip.id || strip.strip_id;
