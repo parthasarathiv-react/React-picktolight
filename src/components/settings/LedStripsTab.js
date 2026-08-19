@@ -320,6 +320,26 @@ export default function LedStripsTab({
         return baseFiltered.map(cup => {
             const cupIdStr = String(cup.id || cup.cupboard_id);
 
+            const filteredShelfLayout = (cup.shelfLayout || []).filter(s => {
+                const isShelfPlaced = (s.shelf_placed !== undefined && s.shelf_placed !== null)
+                    ? (typeof s.shelf_placed === 'boolean' ? s.shelf_placed : String(s.shelf_placed).toLowerCase() === 'true')
+                    : (s.placed !== undefined ? (typeof s.placed === 'boolean' ? s.placed : String(s.placed).toLowerCase() === 'true') : false);
+                const isShelfStatusFalse = (s.shelf_status !== undefined && s.shelf_status !== null && (s.shelf_status === false || String(s.shelf_status).toLowerCase() === 'false'));
+                return isShelfPlaced && !isShelfStatusFalse;
+            }).map(s => {
+                const filteredBins = (s.bins || []).filter(b => {
+                    const isBinPlaced = (b.bin_placed !== undefined && b.bin_placed !== null)
+                        ? (typeof b.bin_placed === 'boolean' ? b.bin_placed : String(b.bin_placed).toLowerCase() === 'true')
+                        : (b.placed !== undefined ? (typeof b.placed === 'boolean' ? b.placed : String(b.placed).toLowerCase() === 'true') : false);
+                    const isBinStatusFalse = (b.bin_status !== undefined && b.bin_status !== null && (b.bin_status === false || String(b.bin_status).toLowerCase() === 'false'));
+                    return isBinPlaced && !isBinStatusFalse;
+                });
+                return {
+                    ...s,
+                    bins: filteredBins
+                };
+            });
+
             // Gather localStrips that belong to this cupboard
             const matchingLocalStrips = localLedStrips.filter(ls => String(ls.cupboardId || ls.cupboard_id) === cupIdStr);
 
@@ -327,6 +347,7 @@ export default function LedStripsTab({
             if (localLedStrips.length > 0) {
                 return {
                     ...cup,
+                    shelfLayout: filteredShelfLayout,
                     ledStrips: matchingLocalStrips
                 };
             }
@@ -339,6 +360,7 @@ export default function LedStripsTab({
 
             return {
                 ...cup,
+                shelfLayout: filteredShelfLayout,
                 ledStrips: cupStrips
             };
         });
@@ -393,27 +415,6 @@ export default function LedStripsTab({
                             cupboardName: b.cupboard_name || 'Cupboard',
                             cupboardId: binCupId,
                             shelfId: String(b.bin_shelf_id || '')
-                        });
-                    }
-                }
-            });
-        }
-
-        // 3. Fallback: generate default bins for active cupboards
-        if (binsMap.size === 0 && Array.isArray(activeCupboards) && activeCupboards.length > 0) {
-            activeCupboards.forEach(cup => {
-                const cId = String(cup.id || cup.cupboard_id || '1');
-                const cName = cup.name || cup.cupboard_name || 'Cupboard';
-                for (let s = 1; s <= 4; s++) {
-                    for (let b = 1; b <= 6; b++) {
-                        const key = `Bin-${cId}-S${s}-B${b}`;
-                        binsMap.set(key, {
-                            id: key,
-                            label: `Bin ${s}${String.fromCharCode(64 + b)}`,
-                            shelfName: `Shelf ${s}`,
-                            cupboardName: cName,
-                            cupboardId: cId,
-                            shelfId: `s${s}`
                         });
                     }
                 }

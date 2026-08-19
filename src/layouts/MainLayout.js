@@ -5,6 +5,8 @@ import { cn } from 'lib/utils';
 import { Button } from 'components/ui/button';
 import LocationSelectionDialog from 'components/LocationSelectionDialog';
 import { API_URL } from 'config/api';
+import PharmacyInventorySyncAnimation from 'components/PharmacyInventorySyncAnimation';
+
 
 export default function MainLayout() {
     const navigate = useNavigate();
@@ -55,8 +57,11 @@ export default function MainLayout() {
         return () => window.removeEventListener('storage', checkToken);
     }, [navigate]);
 
+    const [syncPhase, setSyncPhase] = useState('idle');
+
     const handleSync = async () => {
         setIsSyncing(true);
+        setSyncPhase('locations');
         try {
             const token = localStorage.getItem('token');
             const headers = {
@@ -64,12 +69,16 @@ export default function MainLayout() {
             };
 
             await fetch(`${API_URL}/pharmacy/locations_active`, { headers });
+            setSyncPhase('racks');
+
             await fetch(`${API_URL}/pharmacy/racks_active`, { headers });
+            setSyncPhase('bins');
+
             await fetch(`${API_URL}/pharmacy/bins_active`, { headers });
+            setSyncPhase('complete');
         } catch (e) {
             console.error("Failed to sync locations data", e);
-        } finally {
-            setIsSyncing(false);
+            setSyncPhase('complete');
         }
     };
 
@@ -255,6 +264,16 @@ export default function MainLayout() {
                 onOpenChange={setShowLocationDialog}
                 onSelectLocation={handleLocationSelect}
             />
+
+            {isSyncing && (
+                <PharmacyInventorySyncAnimation
+                    syncPhase={syncPhase}
+                    onComplete={() => {
+                        setIsSyncing(false);
+                        setSyncPhase('idle');
+                    }}
+                />
+            )}
         </div>
     );
 }

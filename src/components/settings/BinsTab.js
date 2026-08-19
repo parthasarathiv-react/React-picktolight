@@ -169,7 +169,9 @@ export default function BinsTab({
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {filteredShelves.map((item, idx) => {
                     const { cupboard, shelf } = item;
-                    const binCount = shelf.bins ? shelf.bins.length : 0;
+                    const binCount = shelf.bins
+                        ? shelf.bins.filter(b => b.placed !== false && b.bin_placed !== false).length
+                        : 0;
                     return (
                         <button
                             key={`${cupboard.id}-${shelf.id}-${idx}`}

@@ -401,8 +401,9 @@ export default function Monitoring() {
 
                     const matchingShelves = rawShelves.filter(s => {
                         const sCupId = String(s.shelf_cupboard_id || '').trim();
+                        let isMatch = false;
                         if (sCupId) {
-                            return (
+                            isMatch = (
                                 sCupId === cId ||
                                 sCupId === cName ||
                                 (c.cupboard_id !== undefined && sCupId === String(c.cupboard_id).trim()) ||
@@ -410,22 +411,26 @@ export default function Monitoring() {
                                 (c.name !== undefined && sCupId === String(c.name).trim()) ||
                                 (c.cupboard_name !== undefined && sCupId === String(c.cupboard_name).trim())
                             );
+                        } else {
+                            const sWallId = String(s.shelf_wall_id || '').trim();
+                            const sCtlId = String(s.shelf_ctl_id || '').trim();
+                            const cWallId = String(c.cupboard_wall_id || c.wall_id || '').trim();
+                            const cCtlId = String(c.cupboard_ctl_id || c.controller_id || '').trim();
+
+                            if (sWallId && cWallId && sWallId === cWallId) isMatch = true;
+                            else if (sCtlId && cCtlId && sCtlId === cCtlId) isMatch = true;
+                            else if (rawCupboards && rawCupboards.length === 1) isMatch = true;
                         }
 
-                        // Fallback matching when shelf_cupboard_id is missing from GET API:
-                        const sWallId = String(s.shelf_wall_id || '').trim();
-                        const sCtlId = String(s.shelf_ctl_id || '').trim();
-                        const cWallId = String(c.cupboard_wall_id || c.wall_id || '').trim();
-                        const cCtlId = String(c.cupboard_ctl_id || c.controller_id || '').trim();
+                        if (!isMatch) return false;
 
-                        if (sWallId && cWallId && sWallId === cWallId) return true;
-                        if (sCtlId && cCtlId && sCtlId === cCtlId) return true;
+                        const isPlacedShelf = (s.shelf_placed !== undefined && s.shelf_placed !== null)
+                            ? (typeof s.shelf_placed === 'boolean' ? s.shelf_placed : String(s.shelf_placed).toLowerCase() === 'true')
+                            : (s.placed !== undefined ? (typeof s.placed === 'boolean' ? s.placed : String(s.placed).toLowerCase() === 'true') : false);
+                        const isShelfStatusFalse = (s.shelf_status !== undefined && s.shelf_status !== null && (s.shelf_status === false || String(s.shelf_status).toLowerCase() === 'false'));
+                        if (!isPlacedShelf || isShelfStatusFalse) return false;
 
-                        if (rawCupboards && rawCupboards.length === 1) {
-                            return true;
-                        }
-
-                        return false;
+                        return true;
                     });
 
                     if (matchingShelves.length > 0) {
@@ -438,7 +443,9 @@ export default function Monitoring() {
                             const hasWidth = s.shelf_width !== undefined && s.shelf_width !== null && s.shelf_width !== '' && !isNaN(parseFloat(s.shelf_width));
                             const hasHeight = s.shelf_height !== undefined && s.shelf_height !== null && s.shelf_height !== '' && !isNaN(parseFloat(s.shelf_height));
 
-                            const isPlaced = isAssigned;
+                            const isPlaced = (s.shelf_placed !== undefined && s.shelf_placed !== null)
+                                ? (typeof s.shelf_placed === 'boolean' ? s.shelf_placed : String(s.shelf_placed).toLowerCase() === 'true')
+                                : (s.placed !== undefined ? (typeof s.placed === 'boolean' ? s.placed : String(s.placed).toLowerCase() === 'true') : false);
 
                             let bins = [];
                             if (rawBins && Array.isArray(rawBins)) {
@@ -497,9 +504,12 @@ export default function Monitoring() {
                                         return false;
                                     }
 
-                                    const isPlacedBin = b.placed !== false && b.bin_status !== false && String(b.bin_status).toLowerCase() !== 'false';
+                                    const isPlacedBin = (b.bin_placed !== undefined && b.bin_placed !== null)
+                                        ? (typeof b.bin_placed === 'boolean' ? b.bin_placed : String(b.bin_placed).toLowerCase() === 'true')
+                                        : (b.placed !== undefined ? (typeof b.placed === 'boolean' ? b.placed : String(b.placed).toLowerCase() === 'true') : false);
+                                    const isBinStatusFalse = (b.bin_status !== undefined && b.bin_status !== null && (b.bin_status === false || String(b.bin_status).toLowerCase() === 'false'));
 
-                                    return isPlacedBin;
+                                    return isPlacedBin && !isBinStatusFalse;
                                 });
 
                                 // Sort matching bins sequentially (by order / id / name)
@@ -567,26 +577,6 @@ export default function Monitoring() {
                                 } catch (e) { }
                             }
 
-                            if (bins.length === 0) {
-                                const defaultCount = 4;
-                                const defaultWidth = 80;
-                                const defaultHeight = 44;
-                                const gap = 10;
-                                for (let bIdx = 0; bIdx < defaultCount; bIdx++) {
-                                    bins.push({
-                                        id: `${realId}-bin-${bIdx + 1}`,
-                                        bin_id: `${realId}-bin-${bIdx + 1}`,
-                                        label: `${s.shelf_name || 'Bin'} ${String.fromCharCode(65 + bIdx)}`,
-                                        x: 10 + bIdx * (defaultWidth + gap),
-                                        y: 6,
-                                        width: defaultWidth,
-                                        height: defaultHeight,
-                                        placed: true,
-                                        bin_order: bIdx + 1
-                                    });
-                                }
-                            }
-
                             return {
                                 id: realId,
                                 shelf_id: s.shelf_id || s.id || realId,
@@ -595,7 +585,8 @@ export default function Monitoring() {
                                 y: hasGridY ? parseFloat(s.shelf_gridy) : (20 + idx * 56),
                                 width: hasWidth ? parseFloat(s.shelf_width) : 560,
                                 height: hasHeight ? parseFloat(s.shelf_height) : 48,
-                                placed: true,
+                                placed: isPlaced,
+                                shelf_placed: isPlaced,
                                 shelf_order: s.shelf_order,
                                 shelf_phr_id: s.shelf_phr_id || s.phr_id || "",
                                 shelf_org_id: s.shelf_org_id || "skshospital",

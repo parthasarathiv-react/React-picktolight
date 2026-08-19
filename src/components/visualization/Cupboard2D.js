@@ -141,6 +141,7 @@ const DrawerCell = React.memo(function DrawerCell({ cupboardId, row, col, ledsPe
     const defaultCellId = `${row}${String.fromCharCode(64 + col)}`;
     const isCustom = shelfLabel && !shelfLabel.toLowerCase().startsWith('shelf');
     const cellId = isCustom ? (shelfColumns === 1 ? shelfLabel : `${shelfLabel}-${String.fromCharCode(64 + col)}`) : defaultCellId;
+
     const labelClass = dense ? "text-[8px] sm:text-[9px]" : "text-[9px] sm:text-[11px] lg:text-[13px]";
 
     if (absoluteLayout) {
@@ -238,6 +239,29 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
 
     const wallTheme = getWallTheme(wall);
 
+    const activePlacedShelves = useMemo(() => {
+        if (!cupboard.shelfLayout || !Array.isArray(cupboard.shelfLayout)) return [];
+        return cupboard.shelfLayout.filter(s => {
+            const isPlaced = (s.shelf_placed !== undefined && s.shelf_placed !== null)
+                ? (typeof s.shelf_placed === 'boolean' ? s.shelf_placed : String(s.shelf_placed).toLowerCase() === 'true')
+                : (s.placed !== undefined ? (typeof s.placed === 'boolean' ? s.placed : String(s.placed).toLowerCase() === 'true') : false);
+            const isShelfStatusFalse = (s.shelf_status !== undefined && s.shelf_status !== null && (s.shelf_status === false || String(s.shelf_status).toLowerCase() === 'false'));
+            return isPlaced && !isShelfStatusFalse;
+        }).map(s => {
+            const filteredBins = (s.bins || []).filter(b => {
+                const isBinPlaced = (b.bin_placed !== undefined && b.bin_placed !== null)
+                    ? (typeof b.bin_placed === 'boolean' ? b.bin_placed : String(b.bin_placed).toLowerCase() === 'true')
+                    : (b.placed !== undefined ? (typeof b.placed === 'boolean' ? b.placed : String(b.placed).toLowerCase() === 'true') : false);
+                const isBinStatusFalse = (b.bin_status !== undefined && b.bin_status !== null && (b.bin_status === false || String(b.bin_status).toLowerCase() === 'false'));
+                return isBinPlaced && !isBinStatusFalse;
+            });
+            return {
+                ...s,
+                bins: filteredBins
+            };
+        });
+    }, [cupboard.shelfLayout]);
+
     return (
         <div
             ref={bayRef}
@@ -268,10 +292,10 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                     </div>
                 </div>
 
-                {cupboard.shelfLayout && cupboard.shelfLayout.length > 0 ? (
+                {activePlacedShelves && activePlacedShelves.length > 0 ? (
                     (() => {
-                        const maxShelfX = Math.max(0, ...cupboard.shelfLayout.map(s => Number(s.x) + Number(s.width)));
-                        const maxShelfY = Math.max(0, ...cupboard.shelfLayout.map(s => Number(s.y) + Number(s.height)));
+                        const maxShelfX = Math.max(0, ...activePlacedShelves.map(s => Number(s.x) + Number(s.width)));
+                        const maxShelfY = Math.max(0, ...activePlacedShelves.map(s => Number(s.y) + Number(s.height)));
                         const maxStripX = cupboard.ledStrips ? Math.max(0, ...cupboard.ledStrips.map(s => Number(s.x) + Number(s.width))) : 0;
                         const maxStripY = cupboard.ledStrips ? Math.max(0, ...cupboard.ledStrips.map(s => Number(s.y) + Number(s.height))) : 0;
 
@@ -286,7 +310,7 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                                     height: canvasHeight
                                 }}
                             >
-                                {[...cupboard.shelfLayout].sort((a, b) => Number(a.y) - Number(b.y) || Number(a.x) - Number(b.x)).map((shelf, sortedIdx) => {
+                                {[...activePlacedShelves].sort((a, b) => Number(a.y) - Number(b.y) || Number(a.x) - Number(b.x)).map((shelf, sortedIdx) => {
                                     const maxBinX = shelf.bins && shelf.bins.length > 0 ? Math.max(0, ...shelf.bins.map(b => Number(b.x) + Number(b.width))) : 0;
                                     const maxBinY = shelf.bins && shelf.bins.length > 0 ? Math.max(0, ...shelf.bins.map(b => Number(b.y) + Number(b.height))) : 0;
 
@@ -355,10 +379,10 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                                     );
                                 })}
 
-                                 {/* Render Wire Connections between LED Strips */}
-                                 {!hideInternalWires && cupboard.ledStrips && cupboard.ledStrips.length > 1 && (
-                                     <svg className="absolute inset-0 pointer-events-none z-15 overflow-visible" width={canvasWidth} height={canvasHeight}>
-                                         <style>{`
+                                {/* Render Wire Connections between LED Strips */}
+                                {!hideInternalWires && cupboard.ledStrips && cupboard.ledStrips.length > 1 && (
+                                    <svg className="absolute inset-0 pointer-events-none z-15 overflow-visible" width={canvasWidth} height={canvasHeight}>
+                                        <style>{`
                                              @keyframes wireFlowMonitoring {
                                                  from { stroke-dashoffset: 24; }
                                                  to { stroke-dashoffset: 0; }
@@ -367,275 +391,275 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                                                  animation: wireFlowMonitoring 1.2s linear infinite;
                                              }
                                          `}</style>
-                                         <defs>
-                                             <filter id="wire-glow-monitoring" x="-30%" y="-30%" width="160%" height="160%">
-                                                 <feGaussianBlur stdDeviation="4" result="blur" />
-                                                 <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                                             </filter>
-                                         </defs>
+                                        <defs>
+                                            <filter id="wire-glow-monitoring" x="-30%" y="-30%" width="160%" height="160%">
+                                                <feGaussianBlur stdDeviation="4" result="blur" />
+                                                <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                                            </filter>
+                                        </defs>
 
-                                         {cupboard.ledStrips.slice(0, -1).map((strip, idx) => {
-                                             const nextStrip = cupboard.ledStrips[idx + 1];
-                                             if (!nextStrip) return null;
+                                        {cupboard.ledStrips.slice(0, -1).map((strip, idx) => {
+                                            const nextStrip = cupboard.ledStrips[idx + 1];
+                                            if (!nextStrip) return null;
 
-                                             // OUT Port on current strip (LEFT side)
-                                             let savedLedCount = 6;
-                                             try {
-                                                 const saved = localStorage.getItem('ledSetupConfig');
-                                                 if (saved) {
-                                                     const parsed = JSON.parse(saved);
-                                                     if (parsed.ledCount) savedLedCount = parsed.ledCount;
-                                                 }
-                                             } catch (e) { }
+                                            // OUT Port on current strip (LEFT side)
+                                            let savedLedCount = 6;
+                                            try {
+                                                const saved = localStorage.getItem('ledSetupConfig');
+                                                if (saved) {
+                                                    const parsed = JSON.parse(saved);
+                                                    if (parsed.ledCount) savedLedCount = parsed.ledCount;
+                                                }
+                                            } catch (e) { }
 
-                                             const count = 6;
-                                             const calcWidth = (c) => Math.max(30, 10 + (Math.max(1, Number(c) || 6)) * 8);
-                                             const curW = (strip.width && !isNaN(Number(strip.width)) && Number(strip.width) > 0) ? Number(strip.width) : calcWidth(count);
-                                             const curH = (strip.height && !isNaN(Number(strip.height)) && Number(strip.height) > 0) ? Number(strip.height) : 22;
+                                            const count = 6;
+                                            const calcWidth = (c) => Math.max(30, 10 + (Math.max(1, Number(c) || 6)) * 8);
+                                            const curW = (strip.width && !isNaN(Number(strip.width)) && Number(strip.width) > 0) ? Number(strip.width) : calcWidth(count);
+                                            const curH = (strip.height && !isNaN(Number(strip.height)) && Number(strip.height) > 0) ? Number(strip.height) : 22;
 
-                                             const nextCount = 6;
-                                             const nextH = (nextStrip.height && !isNaN(Number(nextStrip.height)) && Number(nextStrip.height) > 0) ? Number(nextStrip.height) : 22;
+                                            const nextCount = 6;
+                                            const nextH = (nextStrip.height && !isNaN(Number(nextStrip.height)) && Number(nextStrip.height) > 0) ? Number(nextStrip.height) : 22;
 
-                                             // OUT Port on current strip (RIGHT side of strip)
-                                             const x1 = Number(strip.x || 0) + curW;
-                                             const y1 = Number(strip.y || 0) + curH / 2;
+                                            // OUT Port on current strip (RIGHT side of strip)
+                                            const x1 = Number(strip.x || 0) + curW;
+                                            const y1 = Number(strip.y || 0) + curH / 2;
 
-                                             // IN Port on next strip (LEFT side of next strip)
-                                             const x2 = Number(nextStrip.x || 0);
-                                             const y2 = Number(nextStrip.y || 0) + nextH / 2;
+                                            // IN Port on next strip (LEFT side of next strip)
+                                            const x2 = Number(nextStrip.x || 0);
+                                            const y2 = Number(nextStrip.y || 0) + nextH / 2;
 
-                                             // Bezier curve control points
-                                             const diffX = x2 - x1;
-                                             const diffY = y2 - y1;
-                                             const absDx = Math.abs(diffX);
-                                             const absDy = Math.abs(diffY);
-                                             let cp1X, cp1Y, cp2X, cp2Y;
-                                             if (diffX >= 0) {
-                                                 const offset = Math.min(80, Math.max(15, absDx * 0.35));
-                                                 cp1X = x1 + offset;
-                                                 cp1Y = y1;
-                                                 cp2X = x2 - offset;
-                                                 cp2Y = y2;
-                                             } else {
-                                                 const offset = Math.min(40, Math.max(15, absDx * 0.15, absDy * 0.15));
-                                                 const yDir = diffY >= 0 ? 1 : -1;
-                                                 cp1X = x1 + offset;
-                                                 cp1Y = y1 + offset * yDir;
-                                                 cp2X = x2 - offset;
-                                                 cp2Y = y2 - offset * yDir;
-                                             }
+                                            // Bezier curve control points
+                                            const diffX = x2 - x1;
+                                            const diffY = y2 - y1;
+                                            const absDx = Math.abs(diffX);
+                                            const absDy = Math.abs(diffY);
+                                            let cp1X, cp1Y, cp2X, cp2Y;
+                                            if (diffX >= 0) {
+                                                const offset = Math.min(80, Math.max(15, absDx * 0.35));
+                                                cp1X = x1 + offset;
+                                                cp1Y = y1;
+                                                cp2X = x2 - offset;
+                                                cp2Y = y2;
+                                            } else {
+                                                const offset = Math.min(40, Math.max(15, absDx * 0.15, absDy * 0.15));
+                                                const yDir = diffY >= 0 ? 1 : -1;
+                                                cp1X = x1 + offset;
+                                                cp1Y = y1 + offset * yDir;
+                                                cp2X = x2 - offset;
+                                                cp2Y = y2 - offset * yDir;
+                                            }
 
-                                             const pathD = `M ${x1} ${y1} C ${cp1X} ${cp1Y}, ${cp2X} ${cp2Y}, ${x2} ${y2}`;
-                                             const themeColor = getStripColor(idx).hex || '#38bdf8';
+                                            const pathD = `M ${x1} ${y1} C ${cp1X} ${cp1Y}, ${cp2X} ${cp2Y}, ${x2} ${y2}`;
+                                            const themeColor = getStripColor(idx).hex || '#38bdf8';
 
-                                             // Midpoint & tangent angle calculation at t = 0.5 for cubic Bezier
-                                             const midX = 0.125 * x1 + 0.375 * cp1X + 0.375 * cp2X + 0.125 * x2;
-                                             const midY = 0.125 * y1 + 0.375 * cp1Y + 0.375 * cp2Y + 0.125 * y2;
+                                            // Midpoint & tangent angle calculation at t = 0.5 for cubic Bezier
+                                            const midX = 0.125 * x1 + 0.375 * cp1X + 0.375 * cp2X + 0.125 * x2;
+                                            const midY = 0.125 * y1 + 0.375 * cp1Y + 0.375 * cp2Y + 0.125 * y2;
 
-                                             const tanX = 0.75 * (cp1X - x1) + 1.5 * (cp2X - cp1X) + 0.75 * (x2 - cp2X);
-                                             const tanY = 0.75 * (cp1Y - y1) + 1.5 * (cp2Y - cp1Y) + 0.75 * (y2 - cp2Y);
-                                             const angleDeg = Math.atan2(tanY, tanX) * (180 / Math.PI);
+                                            const tanX = 0.75 * (cp1X - x1) + 1.5 * (cp2X - cp1X) + 0.75 * (x2 - cp2X);
+                                            const tanY = 0.75 * (cp1Y - y1) + 1.5 * (cp2Y - cp1Y) + 0.75 * (y2 - cp2Y);
+                                            const angleDeg = Math.atan2(tanY, tanX) * (180 / Math.PI);
 
-                                             return (
-                                                 <g key={`wire-${strip.id || idx}-${nextStrip.id || idx + 1}`}>
-                                                     {/* Outer wire glow */}
-                                                     <path
-                                                         d={pathD}
-                                                         fill="none"
-                                                         stroke={themeColor}
-                                                         strokeWidth="6"
-                                                         strokeOpacity="0.25"
-                                                         filter="url(#wire-glow-monitoring)"
-                                                     />
-                                                     {/* Main animated wire */}
-                                                     <path
-                                                         d={pathD}
-                                                         fill="none"
-                                                         stroke="#38bdf8"
-                                                         strokeWidth="2.5"
-                                                         strokeDasharray="8 6"
-                                                         className="animate-wire-flow-monitoring"
-                                                     />
-                                                     {/* Center Arrowhead Marker */}
-                                                     <g transform={`translate(${midX}, ${midY}) rotate(${angleDeg})`}>
-                                                         <polygon
-                                                             points="-7,-5 7,0 -7,5"
-                                                             fill="#38bdf8"
-                                                             stroke="#0284c7"
-                                                             strokeWidth="1"
-                                                             className="drop-shadow-[0_0_6px_rgba(56,189,248,0.9)]"
-                                                         />
-                                                     </g>
-                                                 </g>
-                                             );
-                                         })}
-                                     </svg>
-                                 )}
+                                            return (
+                                                <g key={`wire-${strip.id || idx}-${nextStrip.id || idx + 1}`}>
+                                                    {/* Outer wire glow */}
+                                                    <path
+                                                        d={pathD}
+                                                        fill="none"
+                                                        stroke={themeColor}
+                                                        strokeWidth="6"
+                                                        strokeOpacity="0.25"
+                                                        filter="url(#wire-glow-monitoring)"
+                                                    />
+                                                    {/* Main animated wire */}
+                                                    <path
+                                                        d={pathD}
+                                                        fill="none"
+                                                        stroke="#38bdf8"
+                                                        strokeWidth="2.5"
+                                                        strokeDasharray="8 6"
+                                                        className="animate-wire-flow-monitoring"
+                                                    />
+                                                    {/* Center Arrowhead Marker */}
+                                                    <g transform={`translate(${midX}, ${midY}) rotate(${angleDeg})`}>
+                                                        <polygon
+                                                            points="-7,-5 7,0 -7,5"
+                                                            fill="#38bdf8"
+                                                            stroke="#0284c7"
+                                                            strokeWidth="1"
+                                                            className="drop-shadow-[0_0_6px_rgba(56,189,248,0.9)]"
+                                                        />
+                                                    </g>
+                                                </g>
+                                            );
+                                        })}
+                                    </svg>
+                                )}
 
-                                 {/* Render LED Strips */}
-                                 {cupboard.ledStrips && cupboard.ledStrips.map((strip, stripIdx) => {
-                                     let savedColors = ['#ef4444', '#22c55e', '#3b82f6', '#facc15', '#f97316', '#a855f7'];
-                                     let savedLedCount = 6;
-                                     try {
-                                         const saved = localStorage.getItem('ledSetupConfig');
-                                         if (saved) {
-                                             const parsed = JSON.parse(saved);
-                                             if (parsed.ledCount) savedLedCount = parsed.ledCount;
-                                             if (Array.isArray(parsed.ledColors) && parsed.ledColors.length > 0) {
-                                                 savedColors = parsed.ledColors.map(c => c.hex);
-                                             }
-                                         }
-                                     } catch (e) { }
+                                {/* Render LED Strips */}
+                                {cupboard.ledStrips && cupboard.ledStrips.map((strip, stripIdx) => {
+                                    let savedColors = ['#ef4444', '#22c55e', '#3b82f6', '#facc15', '#f97316', '#a855f7'];
+                                    let savedLedCount = 6;
+                                    try {
+                                        const saved = localStorage.getItem('ledSetupConfig');
+                                        if (saved) {
+                                            const parsed = JSON.parse(saved);
+                                            if (parsed.ledCount) savedLedCount = parsed.ledCount;
+                                            if (Array.isArray(parsed.ledColors) && parsed.ledColors.length > 0) {
+                                                savedColors = parsed.ledColors.map(c => c.hex);
+                                            }
+                                        }
+                                    } catch (e) { }
 
-                                     const count = 6;
-                                     const colors = (strip.colors && strip.colors.length > 0) ? strip.colors : savedColors;
-                                     const colorIdx = (strip.colorIndex !== undefined && !isNaN(Number(strip.colorIndex)))
-                                         ? Number(strip.colorIndex)
-                                         : stripIdx;
-                                     const colorTheme = getStripColor(colorIdx);
-                                     const cupId = cupboard.id || cupboard.cupboard_id || 'c';
-                                     const sId = strip.id || strip.strip_id;
+                                    const count = 6;
+                                    const colors = (strip.colors && strip.colors.length > 0) ? strip.colors : savedColors;
+                                    const colorIdx = (strip.colorIndex !== undefined && !isNaN(Number(strip.colorIndex)))
+                                        ? Number(strip.colorIndex)
+                                        : stripIdx;
+                                    const colorTheme = getStripColor(colorIdx);
+                                    const cupId = cupboard.id || cupboard.cupboard_id || 'c';
+                                    const sId = strip.id || strip.strip_id;
 
-                                     return (
-                                         <div
-                                             key={sId}
-                                             id={`strip-target-${cupId}-${sId}`}
-                                             data-strip-target={sId}
-                                             onMouseDown={(e) => {
-                                                 if (!onStripMove) return;
-                                                 e.stopPropagation();
-                                                 const startX = e.clientX;
-                                                 const startY = e.clientY;
-                                                 const initialX = Number(strip.x) || 20;
-                                                 const initialY = Number(strip.y) || 20;
+                                    return (
+                                        <div
+                                            key={sId}
+                                            id={`strip-target-${cupId}-${sId}`}
+                                            data-strip-target={sId}
+                                            onMouseDown={(e) => {
+                                                if (!onStripMove) return;
+                                                e.stopPropagation();
+                                                const startX = e.clientX;
+                                                const startY = e.clientY;
+                                                const initialX = Number(strip.x) || 20;
+                                                const initialY = Number(strip.y) || 20;
 
-                                                 // Find parent scroll container for edge auto-scrolling
-                                                 let pElem = e.currentTarget.parentElement;
-                                                 while (pElem && pElem !== document.body) {
-                                                     const overflow = window.getComputedStyle(pElem).overflow;
-                                                     const overflowX = window.getComputedStyle(pElem).overflowX;
-                                                     const overflowY = window.getComputedStyle(pElem).overflowY;
-                                                     if (/(auto|scroll)/.test(overflow + overflowX + overflowY)) {
-                                                         break;
-                                                     }
-                                                     pElem = pElem.parentElement;
-                                                 }
+                                                // Find parent scroll container for edge auto-scrolling
+                                                let pElem = e.currentTarget.parentElement;
+                                                while (pElem && pElem !== document.body) {
+                                                    const overflow = window.getComputedStyle(pElem).overflow;
+                                                    const overflowX = window.getComputedStyle(pElem).overflowX;
+                                                    const overflowY = window.getComputedStyle(pElem).overflowY;
+                                                    if (/(auto|scroll)/.test(overflow + overflowX + overflowY)) {
+                                                        break;
+                                                    }
+                                                    pElem = pElem.parentElement;
+                                                }
 
-                                                 const handleMouseMove = (moveEvent) => {
-                                                     const dx = moveEvent.clientX - startX;
-                                                     const dy = moveEvent.clientY - startY;
+                                                const handleMouseMove = (moveEvent) => {
+                                                    const dx = moveEvent.clientX - startX;
+                                                    const dy = moveEvent.clientY - startY;
 
-                                                     // Auto scroll parent container when dragging near side edges
-                                                     if (pElem) {
-                                                         const rect = pElem.getBoundingClientRect();
-                                                         const edgeMargin = 70;
-                                                         if (moveEvent.clientX > rect.right - edgeMargin) {
-                                                             pElem.scrollLeft += 15;
-                                                         } else if (moveEvent.clientX < rect.left + edgeMargin) {
-                                                             pElem.scrollLeft -= 15;
-                                                         }
-                                                         if (moveEvent.clientY > rect.bottom - edgeMargin) {
-                                                             pElem.scrollTop += 15;
-                                                         } else if (moveEvent.clientY < rect.top + edgeMargin) {
-                                                             pElem.scrollTop -= 15;
-                                                         }
-                                                     }
+                                                    // Auto scroll parent container when dragging near side edges
+                                                    if (pElem) {
+                                                        const rect = pElem.getBoundingClientRect();
+                                                        const edgeMargin = 70;
+                                                        if (moveEvent.clientX > rect.right - edgeMargin) {
+                                                            pElem.scrollLeft += 15;
+                                                        } else if (moveEvent.clientX < rect.left + edgeMargin) {
+                                                            pElem.scrollLeft -= 15;
+                                                        }
+                                                        if (moveEvent.clientY > rect.bottom - edgeMargin) {
+                                                            pElem.scrollTop += 15;
+                                                        } else if (moveEvent.clientY < rect.top + edgeMargin) {
+                                                            pElem.scrollTop -= 15;
+                                                        }
+                                                    }
 
-                                                     const newX = Math.max(0, Math.round(initialX + dx));
-                                                     const newY = Math.max(0, Math.round(initialY + dy));
-                                                     onStripMove(sId, newX, newY);
-                                                 };
+                                                    const newX = Math.max(0, Math.round(initialX + dx));
+                                                    const newY = Math.max(0, Math.round(initialY + dy));
+                                                    onStripMove(sId, newX, newY);
+                                                };
 
-                                                 const handleMouseUp = () => {
-                                                     window.removeEventListener('mousemove', handleMouseMove);
-                                                     window.removeEventListener('mouseup', handleMouseUp);
-                                                 };
+                                                const handleMouseUp = () => {
+                                                    window.removeEventListener('mousemove', handleMouseMove);
+                                                    window.removeEventListener('mouseup', handleMouseUp);
+                                                };
 
-                                                 window.addEventListener('mousemove', handleMouseMove);
-                                                 window.addEventListener('mouseup', handleMouseUp);
-                                             }}
-                                             onClick={(e) => {
-                                                 e.stopPropagation();
-                                                 const now = Date.now();
-                                                 if (strip._lastClick && (now - strip._lastClick < 400)) {
-                                                     if (onStripDoubleClick) {
-                                                         onStripDoubleClick(strip);
-                                                     }
-                                                     strip._lastClick = 0;
-                                                 } else {
-                                                     strip._lastClick = now;
-                                                 }
-                                             }}
-                                             onDoubleClick={(e) => {
-                                                 e.stopPropagation();
-                                                 if (onStripDoubleClick) {
-                                                     onStripDoubleClick(strip);
-                                                 }
-                                             }}
-                                             className={cn(
-                                                 "absolute rounded-full border-2 flex items-center overflow-visible z-30 transition-all select-none",
-                                                 (onStripMove || onStripDoubleClick) ? "pointer-events-auto cursor-pointer hover:scale-105 hover:border-white shadow-xl" : "pointer-events-none",
-                                                 colorTheme.border,
-                                                 colorTheme.bgLight,
-                                                 colorTheme.shadow
-                                             )}
-                                             style={{
-                                                 left: strip.x,
-                                                 top: strip.y,
-                                                 width: (strip.width && !isNaN(Number(strip.width)) && Number(strip.width) > 0 && Number(strip.width) <= 220)
-                                                     ? Number(strip.width)
-                                                     : Math.max(40, Math.min(180, (count || 6) * 11 + 12)),
-                                                 height: (strip.height && !isNaN(Number(strip.height)) && Number(strip.height) > 0) ? Number(strip.height) : 22,
-                                             }}
-                                         >
-                                             {/* Left IN Anchor (Invisible Target Node) */}
-                                             <div
-                                                 id={`strip-in-${cupId}-${sId}`}
-                                                 data-strip-in={sId}
-                                                 className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-1 pointer-events-none opacity-0"
-                                             />
+                                                window.addEventListener('mousemove', handleMouseMove);
+                                                window.addEventListener('mouseup', handleMouseUp);
+                                            }}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                const now = Date.now();
+                                                if (strip._lastClick && (now - strip._lastClick < 400)) {
+                                                    if (onStripDoubleClick) {
+                                                        onStripDoubleClick(strip);
+                                                    }
+                                                    strip._lastClick = 0;
+                                                } else {
+                                                    strip._lastClick = now;
+                                                }
+                                            }}
+                                            onDoubleClick={(e) => {
+                                                e.stopPropagation();
+                                                if (onStripDoubleClick) {
+                                                    onStripDoubleClick(strip);
+                                                }
+                                            }}
+                                            className={cn(
+                                                "absolute rounded-full border-2 flex items-center overflow-visible z-30 transition-all select-none",
+                                                (onStripMove || onStripDoubleClick) ? "pointer-events-auto cursor-pointer hover:scale-105 hover:border-white shadow-xl" : "pointer-events-none",
+                                                colorTheme.border,
+                                                colorTheme.bgLight,
+                                                colorTheme.shadow
+                                            )}
+                                            style={{
+                                                left: strip.x,
+                                                top: strip.y,
+                                                width: (strip.width && !isNaN(Number(strip.width)) && Number(strip.width) > 0 && Number(strip.width) <= 220)
+                                                    ? Number(strip.width)
+                                                    : Math.max(40, Math.min(180, (count || 6) * 11 + 12)),
+                                                height: (strip.height && !isNaN(Number(strip.height)) && Number(strip.height) > 0) ? Number(strip.height) : 22,
+                                            }}
+                                        >
+                                            {/* Left IN Anchor (Invisible Target Node) */}
+                                            <div
+                                                id={`strip-in-${cupId}-${sId}`}
+                                                data-strip-in={sId}
+                                                className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-1 pointer-events-none opacity-0"
+                                            />
 
-                                             {/* Strip Label Badge - Placed cleanly ABOVE strip so it never covers LEDs */}
-                                             <div className={cn(
-                                                 "absolute -top-6 left-1 text-[9px] font-mono font-bold whitespace-nowrap px-1.5 py-0.5 rounded bg-slate-950/95 border shadow-md z-40 pointer-events-none tracking-tight",
-                                                 colorTheme.border, colorTheme.text
-                                             )}>
-                                                 {strip.label}
-                                             </div>
+                                            {/* Strip Label Badge - Placed cleanly ABOVE strip so it never covers LEDs */}
+                                            <div className={cn(
+                                                "absolute -top-6 left-1 text-[9px] font-mono font-bold whitespace-nowrap px-1.5 py-0.5 rounded bg-slate-950/95 border shadow-md z-40 pointer-events-none tracking-tight",
+                                                colorTheme.border, colorTheme.text
+                                            )}>
+                                                {strip.label}
+                                            </div>
 
-                                             {/* LED Lights Array */}
-                                             <div className="flex items-center justify-around w-full px-1">
-                                                 {Array.from({ length: Math.min(count, 200) }).map((_, i) => {
-                                                     const renderCount = Math.min(count, 200);
-                                                     const stripW = (strip.width && !isNaN(Number(strip.width)) && Number(strip.width) > 0 && Number(strip.width) <= 220)
-                                                         ? Number(strip.width)
-                                                         : Math.max(40, Math.min(180, (count || 6) * 11 + 12));
-                                                     const dotSize = Math.max(3, Math.min(6, (stripW - 8) / renderCount));
-                                                     const hex = colors[i % colors.length] || '#facc15';
-                                                     return (
-                                                         <div
-                                                             key={i}
-                                                             className="rounded-full shrink-0 border border-white/20"
-                                                             style={{
-                                                                 width: dotSize,
-                                                                 height: dotSize,
-                                                                 backgroundColor: hex,
-                                                                 boxShadow: `0 0 6px ${hex}`
-                                                             }}
-                                                         />
-                                                     );
-                                                 })}
-                                             </div>
+                                            {/* LED Lights Array */}
+                                            <div className="flex items-center justify-around w-full px-1">
+                                                {Array.from({ length: Math.min(count, 200) }).map((_, i) => {
+                                                    const renderCount = Math.min(count, 200);
+                                                    const stripW = (strip.width && !isNaN(Number(strip.width)) && Number(strip.width) > 0 && Number(strip.width) <= 220)
+                                                        ? Number(strip.width)
+                                                        : Math.max(40, Math.min(180, (count || 6) * 11 + 12));
+                                                    const dotSize = Math.max(3, Math.min(6, (stripW - 8) / renderCount));
+                                                    const hex = colors[i % colors.length] || '#facc15';
+                                                    return (
+                                                        <div
+                                                            key={i}
+                                                            className="rounded-full shrink-0 border border-white/20"
+                                                            style={{
+                                                                width: dotSize,
+                                                                height: dotSize,
+                                                                backgroundColor: hex,
+                                                                boxShadow: `0 0 6px ${hex}`
+                                                            }}
+                                                        />
+                                                    );
+                                                })}
+                                            </div>
 
-                                             {/* Right OUT Anchor (Invisible Target Node) */}
-                                             <div
-                                                 id={`strip-out-${cupId}-${sId}`}
-                                                 data-strip-out={sId}
-                                                 className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-1 pointer-events-none opacity-0"
-                                             />
-                                         </div>
-                                     );
-                                 })}
+                                            {/* Right OUT Anchor (Invisible Target Node) */}
+                                            <div
+                                                id={`strip-out-${cupId}-${sId}`}
+                                                data-strip-out={sId}
+                                                className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-1 pointer-events-none opacity-0"
+                                            />
+                                        </div>
+                                    );
+                                })}
                             </div>
                         );
                     })()

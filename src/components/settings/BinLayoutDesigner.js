@@ -28,10 +28,16 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
     // Initial load from existing bins or default to empty
     const [binBlocks, setBinBlocks] = useState(() => {
         if (shelf.bins && shelf.bins.length > 0) {
-            return shelf.bins.map(b => ({
-                ...b,
-                placed: b.placed !== undefined ? b.placed : true,
-            }));
+            return shelf.bins.map(b => {
+                const isPlaced = (b.bin_placed !== undefined && b.bin_placed !== null)
+                    ? (typeof b.bin_placed === 'boolean' ? b.bin_placed : String(b.bin_placed).toLowerCase() === 'true')
+                    : (b.placed !== undefined ? b.placed : true);
+                return {
+                    ...b,
+                    placed: isPlaced,
+                    bin_placed: isPlaced
+                };
+            });
         }
         return [];
     });
@@ -188,7 +194,9 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                     const mappedBins = filteredBins.map((b, idx) => {
                         const hasGridX = b.bin_gridx !== undefined && b.bin_gridx !== null && b.bin_gridx !== '' && !isNaN(parseFloat(b.bin_gridx));
                         const hasGridY = b.bin_gridy !== undefined && b.bin_gridy !== null && b.bin_gridy !== '' && !isNaN(parseFloat(b.bin_gridy));
-                        const isPlaced = hasGridX && hasGridY && (b.bin_status !== false && b.bin_status !== 'False');
+                        const isPlaced = (b.bin_placed !== undefined && b.bin_placed !== null)
+                            ? (typeof b.bin_placed === 'boolean' ? b.bin_placed : String(b.bin_placed).toLowerCase() === 'true')
+                            : (hasGridX && hasGridY && b.bin_status !== false && b.bin_status !== 'False');
 
                         return {
                             id: String(b.bin_id || `bin-${idx}`),
@@ -199,6 +207,7 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                             width: (b.bin_width && !isNaN(parseFloat(b.bin_width))) ? parseFloat(b.bin_width) : 80,
                             height: (b.bin_height && !isNaN(parseFloat(b.bin_height))) ? parseFloat(b.bin_height) : 48,
                             placed: isPlaced,
+                            bin_placed: isPlaced,
                             bin_order: b.bin_order,
                             bin_phr_id: b.bin_phr_id || b.phr_id || "",
                             bin_shelf_phr_id: b.bin_shelf_phr_id || b.bin_shelf_id || targetShelfId,
@@ -487,7 +496,8 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                     bin_phr_id: String(bin.bin_phr_id || bin.phr_id || ''),
                     bin_org_id: String(bin.bin_org_id || "skshospital"),
                     bin_branch_id: String(bin.bin_branch_id || "Salem"),
-                    bin_status: bin.bin_status !== undefined ? (typeof bin.bin_status === 'boolean' ? bin.bin_status : bin.bin_status === 'True') : true
+                    bin_status: bin.bin_status !== undefined ? (typeof bin.bin_status === 'boolean' ? bin.bin_status : bin.bin_status === 'True') : true,
+                    bin_placed: true
                 };
 
                 await apiService.updateBin(binId, payload);
@@ -544,7 +554,7 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
         }
     };
 
-    const canvasBlocks = binBlocks.filter(b => b.placed !== false);
+    const canvasBlocks = binBlocks.filter(b => b.placed !== false && b.disabled !== true && b.bin_status !== false && String(b.bin_status).toLowerCase() !== 'false');
 
     const maxBinRight = canvasBlocks.length > 0 ? Math.max(...canvasBlocks.map(b => (Number(b.x) || 0) + (Number(b.width) || 0))) : 0;
     const maxBinBottom = canvasBlocks.length > 0 ? Math.max(...canvasBlocks.map(b => (Number(b.y) || 0) + (Number(b.height) || 0))) : 0;

@@ -217,13 +217,13 @@ export default function Settings() {
                         const cCtlId = String(c.cupboard_ctl_id || c.controller_id || '').trim();
 
                         if (sWallId && cWallId && sWallId === cWallId) return true;
-                        if (sCtlId && cCtlId && sCtlId === cCtlId) return true;
+                        const isShelfStatusFalse = s.shelf_status !== undefined && s.shelf_status !== null && (s.shelf_status === false || String(s.shelf_status).toLowerCase() === 'false');
+                        const isPlacedShelf = (s.shelf_placed !== undefined && s.shelf_placed !== null)
+                            ? (typeof s.shelf_placed === 'boolean' ? s.shelf_placed : String(s.shelf_placed).toLowerCase() === 'true')
+                            : (s.placed !== undefined ? (typeof s.placed === 'boolean' ? s.placed : String(s.placed).toLowerCase() === 'true') : false);
+                        if (!isPlacedShelf || isShelfStatusFalse) return false;
 
-                        if (rawCupboards && rawCupboards.length === 1) {
-                            return true;
-                        }
-
-                        return false;
+                        return true;
                     });
 
                     if (matchingShelves.length > 0) {
@@ -236,7 +236,9 @@ export default function Settings() {
                             const hasWidth = s.shelf_width !== undefined && s.shelf_width !== null && s.shelf_width !== '' && !isNaN(parseFloat(s.shelf_width));
                             const hasHeight = s.shelf_height !== undefined && s.shelf_height !== null && s.shelf_height !== '' && !isNaN(parseFloat(s.shelf_height));
 
-                            const isPlaced = s.placed !== false;
+                            const isPlaced = (s.shelf_placed !== undefined && s.shelf_placed !== null)
+                                ? (typeof s.shelf_placed === 'boolean' ? s.shelf_placed : String(s.shelf_placed).toLowerCase() === 'true')
+                                : (s.placed !== undefined ? (typeof s.placed === 'boolean' ? s.placed : String(s.placed).toLowerCase() === 'true') : true);
 
                             let bins = [];
                             if (rawBins && Array.isArray(rawBins)) {
@@ -295,9 +297,12 @@ export default function Settings() {
                                         return false;
                                     }
 
-                                    const isPlacedBin = b.placed !== false && b.bin_status !== false && String(b.bin_status).toLowerCase() !== 'false';
+                                    const isPlacedBin = (b.bin_placed !== undefined && b.bin_placed !== null)
+                                        ? (typeof b.bin_placed === 'boolean' ? b.bin_placed : String(b.bin_placed).toLowerCase() === 'true')
+                                        : (b.placed !== undefined ? (typeof b.placed === 'boolean' ? b.placed : String(b.placed).toLowerCase() === 'true') : false);
+                                    const isBinStatusFalse = (b.bin_status !== undefined && b.bin_status !== null && (b.bin_status === false || String(b.bin_status).toLowerCase() === 'false'));
 
-                                    return isPlacedBin;
+                                    return isPlacedBin && !isBinStatusFalse;
                                 });
 
                                 // Sort matching bins sequentially (by order / id / name)
@@ -318,6 +323,10 @@ export default function Settings() {
                                         const hasW = b.bin_width !== undefined && b.bin_width !== null && String(b.bin_width).trim() !== '' && !isNaN(parseFloat(b.bin_width));
                                         const hasH = b.bin_height !== undefined && b.bin_height !== null && String(b.bin_height).trim() !== '' && !isNaN(parseFloat(b.bin_height));
 
+                                        const isBinPlaced = (b.bin_placed !== undefined && b.bin_placed !== null)
+                                            ? (typeof b.bin_placed === 'boolean' ? b.bin_placed : String(b.bin_placed).toLowerCase() === 'true')
+                                            : (b.placed !== undefined ? (typeof b.placed === 'boolean' ? b.placed : String(b.placed).toLowerCase() === 'true') : true);
+
                                         return {
                                             id: String(b.bin_id || `bin-${bIdx}`),
                                             bin_id: b.bin_id,
@@ -326,7 +335,8 @@ export default function Settings() {
                                             y: hasY ? parseFloat(b.bin_gridy) : 6,
                                             width: hasW ? parseFloat(b.bin_width) : defaultWidth,
                                             height: hasH ? parseFloat(b.bin_height) : defaultHeight,
-                                            placed: true,
+                                            placed: isBinPlaced,
+                                            bin_placed: isBinPlaced,
                                             bin_order: b.bin_order !== undefined ? b.bin_order : bIdx + 1,
                                             bin_phr_id: b.bin_phr_id || b.phr_id || "",
                                             bin_shelf_phr_id: b.bin_shelf_phr_id || b.bin_shelf_id || s.shelf_phr_id || s.shelf_id || "",
@@ -365,26 +375,6 @@ export default function Settings() {
                                 } catch (e) { }
                             }
 
-                            if (bins.length === 0) {
-                                const defaultCount = 4;
-                                const defaultWidth = 80;
-                                const defaultHeight = 44;
-                                const gap = 10;
-                                for (let bIdx = 0; bIdx < defaultCount; bIdx++) {
-                                    bins.push({
-                                        id: `${realId}-bin-${bIdx + 1}`,
-                                        bin_id: `${realId}-bin-${bIdx + 1}`,
-                                        label: `${s.shelf_name || 'Bin'} ${String.fromCharCode(65 + bIdx)}`,
-                                        x: 10 + bIdx * (defaultWidth + gap),
-                                        y: 6,
-                                        width: defaultWidth,
-                                        height: defaultHeight,
-                                        placed: true,
-                                        bin_order: bIdx + 1
-                                    });
-                                }
-                            }
-
                             return {
                                 id: realId,
                                 shelf_id: s.shelf_id || s.id || realId,
@@ -394,6 +384,7 @@ export default function Settings() {
                                 width: hasWidth ? parseFloat(s.shelf_width) : 560,
                                 height: hasHeight ? parseFloat(s.shelf_height) : 48,
                                 placed: isPlaced,
+                                shelf_placed: isPlaced,
                                 shelf_order: s.shelf_order,
                                 shelf_phr_id: s.shelf_phr_id || s.phr_id || "",
                                 shelf_org_id: s.shelf_org_id || "skshospital",

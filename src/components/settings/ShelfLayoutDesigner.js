@@ -35,10 +35,14 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
 
     const [shelfBlocks, setShelfBlocks] = useState(() => {
         if (cupboard.shelfLayout && Array.isArray(cupboard.shelfLayout)) {
-            return cupboard.shelfLayout.map(s => ({
-                ...s,
-                placed: s.placed !== undefined ? s.placed : true,
-            }));
+            return cupboard.shelfLayout.map(s => {
+                const isApiFalse = (s.shelf_placed !== undefined && s.shelf_placed !== null && (s.shelf_placed === false || String(s.shelf_placed).toLowerCase() === 'false'));
+                return {
+                    ...s,
+                    placed: s.placed !== undefined ? s.placed && !isApiFalse : !isApiFalse,
+                    shelf_placed: !isApiFalse
+                };
+            });
         }
         return [];
     });
@@ -56,6 +60,7 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
 
             const targetCupId = String(cupboard?.cupboard_id || cupboard?.id || '').trim();
             const targetCupName = String(cupboard?.cupboard_name || cupboard?.name || '').trim();
+            const targetCtlId = String(cupboard?.cupboard_ctl_id || cupboard?.controller_id || cupboard?.controller || '').trim();
 
             try {
                 const res = await apiService.getShelves(locId);
@@ -66,22 +71,54 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                         placedMap.set(sid, s);
                     });
 
-                    const merged = res.data.map((s, idx) => {
+                    const filteredShelves = res.data.filter(s => {
+                        const sCupId = String(s.shelf_cupboard_id || '').trim();
+                        if (sCupId !== '') {
+                            return (
+                                sCupId === targetCupId ||
+                                sCupId === targetCupName ||
+                                (cupboard?.cupboard_id && sCupId === String(cupboard.cupboard_id)) ||
+                                (cupboard?.id && sCupId === String(cupboard.id)) ||
+                                (cupboard?.name && sCupId === String(cupboard.name)) ||
+                                (cupboard?.cupboard_name && sCupId === String(cupboard.cupboard_name))
+                            );
+                        }
+                        const sCtlId = String(s.shelf_ctl_id || '').trim();
+                        if (sCtlId !== '' && targetCtlId !== '') {
+                            return sCtlId === targetCtlId;
+                        }
+                        return true;
+                    });
+
+                    const merged = filteredShelves.map((s, idx) => {
                         const realId = (s.shelf_id !== undefined && s.shelf_id !== null) ? String(s.shelf_id) : ((s.id !== undefined && s.id !== null) ? String(s.id) : `shelf-${idx}`);
 
                         const sCupId = String(s.shelf_cupboard_id || '').trim();
-                        const isCupMatch = sCupId !== '' && (
-                            sCupId === targetCupId ||
-                            sCupId === targetCupName ||
-                            (cupboard?.cupboard_id && sCupId === String(cupboard.cupboard_id)) ||
-                            (cupboard?.id && sCupId === String(cupboard.id))
-                        );
+                        const sCtlId = String(s.shelf_ctl_id || '').trim();
+
+                        let isCupMatch = false;
+                        if (sCupId !== '') {
+                            isCupMatch = (
+                                sCupId === targetCupId ||
+                                sCupId === targetCupName ||
+                                (cupboard?.cupboard_id && sCupId === String(cupboard.cupboard_id)) ||
+                                (cupboard?.id && sCupId === String(cupboard.id)) ||
+                                (cupboard?.name && sCupId === String(cupboard.name)) ||
+                                (cupboard?.cupboard_name && sCupId === String(cupboard.cupboard_name))
+                            );
+                        } else if (sCtlId !== '' && targetCtlId !== '') {
+                            isCupMatch = sCtlId === targetCtlId;
+                        }
+
+                        const isApiFalse = (s.shelf_placed !== undefined && s.shelf_placed !== null && (s.shelf_placed === false || String(s.shelf_placed).toLowerCase() === 'false'));
+                        const isPlaced = isCupMatch && !isApiFalse;
 
                         const existingPlaced = placedMap.get(realId);
                         if (existingPlaced) {
                             return {
                                 ...existingPlaced,
-                                placed: true
+                                shelf_placed: !isApiFalse,
+                                placed: isPlaced
                             };
                         }
 
@@ -98,7 +135,8 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                             y: hasGridY ? parseFloat(s.shelf_gridy) : (20 + idx * 56),
                             width: hasWidth ? parseFloat(s.shelf_width) : 560,
                             height: hasHeight ? parseFloat(s.shelf_height) : 48,
-                            placed: isCupMatch,
+                            placed: isPlaced,
+                            shelf_placed: !isApiFalse,
                             shelf_order: s.shelf_order,
                             shelf_phr_id: s.shelf_phr_id || s.phr_id || "",
                             shelf_org_id: s.shelf_org_id || "skshospital",
@@ -109,18 +147,26 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
 
                     setShelfBlocks(merged);
                 } else if (cupboard && cupboard.shelfLayout && Array.isArray(cupboard.shelfLayout)) {
-                    setShelfBlocks(cupboard.shelfLayout.map(s => ({
-                        ...s,
-                        placed: s.placed !== undefined ? s.placed : true,
-                    })));
+                    setShelfBlocks(cupboard.shelfLayout.map(s => {
+                        const isApiFalse = (s.shelf_placed !== undefined && s.shelf_placed !== null && (s.shelf_placed === false || String(s.shelf_placed).toLowerCase() === 'false'));
+                        return {
+                            ...s,
+                            placed: s.placed !== undefined ? s.placed && !isApiFalse : !isApiFalse,
+                            shelf_placed: !isApiFalse,
+                        };
+                    }));
                 }
             } catch (err) {
                 console.error("Failed to fetch location shelves for designer:", err);
                 if (cupboard && cupboard.shelfLayout && Array.isArray(cupboard.shelfLayout)) {
-                    setShelfBlocks(cupboard.shelfLayout.map(s => ({
-                        ...s,
-                        placed: s.placed !== undefined ? s.placed : true,
-                    })));
+                    setShelfBlocks(cupboard.shelfLayout.map(s => {
+                        const isApiFalse = (s.shelf_placed !== undefined && s.shelf_placed !== null && (s.shelf_placed === false || String(s.shelf_placed).toLowerCase() === 'false'));
+                        return {
+                            ...s,
+                            placed: s.placed !== undefined ? s.placed && !isApiFalse : !isApiFalse,
+                            shelf_placed: !isApiFalse,
+                        };
+                    }));
                 }
             }
         };
@@ -495,7 +541,8 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                     shelf_phr_id: String(s.shelf_phr_id || s.phr_id || ""),
                     shelf_org_id: String(s.shelf_org_id || "skshospital"),
                     shelf_branch_id: String(s.shelf_branch_id || "Salem"),
-                    shelf_status: s.shelf_status !== undefined ? (s.shelf_status ? "True" : "False") : "True"
+                    shelf_status: s.shelf_status !== undefined ? (s.shelf_status ? "True" : "False") : "True",
+                    shelf_placed: true
                 }));
 
                 const res = await apiService.createShelf(createPayloads);
@@ -521,7 +568,8 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                     shelf_phr_id: String(s.shelf_phr_id || s.phr_id || ""),
                     shelf_org_id: String(s.shelf_org_id || "skshospital"),
                     shelf_branch_id: String(s.shelf_branch_id || "Salem"),
-                    shelf_status: s.shelf_status !== undefined ? (typeof s.shelf_status === 'boolean' ? s.shelf_status : s.shelf_status === 'True') : true
+                    shelf_status: s.shelf_status !== undefined ? (typeof s.shelf_status === 'boolean' ? s.shelf_status : s.shelf_status === 'True') : true,
+                    shelf_placed: true
                 };
 
                 await apiService.updateShelf(shelfIdToUpdate, updatePayload);
