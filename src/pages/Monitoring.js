@@ -112,11 +112,17 @@ export default function Monitoring() {
                                 const channelId = ch.channel_id || ch.id;
                                 if (!channelId) continue;
 
-                                try {
-                                    const csRes = await apiService.getChannelStrips(channelId, ctrlId);
-                                    const csList = (csRes && csRes.success && Array.isArray(csRes.data))
+                                 try {
+                                     const csRes = await apiService.getChannelStrips(channelId, ctrlId);
+                                    const csListRaw = (csRes && csRes.success && Array.isArray(csRes.data))
                                         ? csRes.data
                                         : (Array.isArray(csRes?.data) ? csRes.data : (Array.isArray(csRes) ? csRes : []));
+ 
+                                    const csList = [...csListRaw].sort((a, b) => {
+                                        const orderA = parseInt(a.strip_order || 0, 10);
+                                        const orderB = parseInt(b.strip_order || 0, 10);
+                                        return orderA - orderB;
+                                    });
 
                                     if (csList && csList.length > 0) {
                                         csList.forEach(csItem => {
@@ -128,7 +134,7 @@ export default function Monitoring() {
                                                 strip_gridx: csItem.x,
                                                 strip_gridy: csItem.y
                                             };
-
+ 
                                             const formattedStrip = {
                                                 id: String(matchedStrip.strip_id || matchedStrip.id || csStripId),
                                                 strip_id: String(matchedStrip.strip_id || matchedStrip.id || csStripId),
@@ -145,7 +151,10 @@ export default function Monitoring() {
                                                 height: parseFloat(matchedStrip.strip_height ?? 22),
                                                 cupboardId: String(matchedStrip.strip_cupboard_id || matchedStrip.cupboard_id || csItem.cupboard_id || '1'),
                                                 bins: matchedStrip.bin_list || matchedStrip.bins || [],
-                                                linkedBins: matchedStrip.bin_list || matchedStrip.linkedBins || matchedStrip.bins || []
+                                                linkedBins: matchedStrip.bin_list || matchedStrip.linkedBins || matchedStrip.bins || [],
+                                                channelstrip_id: csItem.channelstrip_id,
+                                                strip_order: parseInt(csItem.strip_order || 0, 10),
+                                                strip_status: csItem.strip_status !== false
                                             };
 
                                             channelMap[chNum] = formattedStrip;
@@ -294,6 +303,10 @@ export default function Monitoring() {
             let chStrips = allSavedStrips.filter(s => {
                 const sCh = Number(s.channel) || (s.channel ? parseInt(String(s.channel).replace(/\D/g, ''), 10) : null);
                 return sCh === ch;
+            }).sort((a, b) => {
+                const orderA = parseInt(a.strip_order || 0, 10);
+                const orderB = parseInt(b.strip_order || 0, 10);
+                return orderA - orderB;
             });
 
             if (chStrips.length === 0 && channelAssignments[ch]) {

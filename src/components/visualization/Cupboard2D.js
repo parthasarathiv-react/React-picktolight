@@ -564,9 +564,9 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                                             className={cn(
                                                 "absolute rounded-full border-2 flex items-center overflow-visible z-30 transition-all select-none",
                                                 (onStripMove || onStripDoubleClick) ? "pointer-events-auto cursor-pointer hover:scale-105 hover:border-white shadow-xl" : "pointer-events-none",
-                                                colorTheme.border,
-                                                colorTheme.bgLight,
-                                                colorTheme.shadow
+                                                strip.strip_status === false
+                                                    ? "border-slate-700 bg-slate-800/20 opacity-40 shadow-none"
+                                                    : cn(colorTheme.border, colorTheme.bgLight, colorTheme.shadow)
                                             )}
                                             style={{
                                                 left: strip.x,
@@ -583,15 +583,17 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                                                 data-strip-in={sId}
                                                 className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-1 pointer-events-none opacity-0"
                                             />
-
+ 
                                             {/* Strip Label Badge - Placed cleanly ABOVE strip so it never covers LEDs */}
                                             <div className={cn(
                                                 "absolute -top-6 left-1 text-[9px] font-mono font-bold whitespace-nowrap px-1.5 py-0.5 rounded bg-slate-950/95 border shadow-md z-40 pointer-events-none tracking-tight",
-                                                colorTheme.border, colorTheme.text
+                                                strip.strip_status === false
+                                                    ? "border-slate-700 text-slate-500 bg-slate-900/50"
+                                                    : cn(colorTheme.border, colorTheme.text)
                                             )}>
-                                                {strip.label}
+                                                {strip.label}{strip.strip_status === false ? " (Disabled)" : ""}
                                             </div>
-
+ 
                                             {/* LED Lights Array */}
                                             <div className="flex items-center justify-around w-full px-1">
                                                 {Array.from({ length: Math.min(count, 200) }).map((_, i) => {
@@ -608,14 +610,14 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                                                             style={{
                                                                 width: dotSize,
                                                                 height: dotSize,
-                                                                backgroundColor: hex,
-                                                                boxShadow: `0 0 6px ${hex}`
+                                                                backgroundColor: strip.strip_status === false ? '#475569' : hex,
+                                                                boxShadow: strip.strip_status === false ? 'none' : `0 0 6px ${hex}`
                                                             }}
                                                         />
                                                     );
                                                 })}
                                             </div>
-
+ 
                                             {/* Right OUT Anchor (Invisible Target Node) */}
                                             <div
                                                 id={`strip-out-${cupId}-${sId}`}

@@ -160,6 +160,20 @@ export const apiService = {
         });
         return handleResponse(response);
     },
+    getChannelStripsByController: async (ctlId, channelId = 'ALL') => {
+        const response = await fetch(`${API_URL}/config/get-channelstrip-by-controlid-with-channelids?ctl_id=${ctlId}&channel_id=${channelId}`, {
+            headers: getHeaders()
+        });
+        return handleResponse(response);
+    },
+    updateChannelStrip: async (channelstripId, payload) => {
+        const response = await fetch(`${API_URL}/config/update-channelstrip/${channelstripId}`, {
+            method: 'PUT',
+            headers: getHeaders(),
+            body: JSON.stringify(payload)
+        });
+        return handleResponse(response);
+    },
 
     // Walls
     getWalls: async (locId) => {

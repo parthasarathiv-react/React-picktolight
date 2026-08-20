@@ -103,6 +103,16 @@ export default function LedStripsTab({
     const [activeStripForBins, setActiveStripForBins] = useState(null);
     const [editingStripName, setEditingStripName] = useState('');
     const [selectedBinIds, setSelectedBinIds] = useState([]);
+
+    const activeStripChannel = activeStripForBins?.channel;
+    const isLastStripOfChannel = React.useMemo(() => {
+        if (!activeStripForBins || !activeStripChannel) return false;
+        const stripsInChan = localLedStrips.filter(s => s.channel === activeStripChannel);
+        if (stripsInChan.length <= 1) return true;
+        const sorted = [...stripsInChan].sort((a, b) => (a.strip_order || 0) - (b.strip_order || 0));
+        const last = sorted[sorted.length - 1];
+        return String(last.id || last.strip_id) === String(activeStripForBins.id || activeStripForBins.strip_id);
+    }, [activeStripForBins, activeStripChannel, localLedStrips]);
     const [apiBins, setApiBins] = useState([]);
     const [isLoadingApiBins, setIsLoadingApiBins] = useState(false);
     const [binSearchQuery, setBinSearchQuery] = useState('');
@@ -160,10 +170,18 @@ export default function LedStripsTab({
         } catch (e) { }
 
         try {
-            // 1. Fetch channels specifically for this controller ID
-            const channelsRes = await apiService.getChannels(ctrlId);
-            const channelsList = channelsRes?.data || (Array.isArray(channelsRes) ? channelsRes : []);
-            setApiChannels(channelsList);
+            // 1. Fetch channels and strips details in one call
+            const ctrlData = await apiService.getChannelStripsByController(ctrlId, 'ALL');
+            const responseData = ctrlData?.data || ctrlData || {};
+            const channelsList = responseData.channellist || [];
+
+            // Sort channels numerically by name (e.g. CHANNEL-01, CHANNEL-02, ...) so idx + 1 maps to the correct channel number
+            const sortedChannelsList = [...channelsList].sort((a, b) => {
+                const nameA = a.channel_name || '';
+                const nameB = b.channel_name || '';
+                return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+            });
+            setApiChannels(sortedChannelsList);
 
             // 2. Fetch all strips from API for location
             const stripsRes = await apiService.getStrips(locId);
@@ -171,60 +189,60 @@ export default function LedStripsTab({
                 ? stripsRes.data
                 : (Array.isArray(stripsRes?.data) ? stripsRes.data : (Array.isArray(stripsRes) ? stripsRes : []));
 
-            // 3. For each channel belonging to this controller, fetch channel strips using real DB channel_id
+            // 3. Map channels and their strip lists to local state
             const channelMap = {};
             const loadedLocalStrips = [];
 
-            if (Array.isArray(channelsList) && channelsList.length > 0) {
-                for (let idx = 0; idx < channelsList.length; idx++) {
-                    const ch = channelsList[idx];
+            if (Array.isArray(sortedChannelsList) && sortedChannelsList.length > 0) {
+                for (let idx = 0; idx < sortedChannelsList.length; idx++) {
+                    const ch = sortedChannelsList[idx];
                     const chNum = idx + 1;
                     const channelId = ch.channel_id || ch.id;
 
-                    // Only call getChannelStrips for valid channel IDs to avoid 404
                     if (!channelId) continue;
 
-                    try {
-                        const csRes = await apiService.getChannelStrips(channelId, ctrlId);
-                        const csList = (csRes && csRes.success && Array.isArray(csRes.data))
-                            ? csRes.data
-                            : (Array.isArray(csRes?.data) ? csRes.data : (Array.isArray(csRes) ? csRes : []));
+                    const csListRaw = ch.stripinchannel || [];
+                    const csList = [...csListRaw].sort((a, b) => {
+                        const orderA = parseInt(a.strip_order || 0, 10);
+                        const orderB = parseInt(b.strip_order || 0, 10);
+                        return orderA - orderB;
+                    });
 
-                        if (csList && csList.length > 0) {
-                            csList.forEach(csItem => {
-                                const csStripId = String(csItem.strip_id || csItem.id || '');
-                                const matchedStrip = fetchedStrips.find(s => String(s.strip_id || s.id) === csStripId) || {
-                                    id: csStripId,
-                                    strip_id: csStripId,
-                                    strip_name: `Strip ${csStripId}`,
-                                    strip_gridx: csItem.x,
-                                    strip_gridy: csItem.y
-                                };
+                    if (csList && csList.length > 0) {
+                        csList.forEach(csItem => {
+                            const csStripId = String(csItem.strip_id || csItem.id || '');
+                            const matchedStrip = fetchedStrips.find(s => String(s.strip_id || s.id) === csStripId) || {
+                                id: csStripId,
+                                strip_id: csStripId,
+                                strip_name: csItem.strip_name || `Strip ${csStripId}`,
+                                strip_gridx: csItem.x,
+                                strip_gridy: csItem.y
+                            };
 
-                                const formattedStrip = {
-                                    id: String(matchedStrip.strip_id || matchedStrip.id || csStripId),
-                                    strip_id: String(matchedStrip.strip_id || matchedStrip.id || csStripId),
-                                    label: matchedStrip.strip_name || matchedStrip.label || `Strip CH-${String(chNum).padStart(2, '0')}`,
-                                    channel: chNum,
-                                    channelId: channelId,
-                                    channel_id: channelId,
-                                    colorIndex: loadedLocalStrips.length,
-                                    strip_ctl_id: String(ctrlId),
-                                    x: parseFloat(csItem.x ?? matchedStrip.strip_gridx ?? 40),
-                                    y: parseFloat(csItem.y ?? matchedStrip.strip_gridy ?? (40 + idx * 35)),
-                                    width: parseFloat(matchedStrip.strip_width ?? 80),
-                                    height: parseFloat(matchedStrip.strip_height ?? 22),
-                                    cupboardId: String(matchedStrip.strip_cupboard_id || matchedStrip.cupboard_id || csItem.cupboard_id || '1'),
-                                    bins: matchedStrip.bin_list || matchedStrip.bins || [],
-                                    linkedBins: matchedStrip.bin_list || matchedStrip.linkedBins || []
-                                };
+                            const formattedStrip = {
+                                id: String(matchedStrip.strip_id || matchedStrip.id || csStripId),
+                                strip_id: String(matchedStrip.strip_id || matchedStrip.id || csStripId),
+                                label: matchedStrip.strip_name || matchedStrip.label || `Strip CH-${String(chNum).padStart(2, '0')}`,
+                                channel: chNum,
+                                channelId: channelId,
+                                channel_id: channelId,
+                                colorIndex: loadedLocalStrips.length,
+                                strip_ctl_id: String(ctrlId),
+                                x: parseFloat(csItem.x ?? matchedStrip.strip_gridx ?? 40),
+                                y: parseFloat(csItem.y ?? matchedStrip.strip_gridy ?? (40 + idx * 35)),
+                                width: parseFloat(matchedStrip.strip_width ?? 80),
+                                height: parseFloat(matchedStrip.strip_height ?? 22),
+                                cupboardId: String(matchedStrip.strip_cupboard_id || matchedStrip.cupboard_id || csItem.cupboard_id || '1'),
+                                bins: matchedStrip.bin_list || matchedStrip.bins || [],
+                                linkedBins: matchedStrip.bin_list || matchedStrip.linkedBins || [],
+                                channelstrip_id: csItem.channelstrip_id,
+                                strip_order: parseInt(csItem.strip_order || 0, 10),
+                                strip_status: csItem.strip_status !== false
+                            };
 
-                                channelMap[chNum] = formattedStrip;
-                                loadedLocalStrips.push(formattedStrip);
-                            });
-                        }
-                    } catch (err) {
-                        console.warn(`Could not fetch channelstrips for channel ${channelId}:`, err);
+                            channelMap[chNum] = formattedStrip;
+                            loadedLocalStrips.push(formattedStrip);
+                        });
                     }
                 }
             }
@@ -899,6 +917,10 @@ export default function LedStripsTab({
             let chStrips = availableStrips.filter(s => {
                 const sCh = Number(s.channel) || (s.channel ? parseInt(String(s.channel).replace(/\D/g, ''), 10) : null);
                 return sCh === ch;
+            }).sort((a, b) => {
+                const orderA = parseInt(a.strip_order || 0, 10);
+                const orderB = parseInt(b.strip_order || 0, 10);
+                return orderA - orderB;
             });
 
             // Fallback: if no local strip array has channel `ch`, check effectiveChannelAssignments
@@ -1434,10 +1456,10 @@ export default function LedStripsTab({
                     <Button
                         size="sm"
                         onClick={handleSaveSetup}
-                        disabled={!hasUnsavedChanges}
+                        disabled={!hasUnsavedChanges || localLedStrips.some(s => !s.bins || s.bins.length === 0)}
                         className={cn(
                             "gap-1.5 text-xs font-bold shadow-lg transition-all",
-                            hasUnsavedChanges
+                            (hasUnsavedChanges && !localLedStrips.some(s => !s.bins || s.bins.length === 0))
                                 ? "bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/30 cursor-pointer opacity-100"
                                 : "bg-slate-800 text-slate-500 border border-slate-700/50 cursor-not-allowed opacity-60 shadow-none"
                         )}
@@ -2260,31 +2282,96 @@ export default function LedStripsTab({
                             </div>
                         </div>
 
-                        {/* Section 3: Delete Strip Action */}
-                        <div className="p-3 rounded-xl border border-rose-500/30 bg-rose-950/20 flex items-center justify-between">
-                            <div>
-                                <h5 className="text-xs font-bold text-rose-300">Delete LED Strip</h5>
-                                <p className="text-[10px] text-rose-400/80">Remove this strip permanently from the hardware layout.</p>
+                        {/* Section 3: Delete or Disable/Enable Strip Action */}
+                        {isLastStripOfChannel ? (
+                            <div className="p-3 rounded-xl border border-rose-500/30 bg-rose-950/20 flex items-center justify-between">
+                                <div>
+                                    <h5 className="text-xs font-bold text-rose-300">Delete LED Strip</h5>
+                                    <p className="text-[10px] text-rose-400/80">Remove this strip permanently from the hardware layout.</p>
+                                </div>
+                                <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    onClick={() => handlePromptDeleteStrip(activeStripForBins)}
+                                    className="gap-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs"
+                                >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    Delete Strip
+                                </Button>
                             </div>
-                            <Button
-                                size="sm"
-                                variant="destructive"
-                                onClick={() => handlePromptDeleteStrip(activeStripForBins)}
-                                className="gap-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs"
-                            >
-                                <Trash2 className="w-3.5 h-3.5" />
-                                Delete Strip
-                            </Button>
-                        </div>
+                        ) : (
+                            <div className="p-3 rounded-xl border border-amber-500/30 bg-amber-950/20 flex items-center justify-between">
+                                <div>
+                                    <h5 className="text-xs font-bold text-amber-300">
+                                        {activeStripForBins?.strip_status !== false ? "Disable LED Strip" : "Enable LED Strip"}
+                                    </h5>
+                                    <p className="text-[10px] text-amber-400/80">
+                                        {activeStripForBins?.strip_status !== false 
+                                            ? "This strip is connected before the last strip. You can temporarily disable it."
+                                            : "This strip is currently disabled. Enable it to restore regular operation."}
+                                    </p>
+                                </div>
+                                <Button
+                                    size="sm"
+                                    onClick={async () => {
+                                        if (!activeStripForBins) return;
+                                        const csId = activeStripForBins.channelstrip_id;
+                                        const nextStatus = !(activeStripForBins.strip_status !== false);
+                                        if (csId) {
+                                            const toastId = toast.loading(nextStatus ? "Enabling strip..." : "Disabling strip...");
+                                            try {
+                                                const payload = {
+                                                    strip_id: String(activeStripForBins.strip_id || activeStripForBins.id),
+                                                    channel_id: String(activeStripForBins.channel_id || activeStripForBins.channelId),
+                                                    strip_order: String(activeStripForBins.strip_order || 1),
+                                                    strip_status: nextStatus
+                                                };
+                                                await apiService.updateChannelStrip(csId, payload);
+                                                
+                                                // Update local state
+                                                setLocalLedStrips(prev => prev.map(s => 
+                                                    String(s.id || s.strip_id) === String(activeStripForBins.id || activeStripForBins.strip_id)
+                                                        ? { ...s, strip_status: nextStatus }
+                                                        : s
+                                                ));
+                                                
+                                                toast.success(nextStatus ? "Strip enabled successfully" : "Strip disabled successfully", { id: toastId });
+                                                setShowAssignBinsDialog(false);
+                                            } catch (err) {
+                                                console.error("Failed to update strip status:", err);
+                                                toast.error(`Failed to update strip status: ${err.message}`, { id: toastId });
+                                            }
+                                        } else {
+                                            // Local/unsaved strip: update local status
+                                            setLocalLedStrips(prev => prev.map(s => 
+                                                String(s.id || s.strip_id) === String(activeStripForBins.id || activeStripForBins.strip_id)
+                                                    ? { ...s, strip_status: nextStatus }
+                                                    : s
+                                            ));
+                                            toast.success(nextStatus ? "Strip enabled locally" : "Strip disabled locally");
+                                            setShowAssignBinsDialog(false);
+                                        }
+                                    }}
+                                    className={cn(
+                                        "gap-1.5 text-white font-bold text-xs",
+                                        activeStripForBins?.strip_status !== false 
+                                            ? "bg-amber-600 hover:bg-amber-500"
+                                            : "bg-emerald-600 hover:bg-emerald-500"
+                                    )}
+                                >
+                                    {activeStripForBins?.strip_status !== false ? "Disable Strip" : "Enable Strip"}
+                                </Button>
+                            </div>
+                        )}
                     </div>
 
                     <DialogFooter className="shrink-0 pt-2 border-t border-ot-border/40 gap-2">
                         <Button
                             onClick={handleSaveBinsForStrip}
-                            disabled={selectedBinIds.length === 0 && !editingStripName.trim()}
+                            disabled={selectedBinIds.length === 0}
                             className={cn(
                                 "font-bold flex-1 transition-all",
-                                (selectedBinIds.length > 0 || editingStripName.trim())
+                                selectedBinIds.length > 0
                                     ? "bg-ot-action text-white hover:bg-ot-action-hover shadow-lg cursor-pointer opacity-100"
                                     : "bg-slate-800 text-slate-500 border border-slate-700/50 cursor-not-allowed opacity-60 shadow-none"
                             )}
