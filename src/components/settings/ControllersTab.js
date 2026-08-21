@@ -636,7 +636,7 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                 } catch (e) { }
             }
 
-            // 1. Fetch channel strip mappings from GET API
+            // 1. Fetch channel strip mappings from GET APIs
             const csRes = await apiService.getChannelStrips(channelId, activeViewPort?.ctl_id || activeViewPort?.controller_id);
             const csList = csRes?.data || (Array.isArray(csRes) ? csRes : []);
 
@@ -1079,8 +1079,8 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                                                         </div>
                                                     </div>
 
-                                                    {/* Scrollable Container with Max Height */}
-                                                    <div className="max-h-64 overflow-y-auto border border-ot-border/40 rounded-md bg-ot-surface-bottom/40">
+                                                    {/* Scrollable Container with Increased Max Height */}
+                                                    <div className="max-h-[500px] 2xl:max-h-[500px] overflow-y-auto border border-ot-border/40 rounded-md bg-ot-surface-bottom/40">
                                                         <Table className="text-xs">
                                                             <TableHeader className="sticky top-0 bg-ot-surface-elev-bottom z-10">
                                                                 <TableRow className="border-b border-ot-border/40 hover:bg-transparent">

@@ -60,8 +60,58 @@ function getStripColor(index) {
     return STRIP_COLORS[index % STRIP_COLORS.length];
 }
 
+function findStripForShelf(ledStrips, shelf) {
+    if (!ledStrips || !Array.isArray(ledStrips) || !shelf) return null;
+
+    const shelfIdStr = String(shelf.shelf_id || shelf.id || '').trim();
+    const shelfLabelStr = String(shelf.label || shelf.shelf_name || '').trim();
+    const shelfPhrIdStr = String(shelf.shelf_phr_id || '').trim();
+
+    for (let idx = 0; idx < ledStrips.length; idx++) {
+        const strip = ledStrips[idx];
+        
+        // Direct match on strip_shelf_id
+        const stripShelfId = String(strip.strip_shelf_id || strip.shelf_id || strip.shelfId || '').trim();
+        if (stripShelfId && stripShelfId !== '0' && (stripShelfId === shelfIdStr || stripShelfId === shelfPhrIdStr || stripShelfId === shelfLabelStr)) {
+            const colorIdx = getStripColorIndex(strip, idx);
+            return { strip, index: idx, theme: getStripColor(colorIdx) };
+        }
+
+        // Match in shelves_list / shelf_list / linkedShelves / shelves
+        const linkedShelves = strip.shelves_list || strip.shelf_list || strip.linkedShelves || strip.shelves || strip.linkedBins || strip.bins || strip.bin_list;
+        if (linkedShelves && Array.isArray(linkedShelves)) {
+            const isMatch = linkedShelves.some(ls => {
+                let lsId = '';
+                let lsName = '';
+                if (typeof ls === 'object' && ls !== null) {
+                    lsId = String(ls.shelf_id || ls.bin_id || ls.id || '').trim();
+                    lsName = String(ls.shelf_name || ls.bin_name || ls.label || ls.name || '').trim();
+                } else {
+                    lsId = String(ls).trim();
+                    lsName = String(ls).trim();
+                }
+
+                if (shelfIdStr && (lsId === shelfIdStr || lsName === shelfIdStr)) return true;
+                if (shelfLabelStr && (lsId === shelfLabelStr || lsName === shelfLabelStr)) return true;
+                if (shelfPhrIdStr && (lsId === shelfPhrIdStr || lsName === shelfPhrIdStr)) return true;
+                return false;
+            });
+
+            if (isMatch) {
+                const colorIdx = getStripColorIndex(strip, idx);
+                return { strip, index: idx, theme: getStripColor(colorIdx) };
+            }
+        }
+    }
+    return null;
+}
+
 function findStripForBin(ledStrips, shelf, bin) {
     if (!ledStrips || !Array.isArray(ledStrips) || !bin) return null;
+
+    // Check if the strip is assigned to the shelf holding this bin
+    const shelfMatch = findStripForShelf(ledStrips, shelf);
+    if (shelfMatch) return shelfMatch;
 
     const compositeId = `${shelf?.id || ''}_${bin?.id || ''}`;
     const binIdStr = String(bin.bin_id || bin.id || '').trim();
@@ -69,15 +119,15 @@ function findStripForBin(ledStrips, shelf, bin) {
 
     for (let idx = 0; idx < ledStrips.length; idx++) {
         const strip = ledStrips[idx];
-        const linked = strip.linkedBins || strip.bins || strip.bin_list;
+        const linked = strip.linkedBins || strip.bins || strip.bin_list || strip.shelves_list || strip.shelf_list;
         if (!linked || !Array.isArray(linked)) continue;
 
         const isMatch = linked.some(lb => {
             let lbId = '';
             let lbName = '';
             if (typeof lb === 'object' && lb !== null) {
-                lbId = String(lb.bin_id || lb.id || '').trim();
-                lbName = String(lb.bin_name || lb.label || lb.name || '').trim();
+                lbId = String(lb.bin_id || lb.shelf_id || lb.id || '').trim();
+                lbName = String(lb.bin_name || lb.shelf_name || lb.label || lb.name || '').trim();
             } else {
                 lbId = String(lb).trim();
                 lbName = String(lb).trim();
@@ -288,10 +338,18 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                                     const scaleY = maxBinY > 0 && displayHeight > 0 ? Math.min(1, displayHeight / (maxBinY + 10)) : 1;
                                     const binScale = Math.min(scaleX, scaleY);
 
+                                    const shelfStripMatch = findStripForShelf(cupboard.ledStrips, shelf);
+                                    const shelfTheme = shelfStripMatch ? shelfStripMatch.theme : null;
+
                                     return (
                                         <div
                                             key={shelf.id}
-                                            className="absolute rounded-md border border-ot-border/40 bg-ot-bg-top/20 overflow-visible"
+                                            className={cn(
+                                                "absolute rounded-md border transition-all duration-300 overflow-visible",
+                                                shelfTheme
+                                                    ? `${shelfTheme.bgLight} ${shelfTheme.border} ${shelfTheme.shadowBin}`
+                                                    : "border-ot-border/40 bg-ot-bg-top/20"
+                                            )}
                                             style={{
                                                 left: shelf.x,
                                                 top: shelf.y,
@@ -300,7 +358,10 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                                             }}
                                         >
                                             {/* Shelf Label */}
-                                            <div className="absolute -top-5 left-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider z-10 pointer-events-none">
+                                            <div className={cn(
+                                                "absolute -top-5 left-1 text-[10px] font-semibold uppercase tracking-wider z-10 pointer-events-none transition-colors",
+                                                shelfTheme ? `${shelfTheme.text} font-bold` : "text-muted-foreground"
+                                            )}>
                                                 {shelf.label}
                                             </div>
 
@@ -308,7 +369,7 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                                             <div className="absolute inset-0" style={{ transform: `scale(${binScale})`, transformOrigin: 'top left' }}>
                                                 {shelf.bins && shelf.bins.length > 0 ? (
                                                     shelf.bins.map((bin, binIdx) => {
-                                                        const stripMatch = findStripForBin(cupboard.ledStrips, shelf, bin);
+                                                        const stripMatch = shelfStripMatch || findStripForBin(cupboard.ledStrips, shelf, bin);
                                                         const stripTheme = stripMatch ? stripMatch.theme : null;
 
                                                         return (

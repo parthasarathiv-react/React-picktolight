@@ -112,12 +112,12 @@ export default function Monitoring() {
                                 const channelId = ch.channel_id || ch.id;
                                 if (!channelId) continue;
 
-                                 try {
-                                     const csRes = await apiService.getChannelStrips(channelId, ctrlId);
+                                try {
+                                    const csRes = await apiService.getChannelStrips(channelId, ctrlId);
                                     const csListRaw = (csRes && csRes.success && Array.isArray(csRes.data))
                                         ? csRes.data
                                         : (Array.isArray(csRes?.data) ? csRes.data : (Array.isArray(csRes) ? csRes : []));
- 
+
                                     const csList = [...csListRaw].sort((a, b) => {
                                         const orderA = parseInt(a.strip_order || 0, 10);
                                         const orderB = parseInt(b.strip_order || 0, 10);
@@ -134,7 +134,9 @@ export default function Monitoring() {
                                                 strip_gridx: csItem.x,
                                                 strip_gridy: csItem.y
                                             };
- 
+
+                                            const resolvedShelves = (matchedStrip.shelves_list && matchedStrip.shelves_list.length > 0) ? matchedStrip.shelves_list : ((matchedStrip.shelf_list && matchedStrip.shelf_list.length > 0) ? matchedStrip.shelf_list : ((csItem.shelves_list && csItem.shelves_list.length > 0) ? csItem.shelves_list : ((csItem.shelf_list && csItem.shelf_list.length > 0) ? csItem.shelf_list : (matchedStrip.shelves || matchedStrip.bin_list || csItem.bins || []))));
+
                                             const formattedStrip = {
                                                 id: String(matchedStrip.strip_id || matchedStrip.id || csStripId),
                                                 strip_id: String(matchedStrip.strip_id || matchedStrip.id || csStripId),
@@ -144,14 +146,19 @@ export default function Monitoring() {
                                                 channel_id: channelId,
                                                 colorIndex: loadedStrips.length,
                                                 strip_ctl_id: String(ctrlId),
+                                                strip_shelf_id: String(matchedStrip.strip_shelf_id || csItem.strip_shelf_id || matchedStrip.shelf_id || ''),
                                                 parentStripId: matchedStrip.parentStripId || matchedStrip.parent_strip_id || csItem.parent_strip_id || null,
                                                 x: parseFloat(csItem.x ?? matchedStrip.strip_gridx ?? 40),
                                                 y: parseFloat(csItem.y ?? matchedStrip.strip_gridy ?? (40 + idx * 35)),
                                                 width: parseFloat(matchedStrip.strip_width ?? 80),
                                                 height: parseFloat(matchedStrip.strip_height ?? 22),
                                                 cupboardId: String(matchedStrip.strip_cupboard_id || matchedStrip.cupboard_id || csItem.cupboard_id || '1'),
-                                                bins: matchedStrip.bin_list || matchedStrip.bins || [],
-                                                linkedBins: matchedStrip.bin_list || matchedStrip.linkedBins || matchedStrip.bins || [],
+                                                shelves: resolvedShelves,
+                                                linkedShelves: resolvedShelves,
+                                                shelf_list: resolvedShelves,
+                                                shelves_list: resolvedShelves,
+                                                bins: resolvedShelves,
+                                                linkedBins: resolvedShelves,
                                                 channelstrip_id: csItem.channelstrip_id,
                                                 strip_order: parseInt(csItem.strip_order || 0, 10),
                                                 strip_status: csItem.strip_status !== false
@@ -172,20 +179,26 @@ export default function Monitoring() {
                     const alreadyLoaded = loadedStrips.some(ls => String(ls.id || ls.strip_id) === sId);
                     if (!alreadyLoaded) {
                         const chNum = Number(s.strip_channel || s.channel || (idx % 16) + 1);
+                        const sShelves = s.shelves_list || s.shelf_list || s.shelves || s.bin_list || s.bins || [];
                         const formatted = {
                             id: sId,
                             strip_id: sId,
                             label: s.strip_name || s.label || `Strip ${idx + 1}`,
                             channel: chNum,
                             colorIndex: loadedStrips.length,
+                            strip_shelf_id: String(s.strip_shelf_id || s.shelf_id || ''),
                             parentStripId: s.parentStripId || s.parent_strip_id || null,
                             x: parseFloat(s.strip_gridx ?? 40),
                             y: parseFloat(s.strip_gridy ?? (40 + idx * 35)),
                             width: parseFloat(s.strip_width ?? 80),
                             height: parseFloat(s.strip_height ?? 22),
                             cupboardId: String(s.strip_cupboard_id || s.cupboard_id || '1'),
-                            bins: s.bin_list || s.bins || [],
-                            linkedBins: s.bin_list || s.linkedBins || s.bins || []
+                            shelves: sShelves,
+                            linkedShelves: sShelves,
+                            shelf_list: sShelves,
+                            shelves_list: sShelves,
+                            bins: sShelves,
+                            linkedBins: sShelves
                         };
                         loadedStrips.push(formatted);
                     }
@@ -784,17 +797,21 @@ export default function Monitoring() {
                         if (matchesShelf) return true;
                     }
 
-                    const sBins = s.bin_list || s.bins || s.linkedBins || [];
+                    const sBins = s.shelves_list || s.shelf_list || s.linkedShelves || s.shelves || s.bin_list || s.bins || s.linkedBins || [];
                     if (Array.isArray(sBins) && sBins.length > 0 && shelfLayout && shelfLayout.length > 0) {
-                        const matchesBin = sBins.some(b => {
-                            const bId = typeof b === 'object' ? String(b.bin_id || b.id || b.bin_name || '').trim() : String(b).trim();
-                            return shelfLayout.some(sh =>
-                                Array.isArray(sh.bins) && sh.bins.some(bn =>
-                                    String(bn.bin_id || bn.id || bn.label || '').trim() === bId
-                                )
-                            );
+                        const matchesBinOrShelf = sBins.some(b => {
+                            const itemVal = typeof b === 'object' ? String(b.shelf_id || b.shelf_name || b.bin_id || b.id || b.bin_name || b.label || b.name || '').trim() : String(b).trim();
+                            return shelfLayout.some(sh => {
+                                const shId = String(sh.shelf_id || sh.id || '').trim();
+                                const shPhrId = String(sh.shelf_phr_id || '').trim();
+                                const shName = String(sh.label || sh.shelf_name || '').trim();
+                                if (itemVal === shId || itemVal === shPhrId || itemVal === shName) return true;
+                                return Array.isArray(sh.bins) && sh.bins.some(bn =>
+                                    String(bn.bin_id || bn.id || bn.label || '').trim() === itemVal
+                                );
+                            });
                         });
-                        if (matchesBin) return true;
+                        if (matchesBinOrShelf) return true;
                     }
 
                     if (rawCupboards && rawCupboards.length === 1) {
@@ -1088,9 +1105,9 @@ export default function Monitoring() {
                             <TabsTrigger value="2d" className="gap-2">
                                 <Layers className="w-4 h-4" /> 2D Grid
                             </TabsTrigger>
-                            <TabsTrigger value="3d" className="gap-2">
+                            {/* <TabsTrigger value="3d" className="gap-2">
                                 <Box className="w-4 h-4" /> 3D View
-                            </TabsTrigger>
+                            </TabsTrigger> */}
                         </TabsList>
                     </Tabs>
 

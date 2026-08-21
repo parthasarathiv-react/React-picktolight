@@ -275,16 +275,31 @@ export const apiService = {
         return handleResponse(response);
     },
 
-    // Strips
+    // Strips (Shelf-Based Configuration)
     getStrips: async (locId = 'All') => {
-        const response = await fetch(`${API_URL}/config/get-strips?location=${locId}`, {
+        const response = await fetch(`${API_URL}/config/get-strips_by_shelves?location=${locId}`, {
+            headers: getHeaders()
+        });
+        return handleResponse(response);
+    },
+    getStripsByShelves: async (locId = 'All') => {
+        const response = await fetch(`${API_URL}/config/get-strips_by_shelves?location=${locId}`, {
             headers: getHeaders()
         });
         return handleResponse(response);
     },
     createStrip: async (payload) => {
         const bodyPayload = Array.isArray(payload) ? payload : [payload];
-        const response = await fetch(`${API_URL}/config/create-strip`, {
+        const response = await fetch(`${API_URL}/config/create-strip_by_shelf`, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify(bodyPayload)
+        });
+        return handleResponse(response);
+    },
+    createStripByShelf: async (payload) => {
+        const bodyPayload = Array.isArray(payload) ? payload : [payload];
+        const response = await fetch(`${API_URL}/config/create-strip_by_shelf`, {
             method: 'POST',
             headers: getHeaders(),
             body: JSON.stringify(bodyPayload)
@@ -292,7 +307,15 @@ export const apiService = {
         return handleResponse(response);
     },
     updateStrip: async (id, payload) => {
-        const response = await fetch(`${API_URL}/config/update-strip/${id}`, {
+        const response = await fetch(`${API_URL}/config/update-strip_by_shelf/${id}`, {
+            method: 'PUT',
+            headers: getHeaders(),
+            body: JSON.stringify(payload)
+        });
+        return handleResponse(response);
+    },
+    updateStripByShelf: async (id, payload) => {
+        const response = await fetch(`${API_URL}/config/update-strip_by_shelf/${id}`, {
             method: 'PUT',
             headers: getHeaders(),
             body: JSON.stringify(payload)
@@ -300,7 +323,14 @@ export const apiService = {
         return handleResponse(response);
     },
     deleteStrip: async (id) => {
-        const response = await fetch(`${API_URL}/config/delete-strip/${id}`, {
+        const response = await fetch(`${API_URL}/config/delete-strip-by-shelf/${id}`, {
+            method: 'DELETE',
+            headers: getHeaders()
+        });
+        return handleResponse(response);
+    },
+    deleteStripByShelf: async (id) => {
+        const response = await fetch(`${API_URL}/config/delete-strip-by-shelf/${id}`, {
             method: 'DELETE',
             headers: getHeaders()
         });

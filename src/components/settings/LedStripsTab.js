@@ -100,7 +100,7 @@ export default function LedStripsTab({
 
     const hasUnassignedStrip = React.useMemo(() => {
         return localLedStrips.some(s => {
-            const b = s.bins || s.linkedBins || s.bin_list || [];
+            const b = s.shelf_list || s.shelves || s.linkedShelves || s.bins || s.linkedBins || s.bin_list || [];
             return !Array.isArray(b) || b.length === 0;
         });
     }, [localLedStrips]);
@@ -131,10 +131,14 @@ export default function LedStripsTab({
     const [apiBins, setApiBins] = useState([]);
     const [isLoadingApiBins, setIsLoadingApiBins] = useState(false);
     const [binSearchQuery, setBinSearchQuery] = useState('');
+    const [selectedShelfIds, setSelectedShelfIds] = useState([]);
+    const [shelfSearchQuery, setShelfSearchQuery] = useState('');
+    const [apiShelves, setApiShelves] = useState([]);
+    const [isLoadingApiShelves, setIsLoadingApiShelves] = useState(false);
 
-    // Fetch API Bins dynamically
+    // Fetch API Shelves & Bins dynamically
     useEffect(() => {
-        const fetchBins = async () => {
+        const fetchShelvesAndBins = async () => {
             let locId = 'All';
             try {
                 const selectedLocationStr = localStorage.getItem('selectedLocation');
@@ -144,19 +148,37 @@ export default function LedStripsTab({
                 }
             } catch (e) { }
 
+            setIsLoadingApiShelves(true);
             setIsLoadingApiBins(true);
             try {
-                const res = await apiService.getBins(locId, 'All');
-                if (res && res.success && Array.isArray(res.data)) {
-                    setApiBins(res.data);
+                const [shelvesRes, binsRes] = await Promise.allSettled([
+                    apiService.getShelves(locId),
+                    apiService.getBins(locId, 'All')
+                ]);
+
+                if (shelvesRes.status === 'fulfilled' && shelvesRes.value) {
+                    const resData = shelvesRes.value;
+                    const shelvesArr = resData?.success && Array.isArray(resData.data)
+                        ? resData.data
+                        : (Array.isArray(resData?.data) ? resData.data : (Array.isArray(resData) ? resData : []));
+                    setApiShelves(shelvesArr);
+                }
+
+                if (binsRes.status === 'fulfilled' && binsRes.value) {
+                    const resData = binsRes.value;
+                    const binsArr = resData?.success && Array.isArray(resData.data)
+                        ? resData.data
+                        : (Array.isArray(resData?.data) ? resData.data : (Array.isArray(resData) ? resData : []));
+                    setApiBins(binsArr);
                 }
             } catch (err) {
-                console.error("Failed to fetch API bins in LedStripsTab:", err);
+                console.error("Failed to fetch API shelves/bins in LedStripsTab:", err);
             } finally {
+                setIsLoadingApiShelves(false);
                 setIsLoadingApiBins(false);
             }
         };
-        fetchBins();
+        fetchShelvesAndBins();
     }, []);
 
     // Refresh key to trigger re-fetch after updates/adds across all strips
@@ -234,6 +256,8 @@ export default function LedStripsTab({
                                 strip_gridy: csItem.y
                             };
 
+                            const resolvedShelves = (matchedStrip.shelves_list && matchedStrip.shelves_list.length > 0) ? matchedStrip.shelves_list : ((matchedStrip.shelf_list && matchedStrip.shelf_list.length > 0) ? matchedStrip.shelf_list : ((csItem.shelves_list && csItem.shelves_list.length > 0) ? csItem.shelves_list : ((csItem.shelf_list && csItem.shelf_list.length > 0) ? csItem.shelf_list : (matchedStrip.shelves || matchedStrip.bin_list || csItem.bins || []))));
+
                             const formattedStrip = {
                                 id: String(matchedStrip.strip_id || matchedStrip.id || csStripId),
                                 strip_id: String(matchedStrip.strip_id || matchedStrip.id || csStripId),
@@ -243,13 +267,18 @@ export default function LedStripsTab({
                                 channel_id: channelId,
                                 colorIndex: loadedLocalStrips.length,
                                 strip_ctl_id: String(ctrlId),
+                                strip_shelf_id: String(matchedStrip.strip_shelf_id || csItem.strip_shelf_id || matchedStrip.shelf_id || ''),
                                 x: parseFloat(csItem.x ?? matchedStrip.strip_gridx ?? 40),
                                 y: parseFloat(csItem.y ?? matchedStrip.strip_gridy ?? (40 + idx * 35)),
                                 width: parseFloat(matchedStrip.strip_width ?? 80),
                                 height: parseFloat(matchedStrip.strip_height ?? 22),
                                 cupboardId: String(matchedStrip.strip_cupboard_id || matchedStrip.cupboard_id || csItem.cupboard_id || '1'),
-                                bins: (matchedStrip.bin_list && matchedStrip.bin_list.length > 0) ? matchedStrip.bin_list : ((csItem.bin_list && csItem.bin_list.length > 0) ? csItem.bin_list : (matchedStrip.bins || csItem.bins || [])),
-                                linkedBins: (matchedStrip.bin_list && matchedStrip.bin_list.length > 0) ? matchedStrip.bin_list : ((csItem.bin_list && csItem.bin_list.length > 0) ? csItem.bin_list : (matchedStrip.linkedBins || matchedStrip.bins || csItem.bins || [])),
+                                shelves: resolvedShelves,
+                                linkedShelves: resolvedShelves,
+                                shelf_list: resolvedShelves,
+                                shelves_list: resolvedShelves,
+                                bins: resolvedShelves,
+                                linkedBins: resolvedShelves,
                                 channelstrip_id: csItem.channelstrip_id,
                                 strip_order: parseInt(csItem.strip_order || 0, 10),
                                 strip_status: csItem.strip_status !== false
@@ -269,19 +298,25 @@ export default function LedStripsTab({
                 if (stripCtlId === String(ctrlId)) {
                     const alreadyLoaded = loadedLocalStrips.some(ls => String(ls.id || ls.strip_id) === sId);
                     if (!alreadyLoaded) {
+                        const sShelves = s.shelves_list || s.shelf_list || s.shelves || s.bin_list || s.bins || [];
                         const formatted = {
                             id: sId,
                             strip_id: sId,
                             label: s.strip_name || s.label || `Strip ${idx + 1}`,
                             channel: Number(s.strip_channel || s.channel || (idx % 16) + 1),
                             colorIndex: loadedLocalStrips.length,
+                            strip_shelf_id: String(s.strip_shelf_id || s.shelf_id || ''),
                             x: parseFloat(s.strip_gridx ?? 40),
                             y: parseFloat(s.strip_gridy ?? (40 + idx * 35)),
                             width: parseFloat(s.strip_width ?? 80),
                             height: parseFloat(s.strip_height ?? 22),
                             cupboardId: String(s.strip_cupboard_id || s.cupboard_id || '1'),
-                            bins: s.bin_list || s.bins || [],
-                            linkedBins: s.bin_list || s.linkedBins || []
+                            shelves: sShelves,
+                            linkedShelves: sShelves,
+                            shelf_list: sShelves,
+                            shelves_list: sShelves,
+                            bins: sShelves,
+                            linkedBins: sShelves
                         };
                         loadedLocalStrips.push(formatted);
                     }
@@ -384,6 +419,62 @@ export default function LedStripsTab({
             };
         });
     }, [cupboardsData, localLedStrips, selectedController]);
+
+    // Combine shelves from active cupboards layout, API shelves, and fallbacks
+    const allAvailableShelves = React.useMemo(() => {
+        const shelvesMap = new Map();
+        const activeCupboards = cupboardsWithLocalStrips.length > 0 ? cupboardsWithLocalStrips : (filteredCupboards.length > 0 ? filteredCupboards : cupboardsData);
+        const activeCupboardIds = new Set(activeCupboards.map(cup => String(cup.id || cup.cupboard_id)));
+
+        // 1. Gather shelves from active cupboards
+        if (Array.isArray(activeCupboards)) {
+            activeCupboards.forEach(cup => {
+                const cId = String(cup.id || cup.cupboard_id || '');
+                const cName = cup.name || cup.cupboard_name || 'Cupboard';
+                if (cup.shelfLayout && Array.isArray(cup.shelfLayout)) {
+                    cup.shelfLayout.forEach((shelf, sIdx) => {
+                        const sId = String(shelf.id || shelf.shelf_id || `s${sIdx + 1}`);
+                        const sName = shelf.label || shelf.shelf_name || `Shelf ${sIdx + 1}`;
+                        shelvesMap.set(sId, {
+                            id: sId,
+                            label: sName,
+                            cupboardName: cName,
+                            cupboardId: cId,
+                            shelf_phr_id: shelf.shelf_phr_id || ''
+                        });
+                    });
+                }
+            });
+        }
+
+        // 2. Gather shelves from apiShelves matching active cupboards
+        if (Array.isArray(apiShelves)) {
+            apiShelves.forEach((s, idx) => {
+                const isPlaced = (s.shelf_placed !== undefined && s.shelf_placed !== null)
+                    ? (typeof s.shelf_placed === 'boolean' ? s.shelf_placed : String(s.shelf_placed).toLowerCase() === 'true')
+                    : (s.placed !== undefined ? (typeof s.placed === 'boolean' ? s.placed : String(s.placed).toLowerCase() === 'true') : false);
+                const isStatusFalse = (s.shelf_status !== undefined && s.shelf_status !== null && (s.shelf_status === false || String(s.shelf_status).toLowerCase() === 'false'));
+                if (!isPlaced || isStatusFalse) return;
+
+                const shelfCupId = String(s.shelf_cupboard_id || s.cupboard_id || '');
+                if (activeCupboardIds.size === 0 || activeCupboardIds.has(shelfCupId)) {
+                    const shelfIdStr = String(s.shelf_id || s.id || `api-shelf-${idx}`);
+                    const shelfLabelStr = String(s.shelf_name || s.name || `Shelf ${s.shelf_id || idx + 1}`);
+                    if (!shelvesMap.has(shelfIdStr)) {
+                        shelvesMap.set(shelfIdStr, {
+                            id: shelfIdStr,
+                            label: shelfLabelStr,
+                            cupboardName: s.cupboard_name || 'Cupboard',
+                            cupboardId: shelfCupId,
+                            shelf_phr_id: s.shelf_phr_id || ''
+                        });
+                    }
+                }
+            });
+        }
+
+        return Array.from(shelvesMap.values());
+    }, [cupboardsWithLocalStrips, filteredCupboards, cupboardsData, apiShelves]);
 
     // Combine bins from active cupboards layout, API bins, and fallbacks
     const allAvailableBins = React.useMemo(() => {
@@ -592,16 +683,24 @@ export default function LedStripsTab({
     const handleStripDoubleClick = (strip) => {
         setActiveStripForBins(strip);
         setEditingStripName(strip.label || strip.strip_name || '');
-        const existingBins = strip.bins || strip.linkedBins || strip.bin_list || [];
-        const extractedBinIds = Array.isArray(existingBins) ? existingBins.map(b => {
-            if (typeof b === 'object' && b !== null) {
-                const idVal = b.bin_id !== undefined ? b.bin_id : (b.id !== undefined ? b.id : (b.bin_name !== undefined ? b.bin_name : b.label));
-                return typeof idVal === 'object' ? String(idVal?.bin_id || idVal?.id || '') : String(idVal || '');
+
+        const existingShelves = strip.shelves_list || strip.shelf_list || strip.shelves || strip.linkedShelves || strip.bins || strip.linkedBins || strip.bin_list || [];
+        let extractedShelfIds = Array.isArray(existingShelves) ? existingShelves.map(s => {
+            if (typeof s === 'object' && s !== null) {
+                const idVal = s.shelf_id !== undefined ? s.shelf_id : (s.id !== undefined ? s.id : (s.shelf_name !== undefined ? s.shelf_name : (s.bin_id !== undefined ? s.bin_id : s.label)));
+                return typeof idVal === 'object' ? String(idVal?.shelf_id || idVal?.id || '') : String(idVal || '');
             }
-            return String(b || '');
+            return String(s || '');
         }).filter(id => id && id !== '[object Object]') : [];
 
-        setSelectedBinIds(extractedBinIds);
+        if (extractedShelfIds.length === 0 && (strip.strip_shelf_id || strip.shelf_id || strip.shelfId)) {
+            const singleId = String(strip.strip_shelf_id || strip.shelf_id || strip.shelfId);
+            if (singleId && singleId !== '0') extractedShelfIds = [singleId];
+        }
+
+        setSelectedShelfIds(extractedShelfIds);
+        setSelectedBinIds(extractedShelfIds);
+        setShelfSearchQuery('');
         setBinSearchQuery('');
         setShowAssignBinsDialog(true);
     };
@@ -688,32 +787,54 @@ export default function LedStripsTab({
         const stripId = activeStripForBins.id || activeStripForBins.strip_id;
         const newName = editingStripName.trim() || activeStripForBins.label || 'LED Strip';
 
-        // Update localLedStrips with the selected bin IDs and updated label/strip_name
+        const effectiveShelfIds = selectedShelfIds.length > 0 ? selectedShelfIds : selectedBinIds;
+
+        const formattedShelves = effectiveShelfIds.map(sId => {
+            const matched = allAvailableShelves.find(as => String(as.id) === String(sId) || String(as.label) === String(sId));
+            return {
+                shelf_id: String(matched ? matched.id : sId),
+                shelf_name: String(matched ? matched.label : sId)
+            };
+        });
+
+        const updatedFields = {
+            label: newName,
+            strip_name: newName,
+            shelves: effectiveShelfIds,
+            linkedShelves: effectiveShelfIds,
+            shelf_list: formattedShelves,
+            shelves_list: formattedShelves,
+            bins: effectiveShelfIds,
+            linkedBins: effectiveShelfIds,
+            bin_list: formattedShelves
+        };
+
+        // Update localLedStrips
         setLocalLedStrips(prev => prev.map(s =>
             String(s.id || s.strip_id) === String(stripId)
-                ? { ...s, label: newName, strip_name: newName, bins: selectedBinIds, linkedBins: selectedBinIds }
+                ? { ...s, ...updatedFields }
                 : s
         ));
 
-        // Also sync bins & name into localChannelAssignments so Save Setup picks them up correctly
+        // Sync into localChannelAssignments
         setLocalChannelAssignments(prev => {
             const updated = { ...prev };
             Object.keys(updated).forEach(chNum => {
                 const s = updated[chNum];
                 if (s && String(s.id || s.strip_id) === String(stripId)) {
-                    updated[chNum] = { ...s, label: newName, strip_name: newName, bins: selectedBinIds, linkedBins: selectedBinIds };
+                    updated[chNum] = { ...s, ...updatedFields };
                 }
             });
             return updated;
         });
 
-        // Also sync into channelAssignments
+        // Sync into channelAssignments
         setChannelAssignments(prev => {
             const updated = { ...prev };
             Object.keys(updated).forEach(chNum => {
                 const s = updated[chNum];
                 if (s && String(s.id || s.strip_id) === String(stripId)) {
-                    updated[chNum] = { ...s, label: newName, strip_name: newName, bins: selectedBinIds, linkedBins: selectedBinIds };
+                    updated[chNum] = { ...s, ...updatedFields };
                 }
             });
             return updated;
@@ -800,33 +921,35 @@ export default function LedStripsTab({
                             }
                         } catch (e) { }
 
-                        const rawBins = stripObj.bins || stripObj.linkedBins || stripObj.bin_list || [];
-                        const formattedBins = Array.isArray(rawBins) ? rawBins.map(b => {
-                            let binIdStr = '';
-                            let binNameStr = '';
+                        const rawShelves = stripObj.shelves || stripObj.linkedShelves || stripObj.shelf_list || stripObj.bins || stripObj.linkedBins || stripObj.bin_list || [];
+                        const formattedShelves = Array.isArray(rawShelves) ? rawShelves.map(s => {
+                            let shelfIdStr = '';
+                            let shelfNameStr = '';
 
-                            if (typeof b === 'object' && b !== null) {
-                                binIdStr = typeof b.bin_id === 'object' ? String(b.bin_id?.bin_id || b.bin_id?.id || '') : String(b.bin_id || b.id || b.bin_name || b.label || b.name || '');
-                                binNameStr = typeof b.bin_name === 'object' ? String(b.bin_name?.bin_name || b.bin_name?.name || '') : String(b.bin_name || b.label || b.name || b.bin_id || b.id || '');
+                            if (typeof s === 'object' && s !== null) {
+                                shelfIdStr = typeof s.shelf_id === 'object' ? String(s.shelf_id?.shelf_id || s.shelf_id?.id || '') : String(s.shelf_id || s.id || s.shelf_name || s.label || s.name || s.bin_id || s.bin_name || '');
+                                shelfNameStr = typeof s.shelf_name === 'object' ? String(s.shelf_name?.shelf_name || s.shelf_name?.name || '') : String(s.shelf_name || s.label || s.name || s.shelf_id || s.id || s.bin_name || '');
                             } else {
-                                binIdStr = String(b);
+                                shelfIdStr = String(s);
                             }
 
-                            if (binIdStr === '[object Object]' || !binIdStr) return null;
+                            if (shelfIdStr === '[object Object]' || !shelfIdStr) return null;
 
-                            const matched = allAvailableBins.find(ab => String(ab.id) === binIdStr || String(ab.label) === binIdStr);
+                            const matched = allAvailableShelves.find(as => String(as.id) === shelfIdStr || String(as.label) === shelfIdStr);
                             return {
-                                bin_id: String(matched ? matched.id : binIdStr),
-                                bin_name: String(matched ? matched.label : (binNameStr || binIdStr))
+                                shelf_id: String(matched ? matched.id : shelfIdStr),
+                                shelf_name: String(matched ? matched.label : (shelfNameStr || shelfIdStr))
                             };
                         }).filter(Boolean) : [];
+
+                        const firstShelfId = formattedShelves.length > 0 ? formattedShelves[0].shelf_id : String(stripObj.shelfId || stripObj.shelf_id || '1');
 
                         const stripPayload = {
                             strip_name: String(stripObj.label || stripObj.strip_name || `Strip CH-${channelNum}`),
                             strip_loc_id: String(stripObj.strip_loc_id || locId),
                             strip_ctl_id: String(selectedController.id || selectedController.ctl_id || stripObj.strip_ctl_id || '1'),
                             strip_cupboard_id: String(stripObj.cupboardId || stripObj.cupboard_id || '1'),
-                            strip_shelf_id: String(stripObj.shelfId || stripObj.shelf_id || '1'),
+                            strip_shelf_id: String(firstShelfId),
                             strip_gridx: String(Math.round(stripObj.x ?? 0)),
                             strip_gridy: String(Math.round(stripObj.y ?? 0)),
                             strip_width: String(Math.round(stripObj.width || 100)),
@@ -834,7 +957,7 @@ export default function LedStripsTab({
                             strip_org_id: String(stripObj.strip_org_id || "Salem"),
                             strip_branch_id: String(stripObj.strip_branch_id || "SKSHOSPITAL"),
                             strip_status: stripObj.strip_status !== undefined ? Boolean(stripObj.strip_status) : true,
-                            bin_list: formattedBins
+                            shelf_list: formattedShelves
                         };
                         const stripRes = await apiService.createStrip(stripPayload);
                         const itemData = Array.isArray(stripRes?.data) ? stripRes.data[0] : (Array.isArray(stripRes) ? stripRes[0] : (stripRes?.data || stripRes));
@@ -1290,28 +1413,28 @@ export default function LedStripsTab({
             for (const item of itemsToProcess) {
                 const { strip, channelId, order } = item;
 
-                // Resolve bins for this strip
-                const rawBins = strip.bins || strip.linkedBins || strip.bin_list || [];
-                const formattedBins = Array.isArray(rawBins) ? rawBins.map(b => {
-                    let binIdStr = '';
-                    let binNameStr = '';
+                // Resolve shelves for this strip
+                const rawShelves = strip.shelves || strip.linkedShelves || strip.shelf_list || strip.bins || strip.linkedBins || strip.bin_list || [];
+                const formattedShelves = Array.isArray(rawShelves) ? rawShelves.map(s => {
+                    let shelfIdStr = '';
+                    let shelfNameStr = '';
 
-                    if (typeof b === 'object' && b !== null) {
-                        binIdStr = typeof b.bin_id === 'object' ? String(b.bin_id?.bin_id || b.bin_id?.id || '') : String(b.bin_id || b.id || b.bin_name || b.label || b.name || '');
-                        binNameStr = typeof b.bin_name === 'object' ? String(b.bin_name?.bin_name || b.bin_name?.name || '') : String(b.bin_name || b.label || b.name || b.bin_id || b.id || '');
+                    if (typeof s === 'object' && s !== null) {
+                        shelfIdStr = typeof s.shelf_id === 'object' ? String(s.shelf_id?.shelf_id || s.shelf_id?.id || '') : String(s.shelf_id || s.id || s.shelf_name || s.label || s.name || s.bin_id || s.bin_name || '');
+                        shelfNameStr = typeof s.shelf_name === 'object' ? String(s.shelf_name?.shelf_name || s.shelf_name?.name || '') : String(s.shelf_name || s.label || s.name || s.shelf_id || s.id || s.bin_name || '');
                     } else {
-                        binIdStr = String(b);
+                        shelfIdStr = String(s);
                     }
 
-                    if (binIdStr === '[object Object]' || !binIdStr) return null;
+                    if (shelfIdStr === '[object Object]' || !shelfIdStr) return null;
 
-                    const matched = allAvailableBins.find(ab => String(ab.id) === binIdStr || String(ab.label) === binIdStr);
+                    const matched = allAvailableShelves.find(as => String(as.id) === shelfIdStr || String(as.label) === shelfIdStr);
                     return {
-                        bin_id: String(matched ? matched.id : binIdStr),
-                        bin_name: String(matched ? matched.label : (binNameStr || binIdStr))
+                        shelf_id: String(matched ? matched.id : shelfIdStr),
+                        shelf_name: String(matched ? matched.label : (shelfNameStr || shelfIdStr))
                     };
                 }).filter(Boolean) : [];
-                console.log(`%c[SaveSetup] Strip "${strip.label}" formattedBins:`, 'color: lime', formattedBins);
+                console.log(`%c[SaveSetup] Strip "${strip.label}" formattedShelves:`, 'color: lime', formattedShelves);
 
                 // ACTION 1: Call create-strip for new temp strips or update-strip for existing strips
                 let realStripId = String(strip.strip_id || strip.id || '');
@@ -1326,12 +1449,14 @@ export default function LedStripsTab({
                     }
                 } catch (e) { }
 
+                const firstShelfId = formattedShelves.length > 0 ? formattedShelves[0].shelf_id : String(strip.shelfId || strip.shelf_id || '1');
+
                 const stripPayload = {
                     strip_name: String(strip.label || strip.strip_name || strip.name || `Strip CH-${channelId}`),
                     strip_loc_id: String(strip.strip_loc_id || locId),
                     strip_ctl_id: String(selectedController?.id || selectedController?.ctl_id || strip.strip_ctl_id || '1'),
                     strip_cupboard_id: String(strip.cupboardId || strip.cupboard_id || '1'),
-                    strip_shelf_id: String(strip.shelfId || strip.shelf_id || '1'),
+                    strip_shelf_id: String(firstShelfId),
                     strip_gridx: String(Math.round(strip.x ?? 0)),
                     strip_gridy: String(Math.round(strip.y ?? 0)),
                     strip_width: String(Math.round(strip.width || 100)),
@@ -1339,7 +1464,7 @@ export default function LedStripsTab({
                     strip_org_id: String(strip.strip_org_id || "Salem"),
                     strip_branch_id: String(strip.strip_branch_id || "SKSHOSPITAL"),
                     strip_status: strip.strip_status !== undefined ? Boolean(strip.strip_status) : true,
-                    bin_list: formattedBins
+                    shelf_list: formattedShelves
                 };
 
                 if (isTempId) {
@@ -2274,15 +2399,15 @@ export default function LedStripsTab({
                             </Select>
                         </div>
 
-                        {/* Section 2: Assign Storage Bins */}
+                        {/* Section 2: Assign Shelves */}
                         <div className="p-3.5 rounded-xl border border-ot-border/50 bg-ot-surface-bottom/60 space-y-3">
                             <div className="flex items-center justify-between">
                                 <label className="text-xs font-bold text-slate-200 block uppercase tracking-wider font-mono flex items-center gap-1.5">
-                                    <Box className="w-3.5 h-3.5 text-ot-action" />
-                                    2. Assign Illuminated Bins:
+                                    <Layers className="w-3.5 h-3.5 text-cyan-400" />
+                                    2. Assign Shelves:
                                 </label>
                                 <span className="text-xs font-semibold px-2 py-0.5 rounded bg-ot-action/20 border border-ot-action/40 text-cyan-300">
-                                    {selectedBinIds.length} Selected
+                                    {selectedShelfIds.length} Selected
                                 </span>
                             </div>
 
@@ -2292,15 +2417,15 @@ export default function LedStripsTab({
                                     <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                                     <input
                                         type="text"
-                                        placeholder="Search by bin name, ID, or shelf..."
-                                        value={binSearchQuery}
-                                        onChange={(e) => setBinSearchQuery(e.target.value)}
+                                        placeholder="Search by shelf name, ID, or cupboard..."
+                                        value={shelfSearchQuery}
+                                        onChange={(e) => setShelfSearchQuery(e.target.value)}
                                         className="w-full h-8 pl-8 pr-8 bg-ot-surface-top border border-ot-border/80 rounded-lg text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-ot-action"
                                     />
-                                    {binSearchQuery && (
+                                    {shelfSearchQuery && (
                                         <button
                                             type="button"
-                                            onClick={() => setBinSearchQuery('')}
+                                            onClick={() => setShelfSearchQuery('')}
                                             className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
                                         >
                                             <X className="w-3.5 h-3.5" />
@@ -2310,29 +2435,34 @@ export default function LedStripsTab({
 
                                 <div className="flex items-center justify-between text-[11px] px-0.5">
                                     <span className="text-slate-400">
-                                        Showing {allAvailableBins.filter(b => {
-                                            if (!binSearchQuery.trim()) return true;
-                                            const q = binSearchQuery.toLowerCase();
-                                            return b.label.toLowerCase().includes(q) || b.id.toLowerCase().includes(q) || b.shelfName.toLowerCase().includes(q) || b.cupboardName.toLowerCase().includes(q);
-                                        }).length} of {allAvailableBins.length} bins
+                                        Showing {allAvailableShelves.filter(s => {
+                                            if (!shelfSearchQuery.trim()) return true;
+                                            const q = shelfSearchQuery.toLowerCase();
+                                            return s.label.toLowerCase().includes(q) || s.id.toLowerCase().includes(q) || s.cupboardName.toLowerCase().includes(q);
+                                        }).length} of {allAvailableShelves.length} shelves
                                     </span>
                                     <div className="flex items-center gap-2">
                                         <button
                                             type="button"
                                             onClick={() => {
                                                 const stripCupId = String(activeStripForBins?.cupboardId || activeStripForBins?.cupboard_id || '');
-                                                const cupboardBins = allAvailableBins.filter(b => String(b.cupboardId) === stripCupId || !stripCupId);
-                                                const cupboardBinIds = cupboardBins.map(b => b.id);
-                                                setSelectedBinIds(prev => Array.from(new Set([...prev, ...cupboardBinIds])));
+                                                const cupboardShelves = allAvailableShelves.filter(s => String(s.cupboardId) === stripCupId || !stripCupId);
+                                                const cupboardShelfIds = cupboardShelves.map(s => s.id);
+                                                setSelectedShelfIds(prev => Array.from(new Set([...prev, ...cupboardShelfIds])));
+                                                setSelectedBinIds(prev => Array.from(new Set([...prev, ...cupboardShelfIds])));
                                             }}
                                             className="text-[10px] font-semibold text-cyan-400 hover:text-cyan-300 hover:underline"
                                         >
-                                            Cupboard Bins
+                                            Cupboard Shelves
                                         </button>
                                         <span className="text-slate-600">•</span>
                                         <button
                                             type="button"
-                                            onClick={() => setSelectedBinIds(allAvailableBins.map(b => b.id))}
+                                            onClick={() => {
+                                                const allIds = allAvailableShelves.map(s => s.id);
+                                                setSelectedShelfIds(allIds);
+                                                setSelectedBinIds(allIds);
+                                            }}
                                             className="text-[10px] font-semibold text-cyan-400 hover:text-cyan-300 hover:underline"
                                         >
                                             Select All
@@ -2340,7 +2470,10 @@ export default function LedStripsTab({
                                         <span className="text-slate-600">•</span>
                                         <button
                                             type="button"
-                                            onClick={() => setSelectedBinIds([])}
+                                            onClick={() => {
+                                                setSelectedShelfIds([]);
+                                                setSelectedBinIds([]);
+                                            }}
                                             className="text-[10px] font-semibold text-rose-400 hover:text-rose-300 hover:underline"
                                         >
                                             Clear All
@@ -2349,43 +2482,41 @@ export default function LedStripsTab({
                                 </div>
                             </div>
 
-                            {/* Bins Grid */}
+                            {/* Shelves Grid */}
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
-                                {allAvailableBins.filter(b => {
-                                    if (!binSearchQuery.trim()) return true;
-                                    const q = binSearchQuery.toLowerCase();
-                                    return b.label.toLowerCase().includes(q) || b.id.toLowerCase().includes(q) || b.shelfName.toLowerCase().includes(q) || b.cupboardName.toLowerCase().includes(q);
-                                }).map(bin => {
-                                    const isSelected = selectedBinIds.some(sId => String(sId) === String(bin.id) || String(sId) === String(bin.label));
+                                {allAvailableShelves.filter(s => {
+                                    if (!shelfSearchQuery.trim()) return true;
+                                    const q = shelfSearchQuery.toLowerCase();
+                                    return s.label.toLowerCase().includes(q) || s.id.toLowerCase().includes(q) || s.cupboardName.toLowerCase().includes(q);
+                                }).map(shelf => {
+                                    const isSelected = selectedShelfIds.some(sId => String(sId) === String(shelf.id) || String(sId) === String(shelf.label));
                                     return (
                                         <button
-                                            key={bin.id}
+                                            key={shelf.id}
                                             type="button"
                                             onClick={() => {
-                                                setSelectedBinIds(prev => {
-                                                    const hasIt = prev.includes(bin.id) || prev.includes(bin.label);
-                                                    if (hasIt) {
-                                                        return prev.filter(bId => bId !== bin.id && bId !== bin.label);
-                                                    } else {
-                                                        return [...prev, bin.id];
-                                                    }
+                                                setSelectedShelfIds(prev => {
+                                                    const hasIt = prev.includes(shelf.id) || prev.includes(shelf.label);
+                                                    const next = hasIt
+                                                        ? prev.filter(sId => sId !== shelf.id && sId !== shelf.label)
+                                                        : [...prev, shelf.id];
+                                                    setSelectedBinIds(next);
+                                                    return next;
                                                 });
                                             }}
                                             className={cn(
-                                                "flex flex-col p-2 rounded-lg border text-left transition-all relative group",
+                                                "flex flex-col p-2.5 rounded-lg border text-left transition-all relative group",
                                                 isSelected
                                                     ? "bg-ot-action/20 border-ot-action text-white font-bold shadow-sm ring-1 ring-ot-action/40"
                                                     : "bg-ot-surface-bottom/40 border-ot-border/60 text-slate-300 hover:bg-ot-surface-bottom hover:border-slate-500"
                                             )}
                                         >
                                             <div className="flex items-center justify-between w-full">
-                                                <span className="font-bold text-xs truncate max-w-[80%]">{bin.label}</span>
+                                                <span className="font-bold text-xs truncate max-w-[80%]">{shelf.label}</span>
                                                 {isSelected && <Check className="w-3.5 h-3.5 text-ot-action shrink-0" />}
                                             </div>
                                             <div className="text-[10px] text-slate-400 truncate flex items-center gap-1 mt-0.5">
-                                                <span>{bin.cupboardName}</span>
-                                                <span>•</span>
-                                                <span>{bin.shelfName}</span>
+                                                <span>{shelf.cupboardName}</span>
                                             </div>
                                         </button>
                                     );
@@ -2479,26 +2610,26 @@ export default function LedStripsTab({
                     <DialogFooter className="shrink-0 pt-2 border-t border-ot-border/40 gap-2">
                         <div
                             className="relative group flex-1"
-                            title={selectedBinIds.length === 0 ? "Please select at least 1 bin before saving configuration" : ""}
+                            title={selectedShelfIds.length === 0 ? "Please select at least 1 shelf before saving configuration" : ""}
                         >
-                            <div className={cn("w-full pointer-events-auto", selectedBinIds.length === 0 && "cursor-not-allowed")}>
+                            <div className={cn("w-full pointer-events-auto", selectedShelfIds.length === 0 && "cursor-not-allowed")}>
                                 <Button
                                     onClick={handleSaveBinsForStrip}
-                                    disabled={selectedBinIds.length === 0}
+                                    disabled={selectedShelfIds.length === 0}
                                     className={cn(
                                         "font-bold w-full transition-all",
-                                        selectedBinIds.length > 0
+                                        selectedShelfIds.length > 0
                                             ? "bg-ot-action text-white hover:bg-ot-action-hover shadow-lg cursor-pointer opacity-100"
                                             : "bg-slate-800 text-slate-500 border border-slate-700/50 opacity-60 shadow-none pointer-events-none"
                                     )}
                                 >
-                                    Save Configuration ({selectedBinIds.length} {selectedBinIds.length === 1 ? 'Bin' : 'Bins'})
+                                    Save Configuration ({selectedShelfIds.length} {selectedShelfIds.length === 1 ? 'Shelf' : 'Shelves'})
                                 </Button>
                             </div>
-                            {selectedBinIds.length === 0 && (
+                            {selectedShelfIds.length === 0 && (
                                 <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 hidden group-hover:flex flex-col items-center z-50 pointer-events-none whitespace-nowrap">
                                     <div className="bg-slate-900 border border-slate-700 text-slate-200 text-[11px] font-medium py-1.5 px-3 rounded-lg shadow-xl">
-                                        Please select at least 1 bin before saving configuration
+                                        Please select at least 1 shelf before saving configuration
                                     </div>
                                     <div className="w-2 h-2 bg-slate-900 border-r border-b border-slate-700 rotate-45 -mt-1" />
                                 </div>
