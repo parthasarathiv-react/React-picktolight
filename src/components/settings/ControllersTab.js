@@ -11,8 +11,11 @@ import { ConfirmDialog } from 'components/ui/ConfirmDialog';
 import { toast } from 'sonner';
 import { apiService } from 'lib/apiService';
 
+// Centralized max channels configuration for hardware controllers
+const MAX_CONTROLLER_CHANNELS = 16;
+
 // Generate initial channels for a controller
-const generateInitialChannels = (count = 16) => {
+const generateInitialChannels = (count = MAX_CONTROLLER_CHANNELS) => {
     return Array.from({ length: count }, (_, i) => {
         const num = String(i + 1).padStart(2, '0');
         return {
@@ -144,6 +147,14 @@ export default function ControllersTab({ controllersData, syncControllers, refet
             setControllerPortsMap(prev => {
                 const list = prev[ctrlId] || [];
                 const updatedList = list.filter(item => String(item.channel_id || item.id) !== String(channelId));
+                if (syncControllers && Array.isArray(controllersData)) {
+                    const newControllers = controllersData.map(c =>
+                        String(c.id) === String(ctrlId)
+                            ? { ...c, channels: updatedList.length, ctl_channels: String(updatedList.length) }
+                            : c
+                    );
+                    syncControllers(newControllers);
+                }
                 return { ...prev, [ctrlId]: updatedList };
             });
 
@@ -313,12 +324,12 @@ export default function ControllersTab({ controllersData, syncControllers, refet
     };
 
 
-    const handleAddChannel = async (ctrlId, limit) => {
+    const handleAddChannel = async (ctrlId, limit = MAX_CONTROLLER_CHANNELS) => {
         const currentChannels = controllerPortsMap[ctrlId] || [];
-        // if (currentChannels.length >= limit) {
-        //     toast.error(`Channel limit of ${limit} reached.`);
-        //     return;
-        // }
+        if (currentChannels.length >= limit) {
+            toast.error(`Restriction: Channel limit of ${limit} reached.`);
+            return;
+        }
 
         const num = String(currentChannels.length + 1).padStart(2, '0');
         const channelName = `CHANNEL-${num}`;
@@ -344,9 +355,18 @@ export default function ControllersTab({ controllersData, syncControllers, refet
 
             setControllerPortsMap(prev => {
                 const prevChannels = prev[ctrlId] || [];
+                const updatedList = [...prevChannels, newChannel];
+                if (syncControllers && Array.isArray(controllersData)) {
+                    const newControllers = controllersData.map(c =>
+                        String(c.id) === String(ctrlId)
+                            ? { ...c, channels: updatedList.length, ctl_channels: String(updatedList.length) }
+                            : c
+                    );
+                    syncControllers(newControllers);
+                }
                 return {
                     ...prev,
-                    [ctrlId]: [...prevChannels, newChannel]
+                    [ctrlId]: updatedList
                 };
             });
 
@@ -987,7 +1007,7 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                         {controllersData.map((ctrl) => {
                             const isExpanded = !!expandedControllers[ctrl.id];
                             const portsList = controllerPortsMap[ctrl.id] || [];
-                            const portsCount = parseInt(ctrl.channels ?? ctrl.ctl_channels ?? 0, 10);
+                            const currentChannelCount = portsList.length > 0 ? portsList.length : (parseInt(ctrl.channels ?? ctrl.ctl_channels ?? 0, 10));
 
                             return (
                                 <React.Fragment key={ctrl.id}>
@@ -1013,7 +1033,7 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                                         <TableCell className="text-muted-foreground text-xs font-mono align-middle">{ctrl.port}</TableCell>
                                         <TableCell className="font-mono text-xs text-ot-action font-semibold align-middle">
                                             <span className="inline-block px-2 py-0.5 rounded bg-ot-surface-bottom border border-ot-border/50">
-                                                {portsCount} Channels
+                                                {currentChannelCount} Channels
                                             </span>
                                         </TableCell>
                                         <TableCell className="align-middle">
@@ -1040,19 +1060,21 @@ export default function ControllersTab({ controllersData, syncControllers, refet
                                                     <div className="flex items-center justify-between px-1 pb-2 border-b border-ot-border/40">
                                                         <div className="flex items-center gap-2 text-xs font-bold text-ot-action uppercase tracking-wider">
                                                             <Cable className="w-3.5 h-3.5" />
-                                                            Controller Channels ({portsList.length} Channels)
+                                                            Controller Channels ({currentChannelCount} Channels)
                                                         </div>
                                                         <div className="flex items-center gap-2">
-                                                            <Button
-                                                                variant="outline"
-                                                                size="sm"
-                                                                onClick={() => handleAddChannel(ctrl.id, portsCount || 16)}
-                                                                className="h-6 text-[10px] bg-ot-action/10 text-ot-action border-ot-action/30 hover:bg-ot-action/20"
-                                                            >
-                                                                <Plus className="w-3 h-3 mr-1" /> Add Channel
-                                                            </Button>
+                                                            {portsList.length < MAX_CONTROLLER_CHANNELS && (
+                                                                <Button
+                                                                    variant="outline"
+                                                                    size="sm"
+                                                                    onClick={() => handleAddChannel(ctrl.id, MAX_CONTROLLER_CHANNELS)}
+                                                                    className="h-6 text-[10px] bg-ot-action/10 text-ot-action border-ot-action/30 hover:bg-ot-action/20"
+                                                                >
+                                                                    <Plus className="w-3 h-3 mr-1" /> Add Channel
+                                                                </Button>
+                                                            )}
                                                             <span className="text-[10px] text-muted-foreground font-mono bg-ot-surface-elev-bottom px-2 py-0.5 rounded border border-ot-border/40">
-                                                                Limit: {portsCount || 16} Channels
+                                                                Limit: {MAX_CONTROLLER_CHANNELS} Channels
                                                             </span>
                                                         </div>
                                                     </div>

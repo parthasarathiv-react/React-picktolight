@@ -44,7 +44,8 @@ export default function LedStripsTab({
     onGoToBins,
     onBack,
     onOpenDesigner,
-    isDesignerActive = true
+    isDesignerActive = true,
+    onDirtyChange
 }) {
     // ── Primary State ─────────────────────────────────────────────────────────
     const [selectedController, setSelectedController] = useState(() => {
@@ -91,6 +92,19 @@ export default function LedStripsTab({
     const [localChannelAssignments, setLocalChannelAssignments] = useState({});
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
+    useEffect(() => {
+        if (onDirtyChange) {
+            onDirtyChange(hasUnsavedChanges);
+        }
+    }, [hasUnsavedChanges, onDirtyChange]);
+
+    const hasUnassignedStrip = React.useMemo(() => {
+        return localLedStrips.some(s => {
+            const b = s.bins || s.linkedBins || s.bin_list || [];
+            return !Array.isArray(b) || b.length === 0;
+        });
+    }, [localLedStrips]);
+
     // ── Add Strip & Bin Assignment Dialog States ──────────────────────────────
     const [showAddStripDialog, setShowAddStripDialog] = useState(false);
     const [addStripMode, setAddStripMode] = useState('channel'); // 'channel' | 'daisy_chain'
@@ -100,6 +114,7 @@ export default function LedStripsTab({
     const [newStripCupboardId, setNewStripCupboardId] = useState('');
 
     const [showAssignBinsDialog, setShowAssignBinsDialog] = useState(false);
+    const [showUnsavedBackDialog, setShowUnsavedBackDialog] = useState(false);
     const [activeStripForBins, setActiveStripForBins] = useState(null);
     const [editingStripName, setEditingStripName] = useState('');
     const [selectedBinIds, setSelectedBinIds] = useState([]);
@@ -233,8 +248,8 @@ export default function LedStripsTab({
                                 width: parseFloat(matchedStrip.strip_width ?? 80),
                                 height: parseFloat(matchedStrip.strip_height ?? 22),
                                 cupboardId: String(matchedStrip.strip_cupboard_id || matchedStrip.cupboard_id || csItem.cupboard_id || '1'),
-                                bins: matchedStrip.bin_list || matchedStrip.bins || [],
-                                linkedBins: matchedStrip.bin_list || matchedStrip.linkedBins || [],
+                                bins: (matchedStrip.bin_list && matchedStrip.bin_list.length > 0) ? matchedStrip.bin_list : ((csItem.bin_list && csItem.bin_list.length > 0) ? csItem.bin_list : (matchedStrip.bins || csItem.bins || [])),
+                                linkedBins: (matchedStrip.bin_list && matchedStrip.bin_list.length > 0) ? matchedStrip.bin_list : ((csItem.bin_list && csItem.bin_list.length > 0) ? csItem.bin_list : (matchedStrip.linkedBins || matchedStrip.bins || csItem.bins || [])),
                                 channelstrip_id: csItem.channelstrip_id,
                                 strip_order: parseInt(csItem.strip_order || 0, 10),
                                 strip_status: csItem.strip_status !== false
@@ -523,6 +538,11 @@ export default function LedStripsTab({
                 toast.error("Please select a channel port.");
                 return;
             }
+            const isOccupied = Boolean(effectiveChannelAssignments[selectedAddChannel] || localLedStrips.some(s => Number(s.channel) === Number(selectedAddChannel) || String(s.channel) === String(selectedAddChannel)));
+            if (isOccupied) {
+                toast.error(`Channel ${selectedAddChannel} is already occupied. Please select an available channel.`);
+                return;
+            }
         }
 
         const targetCupboard = filteredCupboards.find(c => String(c.id || c.cupboard_id) === String(newStripCupboardId)) || filteredCupboards[0];
@@ -535,6 +555,9 @@ export default function LedStripsTab({
         const stripId = `local-strip-${Date.now()}`;
         const label = newStripName.trim() || (addStripMode === 'daisy_chain' ? `${parentStrip?.label || 'Strip'} Ext` : `Strip CH-${String(assignedChannel).padStart(2, '0')}`);
 
+        const existingOnChan = localLedStrips.filter(s => Number(s.channel) === Number(assignedChannel));
+        const maxOrder = existingOnChan.reduce((max, s) => Math.max(max, parseInt(s.strip_order || 0, 10)), 0);
+
         const newStrip = {
             id: stripId,
             strip_id: stripId,
@@ -546,6 +569,7 @@ export default function LedStripsTab({
             channel: assignedChannel,
             channelId: selectedChannelId,
             channel_id: selectedChannelId,
+            strip_order: maxOrder + 1,
             colorIndex: localLedStrips.length,
             parentStripId: addStripMode === 'daisy_chain' ? (parentStrip.id || parentStrip.strip_id) : null,
             cupboardId: cId,
@@ -918,8 +942,8 @@ export default function LedStripsTab({
                 const sCh = Number(s.channel) || (s.channel ? parseInt(String(s.channel).replace(/\D/g, ''), 10) : null);
                 return sCh === ch;
             }).sort((a, b) => {
-                const orderA = parseInt(a.strip_order || 0, 10);
-                const orderB = parseInt(b.strip_order || 0, 10);
+                const orderA = (a.strip_order !== undefined && a.strip_order !== null) ? parseInt(a.strip_order, 10) : 999;
+                const orderB = (b.strip_order !== undefined && b.strip_order !== null) ? parseInt(b.strip_order, 10) : 999;
                 return orderA - orderB;
             });
 
@@ -964,22 +988,34 @@ export default function LedStripsTab({
                         const absDx = Math.abs(dx);
                         const absDy = Math.abs(dy);
 
+                        // Check if wire is within container bounds
+                        const isVisible = (px, py) => px >= -50 && px <= containerRect.width + 50 && py >= minAllowedY - 50 && py <= containerRect.height + 50;
+                        if (!isVisible(x1, y1) && !isVisible(x2, y2)) return;
+
                         let cp1x = x1, cp1y = y1, cp2x = x2, cp2y = y2;
                         if (controllerPlacement === 'left') {
                             const offset = Math.min(120, Math.max(30, absDx * 0.4));
                             cp1x = x1 + offset;
+                            cp1y = y1 + dy * 0.2;
                             cp2x = x2 - offset;
+                            cp2y = y2 - dy * 0.2;
                         } else if (controllerPlacement === 'right') {
                             const offset = Math.min(120, Math.max(30, absDx * 0.4));
                             cp1x = x1 - offset;
+                            cp1y = y1 + dy * 0.2;
                             cp2x = x2 + offset;
+                            cp2y = y2 - dy * 0.2;
                         } else if (controllerPlacement === 'top') {
                             const offset = Math.min(120, Math.max(30, absDy * 0.4));
+                            cp1x = x1 + dx * 0.2;
                             cp1y = y1 + offset;
+                            cp2x = x2 - dx * 0.2;
                             cp2y = y2 - offset;
                         } else {
                             const offset = Math.min(120, Math.max(30, absDy * 0.4));
+                            cp1x = x1 + dx * 0.2;
                             cp1y = y1 - offset;
+                            cp2x = x2 - dx * 0.2;
                             cp2y = y2 + offset;
                         }
 
@@ -1012,13 +1048,29 @@ export default function LedStripsTab({
                         const y2 = sRect.top + sRect.height / 2 - containerRect.top;
 
                         const dx = x2 - x1;
+                        const dy = y2 - y1;
                         const absDx = Math.abs(dx);
+                        const absDy = Math.abs(dy);
 
-                        const offset = Math.min(80, Math.max(20, absDx * 0.35));
-                        const cp1x = x1 + offset;
-                        let cp1y = y1;
-                        const cp2x = x2 - offset;
-                        let cp2y = y2;
+                        // Check if wire is within container bounds
+                        const isVisible = (px, py) => px >= -50 && px <= containerRect.width + 50 && py >= minAllowedY - 50 && py <= containerRect.height + 50;
+                        if (!isVisible(x1, y1) && !isVisible(x2, y2)) return;
+
+                        let cp1x, cp1y, cp2x, cp2y;
+                        if (dx >= 20) {
+                            const offset = Math.min(100, Math.max(25, absDx * 0.35));
+                            cp1x = x1 + offset;
+                            cp1y = y1 + dy * 0.25;
+                            cp2x = x2 - offset;
+                            cp2y = y2 - dy * 0.25;
+                        } else {
+                            const offsetX = Math.max(30, absDx * 0.3);
+                            const offsetY = Math.max(30, absDy * 0.4);
+                            cp1x = x1 + offsetX;
+                            cp1y = y1 + (dy >= 0 ? offsetY : -offsetY);
+                            cp2x = x2 - offsetX;
+                            cp2y = y2 - (dy >= 0 ? offsetY : -offsetY);
+                        }
 
                         cp1y = Math.max(minAllowedY, cp1y);
                         cp2y = Math.max(minAllowedY, cp2y);
@@ -1078,22 +1130,7 @@ export default function LedStripsTab({
                             Select a hardware controller to configure 16-channel strip mappings and launch the 3D visual designer.
                         </p>
                     </div>
-                    <Button
-                        onClick={() => {
-                            if (controllersData.length > 0 && !selectedController) {
-                                handleSelectController(controllersData[0]);
-                                onOpenDesigner?.();
-                            } else if (selectedController) {
-                                fetchStripsForController(selectedController);
-                                onOpenDesigner?.();
-                            } else {
-                                onOpenDesigner?.();
-                            }
-                        }}
-                        className="gap-2 bg-ot-action text-white hover:bg-ot-action-hover px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-ot-action/20 shrink-0"
-                    >
-                        <Cpu className="w-4 h-4" /> Launch Designer Mode
-                    </Button>
+
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1397,7 +1434,13 @@ export default function LedStripsTab({
                             <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={onBack}
+                                onClick={() => {
+                                    if (hasUnsavedChanges || hasUnassignedStrip) {
+                                        setShowUnsavedBackDialog(true);
+                                    } else if (onBack) {
+                                        onBack();
+                                    }
+                                }}
                                 className="text-muted-foreground hover:text-white gap-2 h-8 px-3 text-xs font-semibold"
                             >
                                 <ArrowLeft className="w-4 h-4 text-ot-action" /> Back
@@ -1433,40 +1476,95 @@ export default function LedStripsTab({
                         Placement ({controllerPlacement.toUpperCase()})
                     </Button>
 
-                    {/* Add LED Strip Button */}
-                    <Button
-                        size="sm"
-                        onClick={() => {
-                            const used = Object.keys(effectiveChannelAssignments).map(Number);
-                            const firstAvail = Array.from({ length: 16 }, (_, i) => i + 1).find(ch => !used.includes(ch)) || 1;
-                            setSelectedAddChannel(firstAvail);
-                            setNewStripName(`Strip CH-${String(firstAvail).padStart(2, '0')}`);
-                            if (filteredCupboards.length > 0) {
-                                setNewStripCupboardId(String(filteredCupboards[0].id || filteredCupboards[0].cupboard_id));
-                            }
-                            setShowAddStripDialog(true);
-                        }}
-                        className="gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/30"
+                    {/* Add LED Strip Button (disabled when unsaved changes exist or an unassigned strip exists) */}
+                    <div
+                        className="relative group inline-block"
+                        title={
+                            hasUnassignedStrip
+                                ? "Assign bins to all LED strips before adding a new strip"
+                                : hasUnsavedChanges
+                                    ? "Save setup changes before adding a new LED strip"
+                                    : ""
+                        }
                     >
-                        <Plus className="w-4 h-4" />
-                        Add LED Strip
-                    </Button>
-
-                    {/* Save Hardware Setup Button */}
-                    <Button
-                        size="sm"
-                        onClick={handleSaveSetup}
-                        disabled={!hasUnsavedChanges || localLedStrips.some(s => !s.bins || s.bins.length === 0)}
-                        className={cn(
-                            "gap-1.5 text-xs font-bold shadow-lg transition-all",
-                            (hasUnsavedChanges && !localLedStrips.some(s => !s.bins || s.bins.length === 0))
-                                ? "bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/30 cursor-pointer opacity-100"
-                                : "bg-slate-800 text-slate-500 border border-slate-700/50 cursor-not-allowed opacity-60 shadow-none"
+                        <div className={cn("pointer-events-auto", (hasUnsavedChanges || hasUnassignedStrip) && "cursor-not-allowed")}>
+                            <Button
+                                size="sm"
+                                disabled={hasUnsavedChanges || hasUnassignedStrip}
+                                onClick={() => {
+                                    const usedFromAssignments = Object.keys(effectiveChannelAssignments).map(Number);
+                                    const usedFromStrips = localLedStrips.map(s => Number(s.channel) || (s.channel ? parseInt(String(s.channel).replace(/\D/g, ''), 10) : null)).filter(Boolean);
+                                    const allUsedChannels = Array.from(new Set([...usedFromAssignments, ...usedFromStrips]));
+                                    const firstAvail = Array.from({ length: 16 }, (_, i) => i + 1).find(ch => !allUsedChannels.includes(ch)) || 1;
+                                    setSelectedAddChannel(firstAvail);
+                                    const availChObj = channelsToRender.find(c => c.chNum === firstAvail);
+                                    setNewStripName(`Strip ${availChObj ? availChObj.name : `CH-${String(firstAvail).padStart(2, '0')}`}`);
+                                    if (filteredCupboards.length > 0) {
+                                        setNewStripCupboardId(String(filteredCupboards[0].id || filteredCupboards[0].cupboard_id));
+                                    }
+                                    setShowAddStripDialog(true);
+                                }}
+                                className={cn(
+                                    "gap-1.5 text-xs font-bold shadow-lg transition-all",
+                                    (hasUnsavedChanges || hasUnassignedStrip)
+                                        ? "bg-slate-800 text-slate-500 border border-slate-700/50 opacity-60 shadow-none pointer-events-none"
+                                        : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30 cursor-pointer opacity-100"
+                                )}
+                            >
+                                <Plus className="w-4 h-4" />
+                                Add LED Strip
+                            </Button>
+                        </div>
+                        {(hasUnsavedChanges || hasUnassignedStrip) && (
+                            <div className="absolute top-full mt-2 right-0 hidden group-hover:flex flex-col items-end z-50 pointer-events-none whitespace-nowrap">
+                                <div className="w-2 h-2 bg-slate-900 border-l border-t border-slate-700 rotate-45 mr-4 -mb-1" />
+                                <div className="bg-slate-900 border border-slate-700 text-slate-200 text-[11px] font-medium py-1.5 px-3 rounded-lg shadow-xl">
+                                    {hasUnassignedStrip
+                                        ? "Assign bins to all LED strips before adding a new strip"
+                                        : "Save setup changes before adding a new LED strip"}
+                                </div>
+                            </div>
                         )}
+                    </div>
+
+                    {/* Save Hardware Setup Button with Hover Explanation Tooltip when disabled */}
+                    <div
+                        className="relative group inline-block"
+                        title={
+                            hasUnassignedStrip
+                                ? "Cannot save setup: Assign bins to all LED strips first"
+                                : !hasUnsavedChanges
+                                    ? "No unsaved setup changes to save"
+                                    : ""
+                        }
                     >
-                        <Save className="w-4 h-4" />
-                        Save Setup
-                    </Button>
+                        <div className={cn("pointer-events-auto", (!hasUnsavedChanges || hasUnassignedStrip) && "cursor-not-allowed")}>
+                            <Button
+                                size="sm"
+                                onClick={handleSaveSetup}
+                                disabled={!hasUnsavedChanges || hasUnassignedStrip}
+                                className={cn(
+                                    "gap-1.5 text-xs font-bold shadow-lg transition-all",
+                                    (hasUnsavedChanges && !hasUnassignedStrip)
+                                        ? "bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/30 cursor-pointer opacity-100"
+                                        : "bg-slate-800 text-slate-500 border border-slate-700/50 opacity-60 shadow-none pointer-events-none"
+                                )}
+                            >
+                                <Save className="w-4 h-4" />
+                                Save Setup
+                            </Button>
+                        </div>
+                        {(!hasUnsavedChanges || hasUnassignedStrip) && (
+                            <div className="absolute top-full mt-2 right-0 hidden group-hover:flex flex-col items-end z-50 pointer-events-none whitespace-nowrap">
+                                <div className="w-2 h-2 bg-slate-900 border-l border-t border-slate-700 rotate-45 mr-4 -mb-1" />
+                                <div className="bg-slate-900 border border-slate-700 text-slate-200 text-[11px] font-medium py-1.5 px-3 rounded-lg shadow-xl">
+                                    {hasUnassignedStrip
+                                        ? "Assign bins to all LED strips before saving setup"
+                                        : "No unsaved setup changes to save"}
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -1978,38 +2076,51 @@ export default function LedStripsTab({
                                 <div className="grid grid-cols-4 gap-2">
                                     {channelsToRender.map((ch) => {
                                         const chNum = ch.chNum;
+                                        const assignedStrip = effectiveChannelAssignments[chNum] || localLedStrips.find(s => Number(s.channel) === chNum || String(s.channel) === String(chNum) || String(s.channel) === `CH-${String(chNum).padStart(2, '0')}`);
+                                        const isOccupied = Boolean(assignedStrip);
                                         const isSelected = selectedAddChannel === chNum;
-                                        const existingAssignment = effectiveChannelAssignments[chNum];
 
                                         return (
-                                            <button
+                                            <div
                                                 key={ch.id || chNum}
-                                                type="button"
-                                                onClick={() => {
-                                                    setSelectedAddChannel(chNum);
-                                                    if (!newStripName || newStripName.startsWith('Strip CH-')) {
-                                                        setNewStripName(`Strip ${ch.name}`);
-                                                    }
-                                                }}
-                                                className={cn(
-                                                    "flex flex-col items-center justify-center p-2.5 rounded-xl border transition-all text-center relative",
-                                                    isSelected
-                                                        ? "bg-emerald-950/80 border-emerald-400 text-emerald-100 shadow-[0_0_15px_rgba(52,211,153,0.3)] ring-2 ring-emerald-400"
-                                                        : existingAssignment
-                                                            ? "bg-ot-surface-bottom/80 border-amber-500/40 text-amber-300 hover:bg-ot-surface-bottom"
-                                                            : "bg-ot-surface-bottom/40 border-ot-border/60 text-slate-300 hover:bg-ot-surface-bottom hover:border-slate-500"
-                                                )}
+                                                className="relative inline-block"
+                                                title={isOccupied ? `Channel ${ch.name} is already assigned to "${assignedStrip?.label || 'another strip'}"` : `Select ${ch.name}`}
                                             >
-                                                {isSelected && (
-                                                    <div className="absolute top-1 right-1 w-3.5 h-3.5 rounded-full bg-emerald-400 text-slate-950 flex items-center justify-center">
-                                                        <Check className="w-2.5 h-2.5 stroke-[3]" />
-                                                    </div>
-                                                )}
-                                                <span className="font-mono text-xs font-bold">{ch.name}</span>
-                                                <span className="text-[9px] font-mono mt-0.5 opacity-80 truncate max-w-[70px]">
-                                                    {existingAssignment ? existingAssignment.label : 'Available'}
-                                                </span>
-                                            </button>
+                                                <button
+                                                    type="button"
+                                                    disabled={isOccupied}
+                                                    onClick={() => {
+                                                        if (isOccupied) return;
+                                                        setSelectedAddChannel(chNum);
+                                                        if (!newStripName || newStripName.startsWith('Strip CH-') || newStripName.startsWith('Strip CHANNEL-') || newStripName.startsWith('Strip ')) {
+                                                            setNewStripName(`Strip ${ch.name}`);
+                                                        }
+                                                    }}
+                                                    className={cn(
+                                                        "w-full flex flex-col items-center justify-center p-2.5 rounded-xl border transition-all text-center relative select-none",
+                                                        isSelected && !isOccupied
+                                                            ? "bg-emerald-950/80 border-emerald-400 text-emerald-100 shadow-[0_0_15px_rgba(52,211,153,0.3)] ring-2 ring-emerald-400"
+                                                            : isOccupied
+                                                                ? "bg-slate-900/60 border-slate-800/80 text-slate-500/70 cursor-not-allowed opacity-50 shadow-none pointer-events-none"
+                                                                : "bg-ot-surface-bottom/40 border-ot-border/60 text-slate-300 hover:bg-ot-surface-bottom hover:border-slate-500 cursor-pointer"
+                                                    )}
+                                                >
+                                                    {isSelected && !isOccupied && (
+                                                        <div className="absolute top-1 right-1 w-3.5 h-3.5 rounded-full bg-emerald-400 text-slate-950 flex items-center justify-center">
+                                                            <Check className="w-2.5 h-2.5 stroke-[3]" />
+                                                        </div>
+                                                    )}
+                                                    {isOccupied && (
+                                                        <div className="absolute top-1 right-1 w-3.5 h-3.5 rounded-full bg-slate-800 text-slate-500 border border-slate-700 flex items-center justify-center text-[9px] font-bold">
+                                                            ✕
+                                                        </div>
+                                                    )}
+                                                    <span className={cn("font-mono text-xs font-bold", isOccupied && "line-through opacity-70")}>{ch.name}</span>
+                                                    <span className="text-[9px] font-mono mt-0.5 opacity-80 truncate max-w-[70px]">
+                                                        {isOccupied ? (assignedStrip?.label || 'Occupied') : 'Available'}
+                                                    </span>
+                                                </button>
+                                            </div>
                                         );
                                     })}
                                 </div>
@@ -2283,7 +2394,7 @@ export default function LedStripsTab({
                         </div>
 
                         {/* Section 3: Delete or Disable/Enable Strip Action */}
-                        {isLastStripOfChannel ? (
+                        {(isLastStripOfChannel || (activeStripForBins && (String(activeStripForBins.id || activeStripForBins.strip_id).startsWith('local-') || String(activeStripForBins.id || activeStripForBins.strip_id).startsWith('sample-')))) ? (
                             <div className="p-3 rounded-xl border border-rose-500/30 bg-rose-950/20 flex items-center justify-between">
                                 <div>
                                     <h5 className="text-xs font-bold text-rose-300">Delete LED Strip</h5>
@@ -2306,7 +2417,7 @@ export default function LedStripsTab({
                                         {activeStripForBins?.strip_status !== false ? "Disable LED Strip" : "Enable LED Strip"}
                                     </h5>
                                     <p className="text-[10px] text-amber-400/80">
-                                        {activeStripForBins?.strip_status !== false 
+                                        {activeStripForBins?.strip_status !== false
                                             ? "This strip is connected before the last strip. You can temporarily disable it."
                                             : "This strip is currently disabled. Enable it to restore regular operation."}
                                     </p>
@@ -2327,14 +2438,14 @@ export default function LedStripsTab({
                                                     strip_status: nextStatus
                                                 };
                                                 await apiService.updateChannelStrip(csId, payload);
-                                                
+
                                                 // Update local state
-                                                setLocalLedStrips(prev => prev.map(s => 
+                                                setLocalLedStrips(prev => prev.map(s =>
                                                     String(s.id || s.strip_id) === String(activeStripForBins.id || activeStripForBins.strip_id)
                                                         ? { ...s, strip_status: nextStatus }
                                                         : s
                                                 ));
-                                                
+
                                                 toast.success(nextStatus ? "Strip enabled successfully" : "Strip disabled successfully", { id: toastId });
                                                 setShowAssignBinsDialog(false);
                                             } catch (err) {
@@ -2343,7 +2454,7 @@ export default function LedStripsTab({
                                             }
                                         } else {
                                             // Local/unsaved strip: update local status
-                                            setLocalLedStrips(prev => prev.map(s => 
+                                            setLocalLedStrips(prev => prev.map(s =>
                                                 String(s.id || s.strip_id) === String(activeStripForBins.id || activeStripForBins.strip_id)
                                                     ? { ...s, strip_status: nextStatus }
                                                     : s
@@ -2354,7 +2465,7 @@ export default function LedStripsTab({
                                     }}
                                     className={cn(
                                         "gap-1.5 text-white font-bold text-xs",
-                                        activeStripForBins?.strip_status !== false 
+                                        activeStripForBins?.strip_status !== false
                                             ? "bg-amber-600 hover:bg-amber-500"
                                             : "bg-emerald-600 hover:bg-emerald-500"
                                     )}
@@ -2366,18 +2477,33 @@ export default function LedStripsTab({
                     </div>
 
                     <DialogFooter className="shrink-0 pt-2 border-t border-ot-border/40 gap-2">
-                        <Button
-                            onClick={handleSaveBinsForStrip}
-                            disabled={selectedBinIds.length === 0}
-                            className={cn(
-                                "font-bold flex-1 transition-all",
-                                selectedBinIds.length > 0
-                                    ? "bg-ot-action text-white hover:bg-ot-action-hover shadow-lg cursor-pointer opacity-100"
-                                    : "bg-slate-800 text-slate-500 border border-slate-700/50 cursor-not-allowed opacity-60 shadow-none"
-                            )}
+                        <div
+                            className="relative group flex-1"
+                            title={selectedBinIds.length === 0 ? "Please select at least 1 bin before saving configuration" : ""}
                         >
-                            Save Configuration ({selectedBinIds.length} {selectedBinIds.length === 1 ? 'Bin' : 'Bins'})
-                        </Button>
+                            <div className={cn("w-full pointer-events-auto", selectedBinIds.length === 0 && "cursor-not-allowed")}>
+                                <Button
+                                    onClick={handleSaveBinsForStrip}
+                                    disabled={selectedBinIds.length === 0}
+                                    className={cn(
+                                        "font-bold w-full transition-all",
+                                        selectedBinIds.length > 0
+                                            ? "bg-ot-action text-white hover:bg-ot-action-hover shadow-lg cursor-pointer opacity-100"
+                                            : "bg-slate-800 text-slate-500 border border-slate-700/50 opacity-60 shadow-none pointer-events-none"
+                                    )}
+                                >
+                                    Save Configuration ({selectedBinIds.length} {selectedBinIds.length === 1 ? 'Bin' : 'Bins'})
+                                </Button>
+                            </div>
+                            {selectedBinIds.length === 0 && (
+                                <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 hidden group-hover:flex flex-col items-center z-50 pointer-events-none whitespace-nowrap">
+                                    <div className="bg-slate-900 border border-slate-700 text-slate-200 text-[11px] font-medium py-1.5 px-3 rounded-lg shadow-xl">
+                                        Please select at least 1 bin before saving configuration
+                                    </div>
+                                    <div className="w-2 h-2 bg-slate-900 border-r border-b border-slate-700 rotate-45 -mt-1" />
+                                </div>
+                            )}
+                        </div>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
@@ -2393,6 +2519,23 @@ export default function LedStripsTab({
                 isLoading={isDeletingStrip}
                 onConfirm={confirmDeleteStrip}
                 onCancel={() => setStripToDelete(null)}
+            />
+
+            <ConfirmDialog
+                open={showUnsavedBackDialog}
+                onOpenChange={setShowUnsavedBackDialog}
+                title="Unsaved Changes"
+                description="You have unsaved changes. Do you want to go back without saving these changes?"
+                confirmText="Leave Without Saving"
+                cancelText="Cancel"
+                variant="warning"
+                onConfirm={() => {
+                    setHasUnsavedChanges(false);
+                    setShowUnsavedBackDialog(false);
+                    if (onDirtyChange) onDirtyChange(false);
+                    if (onBack) onBack();
+                }}
+                onCancel={() => setShowUnsavedBackDialog(false)}
             />
         </div>
     );

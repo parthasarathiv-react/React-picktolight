@@ -927,7 +927,7 @@ export default function Monitoring() {
             const wallEntry = controllerEntry.walls.get(wallName);
 
             // Add shelves
-            const shelfCount = cupboard.shelves || cupboard.rows || 5;
+            const shelfCount = cupboard.shelfLayout ? cupboard.shelfLayout.length : (cupboard.shelves || cupboard.rows || 0);
             const shelves = Array.from({ length: shelfCount }, (_, i) => ({
                 id: `${cupboard.id}-shelf-${i + 1}`,
                 name: `Shelf ${i + 1}`,

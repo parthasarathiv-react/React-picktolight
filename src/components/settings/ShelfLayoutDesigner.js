@@ -1078,6 +1078,7 @@ export default function ShelfLayoutDesigner({ cupboard, onBack, cupboardsData, s
                 onConfirm={() => {
                     setShowUnsavedDialog(false);
                     setIsDirty(false);
+                    if (onDirtyChange) onDirtyChange(false);
                     onBack();
                 }}
                 onCancel={() => setShowUnsavedDialog(false)}

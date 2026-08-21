@@ -15,7 +15,8 @@ export default function ShelvesTab({
     filterController: propFilterController,
     onFilterControllerChange,
     filterWall: propFilterWall,
-    onFilterWallChange
+    onFilterWallChange,
+    onDirtyChange
 }) {
     const [internalFilterController, setInternalFilterController] = useState('all');
     const filterController = propFilterController !== undefined ? propFilterController : internalFilterController;
@@ -33,6 +34,7 @@ export default function ShelvesTab({
                 cupboardsData={cupboardsData}
                 syncCupboards={syncCupboards}
                 refetchShelves={refetchShelves}
+                onDirtyChange={onDirtyChange}
             />
         );
     }

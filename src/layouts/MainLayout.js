@@ -6,6 +6,7 @@ import { Button } from 'components/ui/button';
 import LocationSelectionDialog from 'components/LocationSelectionDialog';
 import { API_URL } from 'config/api';
 import PharmacyInventorySyncAnimation from 'components/PharmacyInventorySyncAnimation';
+import { ConfirmDialog } from 'components/ui/ConfirmDialog';
 
 
 export default function MainLayout() {
@@ -14,6 +15,9 @@ export default function MainLayout() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [showLocationDialog, setShowLocationDialog] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
+    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+    const [showUnsavedNavDialog, setShowUnsavedNavDialog] = useState(false);
+    const [pendingNavAction, setPendingNavAction] = useState(null);
 
     const userRole = (localStorage.getItem('user_role') || 'admin').toLowerCase();
     const isAdmin = userRole === 'admin';
@@ -96,6 +100,24 @@ export default function MainLayout() {
         navigate('/login');
     };
 
+    const handleLogoutClick = () => {
+        if (hasUnsavedChanges) {
+            setPendingNavAction(() => handleLogout);
+            setShowUnsavedNavDialog(true);
+        } else {
+            handleLogout();
+        }
+    };
+
+    const handleLocationClick = () => {
+        if (hasUnsavedChanges) {
+            setPendingNavAction(() => () => setShowLocationDialog(true));
+            setShowUnsavedNavDialog(true);
+        } else {
+            setShowLocationDialog(true);
+        }
+    };
+
     const handleLocationSelect = (location) => {
         localStorage.setItem('selectedLocation', JSON.stringify(location));
         setShowLocationDialog(false);
@@ -136,6 +158,14 @@ export default function MainLayout() {
                             <NavLink
                                 key={item.path}
                                 to={item.path}
+                                onClick={(e) => {
+                                    if (hasUnsavedChanges && location.pathname !== item.path) {
+                                        e.preventDefault();
+                                        const targetPath = item.path;
+                                        setPendingNavAction(() => () => navigate(targetPath));
+                                        setShowUnsavedNavDialog(true);
+                                    }
+                                }}
                                 className={({ isActive }) => cn(
                                     "flex items-center py-2.5 rounded-[var(--radius)] text-sm font-medium transition-all duration-200 group relative overflow-hidden",
                                     isSidebarOpen ? "px-3 gap-3 mx-1" : "justify-center mx-auto w-10 px-0",
@@ -187,7 +217,7 @@ export default function MainLayout() {
                     </div>
 
                     <Button variant="ghost"
-                        onClick={() => setShowLocationDialog(true)}
+                        onClick={handleLocationClick}
                         className={cn(
                             "flex items-center rounded-[var(--radius)] text-sm font-medium text-muted-foreground hover:text-white hover:bg-ot-surface-elev-bottom transition-colors overflow-hidden whitespace-nowrap mx-auto",
                             isSidebarOpen ? "w-[calc(100%-8px)] px-3 py-2 gap-3" : "w-10 h-10 justify-center p-0"
@@ -205,7 +235,7 @@ export default function MainLayout() {
 
                     <div className="h-px bg-ot-border w-full my-0.5" />
                     <Button variant="ghost"
-                        onClick={handleLogout}
+                        onClick={handleLogoutClick}
                         className={cn(
                             "flex items-center rounded-[var(--radius)] text-sm font-medium text-muted-foreground hover:text-white hover:bg-ot-surface-elev-bottom transition-colors overflow-hidden whitespace-nowrap mx-auto",
                             isSidebarOpen ? "w-[calc(100%-8px)] px-3 py-2 gap-3" : "w-10 h-10 justify-center p-0"
@@ -254,10 +284,32 @@ export default function MainLayout() {
 
                 <div className="flex-1 overflow-auto p-6">
                     <div className="mx-auto">
-                        <Outlet context={{ setSidebarOpen: setIsSidebarOpen }} />
+                        <Outlet context={{ setSidebarOpen: setIsSidebarOpen, setHasUnsavedChanges, hasUnsavedChanges }} />
                     </div>
                 </div>
             </main>
+
+            <ConfirmDialog
+                open={showUnsavedNavDialog}
+                onOpenChange={setShowUnsavedNavDialog}
+                title="Unsaved Changes"
+                description="You have unsaved changes. Do you want to go back without saving these changes?"
+                confirmText="Leave Without Saving"
+                cancelText="Cancel"
+                variant="warning"
+                onConfirm={() => {
+                    setHasUnsavedChanges(false);
+                    setShowUnsavedNavDialog(false);
+                    if (pendingNavAction) {
+                        pendingNavAction();
+                        setPendingNavAction(null);
+                    }
+                }}
+                onCancel={() => {
+                    setShowUnsavedNavDialog(false);
+                    setPendingNavAction(null);
+                }}
+            />
 
             <LocationSelectionDialog
                 open={showLocationDialog}

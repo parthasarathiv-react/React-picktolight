@@ -21,16 +21,38 @@ import ShelvesTab from 'components/settings/ShelvesTab';
 import BinsTab from 'components/settings/BinsTab';
 import LedSetupTab from 'components/settings/LedSetupTab';
 import LedStripsTab from 'components/settings/LedStripsTab';
+import { ConfirmDialog } from 'components/ui/ConfirmDialog';
 
 export default function Settings() {
-    const { setSidebarOpen } = useOutletContext() || {};
+    const { setSidebarOpen, setHasUnsavedChanges } = useOutletContext() || {};
     const [activeTab, setActiveTab] = useState(() => {
         return localStorage.getItem('settings_active_tab') || 'controllers';
     });
 
     const [isLedDesignerActive, setIsLedDesignerActive] = useState(false);
+    const [isTabDirty, setIsTabDirty] = useState(false);
+    const [showUnsavedTabDialog, setShowUnsavedTabDialog] = useState(false);
+    const [pendingTabId, setPendingTabId] = useState(null);
+
+    useEffect(() => {
+        if (setHasUnsavedChanges) {
+            setHasUnsavedChanges(isTabDirty);
+        }
+    }, [isTabDirty, setHasUnsavedChanges]);
 
     const handleTabChange = (tabId) => {
+        if (tabId === activeTab) return;
+        if (isTabDirty) {
+            setPendingTabId(tabId);
+            setShowUnsavedTabDialog(true);
+            return;
+        }
+        confirmTabChange(tabId);
+    };
+
+    const confirmTabChange = (tabId) => {
+        setIsTabDirty(false);
+        if (setHasUnsavedChanges) setHasUnsavedChanges(false);
         setActiveTab(tabId);
         localStorage.setItem('settings_active_tab', tabId);
         setSelectedController(null);
@@ -746,9 +768,11 @@ export default function Settings() {
                                     controller={selectedController}
                                     onBack={handleBackFromDesigner}
                                     wallsData={wallsData}
+                                    cupboardsData={cupboardsData}
                                     syncWalls={syncWalls}
                                     refetchWalls={refetchWalls}
                                     refetchControllers={refetchControllers}
+                                    onDirtyChange={setIsTabDirty}
                                 />
                             )}
 
@@ -766,6 +790,7 @@ export default function Settings() {
                                     refetchCupboards={refetchCupboards}
                                     refetchWalls={refetchWalls}
                                     refetchControllers={refetchControllers}
+                                    onDirtyChange={setIsTabDirty}
                                 />
                             )}
 
@@ -783,6 +808,7 @@ export default function Settings() {
                                     onFilterControllerChange={handleShelfFilterControllerChange}
                                     filterWall={shelfFilterWall}
                                     onFilterWallChange={handleShelfFilterWallChange}
+                                    onDirtyChange={setIsTabDirty}
                                 />
                             )}
 
@@ -802,6 +828,7 @@ export default function Settings() {
                                     onFilterWallChange={handleBinFilterWallChange}
                                     filterCupboard={binFilterCupboard}
                                     onFilterCupboardChange={handleBinFilterCupboardChange}
+                                    onDirtyChange={setIsTabDirty}
                                 />
                             )}
 
@@ -831,6 +858,7 @@ export default function Settings() {
                                     onBack={() => setIsLedDesignerActive(false)}
                                     onOpenDesigner={() => setIsLedDesignerActive(true)}
                                     isDesignerActive={isLedDesignerActive}
+                                    onDirtyChange={setIsTabDirty}
                                     onGoToBins={(targetCupboard) => {
                                         handleTabChange('bins');
                                         if (targetCupboard) {
@@ -844,6 +872,27 @@ export default function Settings() {
                     )}
                 </div>
             </Card>
+
+            <ConfirmDialog
+                open={showUnsavedTabDialog}
+                onOpenChange={setShowUnsavedTabDialog}
+                title="Unsaved Changes"
+                description="You have unsaved changes. Do you want to go back without saving these changes?"
+                confirmText="Leave Without Saving"
+                cancelText="Cancel"
+                variant="warning"
+                onConfirm={() => {
+                    setShowUnsavedTabDialog(false);
+                    if (pendingTabId) {
+                        confirmTabChange(pendingTabId);
+                        setPendingTabId(null);
+                    }
+                }}
+                onCancel={() => {
+                    setShowUnsavedTabDialog(false);
+                    setPendingTabId(null);
+                }}
+            />
         </div>
     );
 }

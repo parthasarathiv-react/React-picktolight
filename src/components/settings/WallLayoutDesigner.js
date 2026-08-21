@@ -14,7 +14,7 @@ const MIN_ROWS = 10;
 const ROW_LABEL_W = 24;   // px for A–N labels on the left
 const COL_LABEL_H = 18;   // px for 1–N labels on top
 
-export default function WallLayoutDesigner({ controller, onBack, wallsData, syncWalls, onDirtyChange, refetchWalls }) {
+export default function WallLayoutDesigner({ controller, onBack, wallsData, cupboardsData, syncWalls, onDirtyChange, refetchWalls }) {
     const [canvasWalls, setCanvasWalls] = useState([]);
     const [dragging, setDragging] = useState(null);
     const [selectedWallId, setSelectedWallId] = useState(null);
@@ -338,7 +338,6 @@ export default function WallLayoutDesigner({ controller, onBack, wallsData, sync
 
             setIsDirty(false);
             setSaveFlash(true);
-            setTimeout(() => setSaveFlash(false), 2000);
 
             if (createdCount > 0 && updatedCount > 0) {
                 toast.success(`Successfully created ${createdCount} new wall(s) and updated ${updatedCount} wall(s)!`);
@@ -349,6 +348,11 @@ export default function WallLayoutDesigner({ controller, onBack, wallsData, sync
             } else {
                 toast.success("No changes to save.");
             }
+
+            setTimeout(() => {
+                setSaveFlash(false);
+                onBack();
+            }, 800);
         } catch (e) {
             console.error("Failed to save wall layout", e);
             toast.error(e.message || "Failed to save wall layout");
@@ -535,8 +539,8 @@ export default function WallLayoutDesigner({ controller, onBack, wallsData, sync
                                         {/* Cupboard mini tiles */}
                                         <div className="flex flex-wrap gap-0.5 mt-1 overflow-hidden"
                                             style={{ flexDirection: wall.orientation === 'v' ? 'column' : 'row' }}>
-                                            {Array.from({ length: wall.cupboardsCount }).map((_, i) => (
-                                                <div key={i}
+                                            {(cupboardsData ? cupboardsData.filter(c => c.wall === wall.name) : []).map((c, i) => (
+                                                <div key={c.id || i}
                                                     className="rounded-sm bg-ot-action/35 border border-ot-action/40 flex-shrink-0"
                                                     style={{ width: 11, height: 11 }} />
                                             ))}
@@ -617,7 +621,7 @@ export default function WallLayoutDesigner({ controller, onBack, wallsData, sync
                 onCancel={() => setWallToDelete(null)}
             />
 
-            {/* Unsaved Changes Warning Dialog */}
+            {/* /* Unsaved Changes Warning Dialog  */}
             <ConfirmDialog
                 open={showUnsavedDialog}
                 onOpenChange={setShowUnsavedDialog}
@@ -629,6 +633,7 @@ export default function WallLayoutDesigner({ controller, onBack, wallsData, sync
                 onConfirm={() => {
                     setShowUnsavedDialog(false);
                     setIsDirty(false);
+                    if (onDirtyChange) onDirtyChange(false);
                     onBack();
                 }}
                 onCancel={() => setShowUnsavedDialog(false)}

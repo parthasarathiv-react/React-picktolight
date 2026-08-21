@@ -1019,6 +1019,7 @@ export default function BinLayoutDesigner({ cupboard, shelf, onBack, cupboardsDa
                 onConfirm={() => {
                     setShowUnsavedDialog(false);
                     setIsDirty(false);
+                    if (onDirtyChange) onDirtyChange(false);
                     onBack();
                 }}
                 onCancel={() => setShowUnsavedDialog(false)}

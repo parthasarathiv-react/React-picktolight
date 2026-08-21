@@ -17,7 +17,8 @@ export default function BinsTab({
     filterWall: propFilterWall,
     onFilterWallChange,
     filterCupboard: propFilterCupboard,
-    onFilterCupboardChange
+    onFilterCupboardChange,
+    onDirtyChange
 }) {
     const [internalSelectedShelfContext, setInternalSelectedShelfContext] = useState(null); // { cupboard, shelf }
     const selectedShelfContext = propSelectedShelfContext !== undefined ? propSelectedShelfContext : internalSelectedShelfContext;
@@ -44,6 +45,7 @@ export default function BinsTab({
                 cupboardsData={cupboardsData}
                 syncCupboards={syncCupboards}
                 refetchBins={refetchBins}
+                onDirtyChange={onDirtyChange}
             />
         );
     }

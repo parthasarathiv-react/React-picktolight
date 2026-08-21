@@ -292,7 +292,6 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
 
             setIsDirty(false);
             setSaveFlash(true);
-            setTimeout(() => setSaveFlash(false), 2000);
 
             if (createdCount > 0 && updatedCount > 0) {
                 toast.success(`Successfully created ${createdCount} new cupboard(s) and updated ${updatedCount} cupboard(s)!`);
@@ -303,6 +302,11 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
             } else {
                 toast.success("No changes to save.");
             }
+
+            setTimeout(() => {
+                setSaveFlash(false);
+                onBack();
+            }, 800);
 
         } catch (e) {
             console.error("Failed to save cupboard layout", e);
@@ -514,10 +518,6 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
                                                 </button>
                                             </div>
                                         </div>
-                                        <div className="mt-1.5 text-[10px] text-muted-foreground leading-tight">
-                                            {cb.shelves || 5} Shelves<br />
-                                            {cb.columns || 4} Columns
-                                        </div>
                                         {/* Position tag */}
                                         <div className="absolute bottom-0.5 right-1.5">
                                             <span className="text-[8px] text-muted-foreground/40 font-mono">
@@ -569,7 +569,6 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
                                         />
                                         <div className="text-[9px] text-muted-foreground font-mono mt-0.5 px-1 -ml-1">
                                             {String.fromCharCode(65 + c.gridY)}{c.gridX + 1}
-                                            {' · '}{c.shelves || 5} shelves
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-0.5 shrink-0 mt-0.5">
@@ -612,6 +611,7 @@ export default function CupboardLayoutDesigner({ wall, onBack, cupboardsData, sy
                 onConfirm={() => {
                     setShowUnsavedDialog(false);
                     setIsDirty(false);
+                    if (onDirtyChange) onDirtyChange(false);
                     onBack();
                 }}
                 onCancel={() => setShowUnsavedDialog(false)}

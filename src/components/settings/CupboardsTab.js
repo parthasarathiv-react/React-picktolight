@@ -12,7 +12,9 @@ export default function CupboardsTab({
     onSelectWall,
     controllersData,
     filterController: propFilterController,
-    onFilterControllerChange
+    onFilterControllerChange,
+    refetchCupboards,
+    onDirtyChange
 }) {
     const [internalFilterController, setInternalFilterController] = useState('all');
     const filterController = propFilterController !== undefined ? propFilterController : internalFilterController;
@@ -26,6 +28,8 @@ export default function CupboardsTab({
                 onBack={() => onSelectWall(null)}
                 cupboardsData={cupboardsData}
                 syncCupboards={syncCupboards}
+                refetchCupboards={refetchCupboards}
+                onDirtyChange={onDirtyChange}
             />
         );
     }
