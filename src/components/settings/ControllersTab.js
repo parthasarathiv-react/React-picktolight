@@ -590,7 +590,7 @@ export default function ControllersTab({ controllersData, syncControllers, refet
         }
     };
 
-    // Open View Sheet & fetch assigned strips from GET API get-channelstrip-channelid
+    // Open View Sheet & fetch assigned strips from GET API get-channelstrip-by-controlid-with-channelids
     const handleOpenStripSheet = async (ctrl, portIndex, portObjParam) => {
         const ctrlPorts = controllerPortsMap[ctrl.id] || [];
         const portObj = portObjParam || ctrlPorts[portIndex];
@@ -637,7 +637,7 @@ export default function ControllersTab({ controllersData, syncControllers, refet
             }
 
             // 1. Fetch channel strip mappings from GET APIs
-            const csRes = await apiService.getChannelStrips(channelId, activeViewPort?.ctl_id || activeViewPort?.controller_id);
+            const csRes = await apiService.getChannelStrips(channelId, ctrl?.id || ctrl?.ctl_id || activeViewPort?.ctl_id || activeViewPort?.controller_id);
             const csList = csRes?.data || (Array.isArray(csRes) ? csRes : []);
 
             // 2. Fetch full strips to enrich names, LEDs, shelves, bins

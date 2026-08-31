@@ -147,15 +147,9 @@ export const apiService = {
         return handleResponse(response);
     },
     getChannelStrips: async (channelId, ctlId) => {
-        let url = `${API_URL}/config/get-channelstrips`;
-        const params = new URLSearchParams();
-        if (channelId) params.append('channelid', channelId);
-        if (ctlId) params.append('ctl_id', ctlId);
-        const qStr = params.toString();
-        if (qStr) {
-            url = channelId ? `${API_URL}/config/get-channelstrip-channelid?${qStr}` : `${API_URL}/config/get-channelstrips?${qStr}`;
-        }
-        const response = await fetch(url, {
+        const cId = ctlId || '';
+        const chId = channelId || 'ALL';
+        const response = await fetch(`${API_URL}/config/get-channelstrip-by-controlid-with-channelids?ctl_id=${cId}&channel_id=${chId}`, {
             headers: getHeaders()
         });
         return handleResponse(response);

@@ -206,7 +206,7 @@ const DrawerCell = React.memo(function DrawerCell({ cupboardId, row, col, ledsPe
             )}
         >
             <div className={cn(
-                "font-mono font-bold text-center transition-colors z-10 whitespace-nowrap overflow-hidden text-ellipsis max-w-[95%]",
+                "font-mono font-bold text-center transition-colors z-30 whitespace-nowrap overflow-hidden text-ellipsis max-w-[95%]",
                 labelClass,
                 stripTheme ? `${stripTheme.text}` : "text-muted-foreground group-hover:text-white"
             )} title={cellId}>
@@ -284,16 +284,16 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
             ref={bayRef}
             onClick={onSelect}
             className={cn(
-                "w-fit max-w-full flex-none text-left transition-opacity cursor-pointer",
+                "w-fit max-w-full flex-none text-left transition-opacity cursor-pointer relative z-25",
                 isActive ? "opacity-100" : "opacity-85 hover:opacity-100"
             )}
         >
             <Card className={cn(
-                "max-w-full bg-ot-surface-top border shadow-2xl flex flex-col overflow-hidden rounded-md transition-all",
+                "max-w-full bg-ot-surface-top border shadow-2xl flex flex-col overflow-visible rounded-md transition-all relative z-25",
                 wallTheme.border,
                 isActive ? "ring-2 ring-ot-action/80" : ""
             )}>
-                <div className={cn("px-3 py-2 border-b border-ot-border/70 flex items-center justify-between gap-2 shrink-0", wallTheme.headerBg)}>
+                <div className={cn("px-3 py-2 border-b border-ot-border/70 flex items-center justify-between gap-2 shrink-0 relative z-30 shadow-sm", wallTheme.headerBg)}>
                     <div className="min-w-0">
                         <div className="text-sm font-bold text-white truncate flex items-center gap-1.5">
                             <span className={cn("w-2 h-2 rounded-full shrink-0", wallTheme.accentDot)} />
@@ -321,7 +321,7 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
 
                         return (
                             <div
-                                className="relative bg-ot-surface-top/50 border-t border-ot-border/40 overflow-hidden"
+                                className="relative bg-ot-surface-top/50 border-t border-ot-border/40 overflow-visible pt-1"
                                 style={{
                                     width: canvasWidth,
                                     height: canvasHeight
@@ -359,7 +359,7 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                                         >
                                             {/* Shelf Label */}
                                             <div className={cn(
-                                                "absolute -top-5 left-1 text-[10px] font-semibold uppercase tracking-wider z-10 pointer-events-none transition-colors",
+                                                "absolute -top-5 left-1 text-[10px] font-semibold uppercase tracking-wider z-30 pointer-events-none transition-colors",
                                                 shelfTheme ? `${shelfTheme.text} font-bold` : "text-muted-foreground"
                                             )}>
                                                 {shelf.label}
@@ -539,12 +539,13 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                                         }
                                     } catch (e) { }
 
-                                    const count = 6;
                                     const colors = (strip.colors && strip.colors.length > 0) ? strip.colors : savedColors;
+                                    const count = (strip.colors && strip.colors.length > 0) ? strip.colors.length : (strip.ledCount || strip.led_count || 6);
                                     const colorIdx = getStripColorIndex(strip, stripIdx);
                                     const colorTheme = getStripColor(colorIdx);
                                     const cupId = cupboard.id || cupboard.cupboard_id || 'c';
                                     const sId = strip.id || strip.strip_id;
+                                    // const sId = strip.id || strip.strip_id;
 
                                     return (
                                         <div
@@ -645,15 +646,22 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                                                 className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-1 pointer-events-none opacity-0"
                                             />
  
-                                            {/* Strip Label Badge - Placed cleanly ABOVE strip so it never covers LEDs */}
-                                            <div className={cn(
-                                                "absolute -top-6 left-1 text-[9px] font-mono font-bold whitespace-nowrap px-1.5 py-0.5 rounded bg-slate-950/95 border shadow-md z-40 pointer-events-none tracking-tight",
-                                                strip.strip_status === false
-                                                    ? "border-slate-700 text-slate-500 bg-slate-900/50"
-                                                    : cn(colorTheme.border, colorTheme.text)
-                                            )}>
-                                                {strip.label}{strip.strip_status === false ? " (Disabled)" : ""}
-                                            </div>
+                                            {/* Strip Label Badge - Placed cleanly ABOVE strip so it never covers LEDs (flips below if near top boundary) */}
+                                            {(() => {
+                                                const stripYVal = Number(strip.y) || 0;
+                                                const isNearTop = stripYVal < 24;
+                                                return (
+                                                    <div className={cn(
+                                                        "absolute left-1 text-[9px] font-mono font-bold whitespace-nowrap px-1.5 py-0.5 rounded bg-slate-950/95 border shadow-md z-40 pointer-events-none tracking-tight transition-all",
+                                                        isNearTop ? "top-6" : "-top-6",
+                                                        strip.strip_status === false
+                                                            ? "border-slate-700 text-slate-500 bg-slate-900/50"
+                                                            : cn(colorTheme.border, colorTheme.text)
+                                                    )}>
+                                                        {strip.label}{strip.strip_status === false ? " (Disabled)" : ""}
+                                                    </div>
+                                                );
+                                            })()}
  
                                             {/* LED Lights Array */}
                                             <div className="flex items-center justify-around w-full px-1">
@@ -663,7 +671,8 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                                                         ? Number(strip.width)
                                                         : Math.max(40, Math.min(180, (count || 6) * 11 + 12));
                                                     const dotSize = Math.max(3, Math.min(6, (stripW - 8) / renderCount));
-                                                    const hex = colors[i % colors.length] || '#facc15';
+                                                    const hex = (strip.colors && strip.colors[i] !== undefined) ? strip.colors[i] : '#475569';
+                                                    const isOff = strip.strip_status === false || !hex || hex === '#475569' || hex === 'gray';
                                                     return (
                                                         <div
                                                             key={i}
@@ -671,8 +680,8 @@ const CupboardBay = React.memo(function CupboardBay({ cupboard, isActive, onSele
                                                             style={{
                                                                 width: dotSize,
                                                                 height: dotSize,
-                                                                backgroundColor: strip.strip_status === false ? '#475569' : hex,
-                                                                boxShadow: strip.strip_status === false ? 'none' : `0 0 6px ${hex}`
+                                                                backgroundColor: isOff ? '#475569' : hex,
+                                                                boxShadow: isOff ? 'none' : `0 0 6px ${hex}`
                                                             }}
                                                         />
                                                     );
@@ -849,7 +858,7 @@ export default function Cupboard2D({ cupboards = [], controllerName, selectedCup
                 <div
                     ref={scrollRef}
                     className={cn(
-                        "flex-1 min-h-0 flex p-2 items-start overflow-x-auto overflow-y-auto overscroll-contain cursor-grab active:cursor-grabbing select-none touch-none relative z-10"
+                        "flex-1 min-h-0 flex p-2 items-start overflow-x-auto overflow-y-auto overscroll-contain cursor-grab active:cursor-grabbing select-none touch-none relative z-25"
                     )}
                     style={{ contain: 'strict', willChange: 'transform' }}
                     onPointerDown={handlePointerDown}

@@ -91,6 +91,159 @@ export default function LedStripsTab({
     const [localLedStrips, setLocalLedStrips] = useState([]);
     const [localChannelAssignments, setLocalChannelAssignments] = useState({});
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+    const [liveStripColorsMap, setLiveStripColorsMap] = useState({});
+    const [apiChannels, setApiChannels] = useState([]);
+
+    useEffect(() => {
+        const processWsData = (dataOrArray) => {
+            if (!dataOrArray) return;
+
+            let items = [];
+            if (Array.isArray(dataOrArray)) {
+                items = dataOrArray;
+            } else if (typeof dataOrArray === 'object') {
+                if (dataOrArray.controlport || dataOrArray.channel || dataOrArray.ctl_port || dataOrArray.ctl_ip || dataOrArray.leds || dataOrArray.led_list) {
+                    items = [dataOrArray];
+                } else {
+                    items = Object.values(dataOrArray).filter(val => val && typeof val === 'object');
+                }
+            }
+
+            if (items.length === 0) return;
+
+            setLiveStripColorsMap(prevMap => {
+                let updatedMap = { ...prevMap };
+
+                items.forEach(data => {
+                    if (!data || typeof data !== 'object') return;
+
+                    const controlport = String(data.controlport || data.ctl_port || data.ctl_ip || '').trim();
+                    const channelName = String(data.channel || data.channel_name || '').trim();
+                    const status = String(data.status || 'on').toLowerCase();
+
+                    if (!controlport || !channelName) return;
+
+                    const COLOR_NAME_MAP = {
+                        red: '#ef4444',
+                        blue: '#3b82f6',
+                        green: '#22c55e',
+                        yellow: '#facc15',
+                        pink: '#ec4899',
+                        cyan: '#06b6d4',
+                        white: '#ffffff',
+                        orange: '#f97316',
+                        purple: '#a855f7',
+                        amber: '#fbbf24',
+                        lime: '#a3e635',
+                        teal: '#2dd4bf',
+                        sky: '#38bdf8',
+                        indigo: '#818cf8',
+                        rose: '#fb7185',
+                        violet: '#a78bfa'
+                    };
+
+                    const parseColor = (colStr) => {
+                        if (!colStr) return '#475569';
+                        const clean = String(colStr).trim().toLowerCase();
+                        if (clean.startsWith('#')) return clean;
+                        if (COLOR_NAME_MAP[clean]) return COLOR_NAME_MAP[clean];
+                        return clean;
+                    };
+
+                    const ledMap = {};
+                    const ledKeysOrdered = [];
+
+                    if (data.leds && typeof data.leds === 'string') {
+                        data.leds.split('|').forEach(part => {
+                            if (!part || !part.includes(':')) return;
+                            const [numStr, colStr] = part.split(':');
+                            const ledNo = parseInt(numStr, 10);
+                            if (!isNaN(ledNo)) {
+                                ledMap[ledNo] = parseColor(colStr);
+                                if (!ledKeysOrdered.includes(ledNo)) ledKeysOrdered.push(ledNo);
+                            }
+                        });
+                    }
+
+                    if (Array.isArray(data.led_list)) {
+                        data.led_list.forEach(item => {
+                            const ledNo = parseInt(item.led_no, 10);
+                            if (!isNaN(ledNo) && item.ledcolor) {
+                                ledMap[ledNo] = parseColor(item.ledcolor);
+                                if (!ledKeysOrdered.includes(ledNo)) ledKeysOrdered.push(ledNo);
+                            }
+                        });
+                    }
+
+                    ledKeysOrdered.sort((a, b) => a - b);
+
+                    let matchedStripsInOrder = [];
+                    if (apiChannels && apiChannels.length > 0) {
+                        const matchedCh = apiChannels.find(ch => {
+                            const cName = String(ch.channel_name || ch.name || '').trim().toLowerCase();
+                            const targetName = channelName.toLowerCase();
+                            return cName === targetName || cName.replace(/\D/g, '') === targetName.replace(/\D/g, '');
+                        });
+                        if (matchedCh && Array.isArray(matchedCh.stripinchannel)) {
+                            matchedStripsInOrder = [...matchedCh.stripinchannel].sort((a, b) => parseInt(a.strip_order || 0, 10) - parseInt(b.strip_order || 0, 10));
+                        }
+                    }
+
+                    if (matchedStripsInOrder.length === 0 && localLedStrips.length > 0) {
+                        const chNum = parseInt(channelName.replace(/\D/g, ''), 10);
+                        matchedStripsInOrder = localLedStrips
+                            .filter(s => s.channel === chNum || String(s.label || '').toLowerCase().includes(channelName.toLowerCase()))
+                            .sort((a, b) => parseInt(a.strip_order || 0, 10) - parseInt(b.strip_order || 0, 10));
+                    }
+
+                    if (matchedStripsInOrder.length > 0) {
+                        let currentGlobalLedIndex = 1;
+
+                        matchedStripsInOrder.forEach(cs => {
+                            const sId = String(cs.strip_id || cs.id || '');
+                            const stripLedCount = parseInt(cs.led_count || cs.ledCount || 6, 10);
+
+                            const colorsForStrip = [];
+                            for (let i = 0; i < stripLedCount; i++) {
+                                const globalLedNo = currentGlobalLedIndex + i;
+                                const relativeLedNo = i + 1;
+                                const orderedLedNo = ledKeysOrdered[i];
+
+                                const hexColor = (status === 'off')
+                                    ? '#475569'
+                                    : (ledMap[globalLedNo] || ledMap[relativeLedNo] || (orderedLedNo ? ledMap[orderedLedNo] : null) || '#475569');
+
+                                colorsForStrip.push(hexColor);
+                            }
+
+                            if (sId) {
+                                updatedMap[sId] = colorsForStrip;
+                            }
+                            currentGlobalLedIndex += stripLedCount;
+                        });
+                    }
+                });
+
+                return updatedMap;
+            });
+        };
+
+        if (window.__LAST_WS_MESSAGES_ARRAY__ && window.__LAST_WS_MESSAGES_ARRAY__.length > 0) {
+            processWsData(window.__LAST_WS_MESSAGES_ARRAY__);
+        } else if (window.__LAST_WS_MESSAGES__ && Object.keys(window.__LAST_WS_MESSAGES__).length > 0) {
+            processWsData(window.__LAST_WS_MESSAGES__);
+        } else if (window.__LAST_WS_MESSAGE__) {
+            processWsData(window.__LAST_WS_MESSAGE__);
+        }
+
+        const handleWsMessage = (event) => {
+            const data = event.detail || event;
+            processWsData(data);
+        };
+
+        window.addEventListener('ws-led-update', handleWsMessage);
+        return () => window.removeEventListener('ws-led-update', handleWsMessage);
+    }, [apiChannels, localLedStrips]);
 
     useEffect(() => {
         if (onDirtyChange) {
@@ -186,7 +339,6 @@ export default function LedStripsTab({
     const triggerRefresh = useCallback(() => setRefreshKey(prev => prev + 1), []);
 
     // Fetch API Channels and ChannelStrips dynamically ONLY when a controller card is clicked
-    const [apiChannels, setApiChannels] = useState([]);
     const [isLoadingChannels, setIsLoadingChannels] = useState(false);
     const [isLoadingStripsData, setIsLoadingStripsData] = useState(false);
 
@@ -334,12 +486,17 @@ export default function LedStripsTab({
         }
     }, []);
 
-    // Re-fetch strips when refreshKey changes while designer is active
+    // Automatically load strips for selectedController on mount or when selectedController/controllersData updates
     useEffect(() => {
-        if (refreshKey > 0 && selectedController) {
-            fetchStripsForController(selectedController);
+        let activeCtrl = selectedController;
+        if (!activeCtrl && controllersData && controllersData.length > 0) {
+            activeCtrl = controllersData[0];
+            setSelectedController(activeCtrl);
         }
-    }, [refreshKey, selectedController, fetchStripsForController]);
+        if (activeCtrl) {
+            fetchStripsForController(activeCtrl);
+        }
+    }, [refreshKey, selectedController, controllersData, fetchStripsForController]);
 
     // Computed list of channels to render exclusively from API getChannels data
     const channelsToRender = React.useMemo(() => {
@@ -397,28 +554,31 @@ export default function LedStripsTab({
             // Gather localStrips that belong to this cupboard
             const matchingLocalStrips = localLedStrips.filter(ls => String(ls.cupboardId || ls.cupboard_id) === cupIdStr);
 
-            // If controller-specific localLedStrips have been loaded, use them exclusively
-            if (localLedStrips.length > 0) {
-                return {
-                    ...cup,
-                    shelfLayout: filteredShelfLayout,
-                    ledStrips: matchingLocalStrips
-                };
-            }
-
             // Fallback if localLedStrips not fetched yet: filter raw cup.ledStrips by selected controller ID
             const cupStrips = (cup.ledStrips || cup.led_strips || []).filter(s => {
                 const sCtl = String(s.strip_ctl_id || s.ctl_id || s.controller_id || '');
                 return !sCtl || !selectedCtlId || sCtl === selectedCtlId;
             });
 
+            const rawStrips = localLedStrips.length > 0 ? matchingLocalStrips : cupStrips;
+            const finalStrips = rawStrips.map(strip => {
+                const sId = String(strip.id || strip.strip_id || '');
+                if (sId && liveStripColorsMap[sId]) {
+                    return {
+                        ...strip,
+                        colors: liveStripColorsMap[sId]
+                    };
+                }
+                return strip;
+            });
+
             return {
                 ...cup,
                 shelfLayout: filteredShelfLayout,
-                ledStrips: cupStrips
+                ledStrips: finalStrips
             };
         });
-    }, [cupboardsData, localLedStrips, selectedController]);
+    }, [cupboardsData, localLedStrips, selectedController, liveStripColorsMap]);
 
     // Combine shelves from active cupboards layout, API shelves, and fallbacks
     const allAvailableShelves = React.useMemo(() => {
@@ -1750,10 +1910,7 @@ export default function LedStripsTab({
                                     strokeDasharray="8 4"
                                     className="animate-wire-flow-tab"
                                 />
-                                {/* Start Port Node Pin */}
-                                <circle cx={w.x1} cy={w.y1} r="4.5" fill={palette.hex} stroke="#ffffff" strokeWidth="1.5" />
-                                {/* End Target Node Pin */}
-                                <circle cx={w.x2} cy={w.y2} r="4.5" fill={palette.hex} stroke="#ffffff" strokeWidth="1.5" />
+                                {/* Wire Line Ends */}
                             </g>
                         );
                     })}
@@ -1867,7 +2024,7 @@ export default function LedStripsTab({
                 </div>
 
                 {/* ── Walls & Cupboards Real-Time Visual 2D Monitoring Stage ────────────────── */}
-                <div className="flex-1 p-4 overflow-auto flex flex-col justify-center items-center relative z-10 w-full h-full">
+                <div className="flex-1 p-4 overflow-auto flex flex-col justify-center items-center relative z-25 w-full h-full">
                     {cupboardsWithLocalStrips.length > 0 ? (
                         <div className="w-full h-full flex items-center justify-center min-h-[300px]">
                             <Cupboard2D

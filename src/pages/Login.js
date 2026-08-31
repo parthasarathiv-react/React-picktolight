@@ -2,9 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from 'components/ui/card';
 import { Input } from 'components/ui/input';
 import { Button } from 'components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from 'components/ui/dialog';
 import { useNavigate } from 'react-router-dom';
-import { Activity, Eye, EyeOff, LogIn, X, MapPin, ChevronDown, ChevronRight, Building2 } from 'lucide-react';
+import { Activity, Eye, EyeOff, LogIn } from 'lucide-react';
 import { API_URL } from 'config/api';
 
 import LocationSelectionDialog from 'components/LocationSelectionDialog';
@@ -20,8 +19,12 @@ export default function Login() {
     useEffect(() => {
         const token = localStorage.getItem('token');
         if (token) {
+            const role = (localStorage.getItem('user_role') || 'admin').toLowerCase();
             const lastPath = localStorage.getItem('last_active_path');
-            const targetPath = (lastPath && lastPath !== '/login' && lastPath !== '/') ? lastPath : '/monitoring';
+            let targetPath = (lastPath && lastPath !== '/login' && lastPath !== '/') ? lastPath : '/monitoring';
+            if (role !== 'admin') {
+                targetPath = '/monitoring';
+            }
             navigate(targetPath, { replace: true });
         }
     }, [navigate]);
@@ -76,8 +79,12 @@ export default function Login() {
     const handleLocationSelect = (location) => {
         localStorage.setItem('selectedLocation', JSON.stringify(location));
         setShowLocationDialog(false);
+        const role = (localStorage.getItem('user_role') || 'admin').toLowerCase();
         const lastPath = localStorage.getItem('last_active_path');
-        const targetPath = (lastPath && lastPath !== '/login' && lastPath !== '/') ? lastPath : '/monitoring';
+        let targetPath = (lastPath && lastPath !== '/login' && lastPath !== '/') ? lastPath : '/monitoring';
+        if (role !== 'admin') {
+            targetPath = '/monitoring';
+        }
         navigate(targetPath, { replace: true });
     };
 

@@ -41,10 +41,23 @@ function PageLoader() {
     );
 }
 
+function AdminRoute({ children }) {
+    const userRole = (localStorage.getItem('user_role') || 'admin').toLowerCase();
+    if (userRole !== 'admin') {
+        return <Navigate to="/monitoring" replace />;
+    }
+    return children;
+}
+
 function RootRedirect() {
     const token = localStorage.getItem('token');
+    const userRole = (localStorage.getItem('user_role') || 'admin').toLowerCase();
+    const isAdmin = userRole === 'admin';
     const lastPath = localStorage.getItem('last_active_path');
-    const targetPath = (lastPath && lastPath !== '/login' && lastPath !== '/') ? lastPath : '/monitoring';
+    let targetPath = (lastPath && lastPath !== '/login' && lastPath !== '/') ? lastPath : '/monitoring';
+    if (!isAdmin) {
+        targetPath = '/monitoring';
+    }
     return token ? <Navigate to={targetPath} replace /> : <Navigate to="/login" replace />;
 }
 
@@ -57,8 +70,16 @@ function App() {
                     <Route path="/" element={<RootRedirect />} />
                     <Route path="/" element={<MainLayout />}>
                         <Route path="/monitoring" element={<Monitoring />} />
-                        <Route path="/settings" element={<Settings />} />
-                        <Route path="/users" element={<Users />} />
+                        <Route path="/settings" element={
+                            <AdminRoute>
+                                <Settings />
+                            </AdminRoute>
+                        } />
+                        <Route path="/users" element={
+                            <AdminRoute>
+                                <Users />
+                            </AdminRoute>
+                        } />
                     </Route>
                     <Route path="*" element={<Navigate to="/login" replace />} />
                 </Routes>

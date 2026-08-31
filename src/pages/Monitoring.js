@@ -1,7 +1,8 @@
 import React, { useState, useCallback, lazy, Suspense, useMemo, useEffect } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import { Card, CardContent } from 'components/ui/card';
 import Cupboard2D from 'components/visualization/Cupboard2D';
-import { Layers, Box, MonitorPlay, ChevronRight, PanelRightClose, PanelRightOpen, LayoutGrid, List, Loader2, Cpu } from 'lucide-react';
+import { Layers, Box, MonitorPlay, ChevronRight, PanelRightClose, PanelRightOpen, LayoutGrid, List, Loader2, Cpu, Maximize2, Minimize2 } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { CONTROLLERS_CONFIG, WALLS_CONFIG, CUPBOARDS_CONFIG, getCupboardAssignments } from 'lib/dataStore';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from 'components/ui/collapsible';
@@ -40,6 +41,9 @@ function Canvas3DLoader() {
 }
 
 export default function Monitoring() {
+    const outletContext = useOutletContext() || {};
+    const { isExpanded = false, setIsExpanded } = outletContext;
+
     const [viewMode, setViewMode] = useState('2d'); // '2d' | '3d'
     const [layoutMode, setLayoutMode] = useState('horizontal'); // 'horizontal' | 'vertical'
     const [controlsVisible, setControlsVisible] = useState(true);
@@ -53,11 +57,28 @@ export default function Monitoring() {
             const selectedLocationStr = localStorage.getItem('selectedLocation');
             if (selectedLocationStr) {
                 const loc = JSON.parse(selectedLocationStr);
-                return loc.phr_location_id || '';
+                return loc.phr_location_id || 'All';
             }
         } catch (e) { }
-        return '';
+        return 'All';
     }, []);
+
+    const userRole = React.useMemo(() => {
+        try {
+            const storedRole = localStorage.getItem('user_role');
+            if (storedRole) return storedRole.toLowerCase();
+            const storedUser = localStorage.getItem('user');
+            if (storedUser) {
+                const parsed = JSON.parse(storedUser);
+                if (parsed.role || parsed.user_role) {
+                    return String(parsed.role || parsed.user_role).toLowerCase();
+                }
+            }
+        } catch (e) { }
+        return 'admin';
+    }, []);
+
+    const isViewer = userRole === 'viewer';
 
     const { data: fetchedControllers, isFetching: isFetchingControllers } = useQuery({
         queryKey: ['controllers', locId],
@@ -88,6 +109,7 @@ export default function Monitoring() {
 
             const channelMap = {};
             const loadedStrips = [];
+            const apiChannelsMap = {};
 
             try {
                 const stripsRes = await apiService.getStrips(locId);
@@ -102,73 +124,76 @@ export default function Monitoring() {
                     if (!ctrlId) continue;
 
                     try {
-                        const channelsRes = await apiService.getChannels(ctrlId);
-                        const channelsList = channelsRes?.data || (Array.isArray(channelsRes) ? channelsRes : []);
+                        const ctrlData = await apiService.getChannelStripsByController(ctrlId, 'ALL');
+                        const responseData = ctrlData?.data || ctrlData || {};
+                        const channelsList = responseData.channellist || [];
 
-                        if (Array.isArray(channelsList) && channelsList.length > 0) {
-                            for (let idx = 0; idx < channelsList.length; idx++) {
-                                const ch = channelsList[idx];
+                        const sortedChannelsList = [...channelsList].sort((a, b) => {
+                            const nameA = a.channel_name || '';
+                            const nameB = b.channel_name || '';
+                            return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+                        });
+
+                        apiChannelsMap[String(ctrlId)] = sortedChannelsList;
+
+                        if (Array.isArray(sortedChannelsList) && sortedChannelsList.length > 0) {
+                            for (let idx = 0; idx < sortedChannelsList.length; idx++) {
+                                const ch = sortedChannelsList[idx];
                                 const chNum = idx + 1;
                                 const channelId = ch.channel_id || ch.id;
                                 if (!channelId) continue;
 
-                                try {
-                                    const csRes = await apiService.getChannelStrips(channelId, ctrlId);
-                                    const csListRaw = (csRes && csRes.success && Array.isArray(csRes.data))
-                                        ? csRes.data
-                                        : (Array.isArray(csRes?.data) ? csRes.data : (Array.isArray(csRes) ? csRes : []));
+                                const csListRaw = ch.stripinchannel || [];
+                                const csList = [...csListRaw].sort((a, b) => {
+                                    const orderA = parseInt(a.strip_order || 0, 10);
+                                    const orderB = parseInt(b.strip_order || 0, 10);
+                                    return orderA - orderB;
+                                });
 
-                                    const csList = [...csListRaw].sort((a, b) => {
-                                        const orderA = parseInt(a.strip_order || 0, 10);
-                                        const orderB = parseInt(b.strip_order || 0, 10);
-                                        return orderA - orderB;
+                                if (csList && csList.length > 0) {
+                                    csList.forEach(csItem => {
+                                        const csStripId = String(csItem.strip_id || csItem.id || '');
+                                        const matchedStrip = fetchedStrips.find(s => String(s.strip_id || s.id) === csStripId) || {
+                                            id: csStripId,
+                                            strip_id: csStripId,
+                                            strip_name: csItem.strip_name || `Strip ${csStripId}`,
+                                            strip_gridx: csItem.x,
+                                            strip_gridy: csItem.y
+                                        };
+
+                                        const resolvedShelves = (matchedStrip.shelves_list && matchedStrip.shelves_list.length > 0) ? matchedStrip.shelves_list : ((matchedStrip.shelf_list && matchedStrip.shelf_list.length > 0) ? matchedStrip.shelf_list : ((csItem.shelves_list && csItem.shelves_list.length > 0) ? csItem.shelves_list : ((csItem.shelf_list && csItem.shelf_list.length > 0) ? csItem.shelf_list : (matchedStrip.shelves || matchedStrip.bin_list || csItem.bins || []))));
+
+                                        const formattedStrip = {
+                                            id: String(matchedStrip.strip_id || matchedStrip.id || csStripId),
+                                            strip_id: String(matchedStrip.strip_id || matchedStrip.id || csStripId),
+                                            label: matchedStrip.strip_name || matchedStrip.label || `Strip CH-${String(chNum).padStart(2, '0')}`,
+                                            channel: chNum,
+                                            channelId: channelId,
+                                            channel_id: channelId,
+                                            colorIndex: loadedStrips.length,
+                                            strip_ctl_id: String(ctrlId),
+                                            strip_shelf_id: String(matchedStrip.strip_shelf_id || csItem.strip_shelf_id || matchedStrip.shelf_id || ''),
+                                            parentStripId: matchedStrip.parentStripId || matchedStrip.parent_strip_id || csItem.parent_strip_id || null,
+                                            x: parseFloat(csItem.x ?? matchedStrip.strip_gridx ?? 40),
+                                            y: parseFloat(csItem.y ?? matchedStrip.strip_gridy ?? (40 + idx * 35)),
+                                            width: parseFloat(matchedStrip.strip_width ?? 80),
+                                            height: parseFloat(matchedStrip.strip_height ?? 22),
+                                            cupboardId: String(matchedStrip.strip_cupboard_id || matchedStrip.cupboard_id || csItem.cupboard_id || '1'),
+                                            shelves: resolvedShelves,
+                                            linkedShelves: resolvedShelves,
+                                            shelf_list: resolvedShelves,
+                                            shelves_list: resolvedShelves,
+                                            bins: resolvedShelves,
+                                            linkedBins: resolvedShelves,
+                                            channelstrip_id: csItem.channelstrip_id,
+                                            strip_order: parseInt(csItem.strip_order || 0, 10),
+                                            strip_status: csItem.strip_status !== false
+                                        };
+
+                                        channelMap[chNum] = formattedStrip;
+                                        loadedStrips.push(formattedStrip);
                                     });
-
-                                    if (csList && csList.length > 0) {
-                                        csList.forEach(csItem => {
-                                            const csStripId = String(csItem.strip_id || csItem.id || '');
-                                            const matchedStrip = fetchedStrips.find(s => String(s.strip_id || s.id) === csStripId) || {
-                                                id: csStripId,
-                                                strip_id: csStripId,
-                                                strip_name: `Strip ${csStripId}`,
-                                                strip_gridx: csItem.x,
-                                                strip_gridy: csItem.y
-                                            };
-
-                                            const resolvedShelves = (matchedStrip.shelves_list && matchedStrip.shelves_list.length > 0) ? matchedStrip.shelves_list : ((matchedStrip.shelf_list && matchedStrip.shelf_list.length > 0) ? matchedStrip.shelf_list : ((csItem.shelves_list && csItem.shelves_list.length > 0) ? csItem.shelves_list : ((csItem.shelf_list && csItem.shelf_list.length > 0) ? csItem.shelf_list : (matchedStrip.shelves || matchedStrip.bin_list || csItem.bins || []))));
-
-                                            const formattedStrip = {
-                                                id: String(matchedStrip.strip_id || matchedStrip.id || csStripId),
-                                                strip_id: String(matchedStrip.strip_id || matchedStrip.id || csStripId),
-                                                label: matchedStrip.strip_name || matchedStrip.label || `Strip CH-${String(chNum).padStart(2, '0')}`,
-                                                channel: chNum,
-                                                channelId: channelId,
-                                                channel_id: channelId,
-                                                colorIndex: loadedStrips.length,
-                                                strip_ctl_id: String(ctrlId),
-                                                strip_shelf_id: String(matchedStrip.strip_shelf_id || csItem.strip_shelf_id || matchedStrip.shelf_id || ''),
-                                                parentStripId: matchedStrip.parentStripId || matchedStrip.parent_strip_id || csItem.parent_strip_id || null,
-                                                x: parseFloat(csItem.x ?? matchedStrip.strip_gridx ?? 40),
-                                                y: parseFloat(csItem.y ?? matchedStrip.strip_gridy ?? (40 + idx * 35)),
-                                                width: parseFloat(matchedStrip.strip_width ?? 80),
-                                                height: parseFloat(matchedStrip.strip_height ?? 22),
-                                                cupboardId: String(matchedStrip.strip_cupboard_id || matchedStrip.cupboard_id || csItem.cupboard_id || '1'),
-                                                shelves: resolvedShelves,
-                                                linkedShelves: resolvedShelves,
-                                                shelf_list: resolvedShelves,
-                                                shelves_list: resolvedShelves,
-                                                bins: resolvedShelves,
-                                                linkedBins: resolvedShelves,
-                                                channelstrip_id: csItem.channelstrip_id,
-                                                strip_order: parseInt(csItem.strip_order || 0, 10),
-                                                strip_status: csItem.strip_status !== false
-                                            };
-
-                                            channelMap[chNum] = formattedStrip;
-                                            loadedStrips.push(formattedStrip);
-                                        });
-                                    }
-                                } catch (e) { }
+                                }
                             }
                         }
                     } catch (e) { }
@@ -204,9 +229,9 @@ export default function Monitoring() {
                     }
                 });
 
-                return { channelMap, loadedStrips };
+                return { channelMap, loadedStrips, apiChannelsMap };
             } catch (e) {
-                return { channelMap, loadedStrips };
+                return { channelMap, loadedStrips, apiChannelsMap };
             }
         },
         enabled: !!locId,
@@ -217,41 +242,13 @@ export default function Monitoring() {
     }, []);
 
     const channelAssignments = useMemo(() => {
-        let map = {};
-        if (stripConfigData?.channelMap && Object.keys(stripConfigData.channelMap).length > 0) {
-            map = { ...stripConfigData.channelMap };
-        }
-        try {
-            const saved = localStorage.getItem('localChannelAssignments');
-            if (saved) {
-                const parsed = JSON.parse(saved);
-                map = { ...map, ...parsed };
-            }
-        } catch (e) { }
-        return map;
+        return stripConfigData?.channelMap || {};
     }, [stripConfigData]);
 
     const allSavedStrips = useMemo(() => {
-        let list = [];
-        if (stripConfigData?.loadedStrips && stripConfigData.loadedStrips.length > 0) {
-            list = [...stripConfigData.loadedStrips];
-        }
-        try {
-            const saved = localStorage.getItem('localLedStrips');
-            if (saved) {
-                const parsed = JSON.parse(saved);
-                if (Array.isArray(parsed)) {
-                    parsed.forEach(ls => {
-                        const lsId = String(ls.id || ls.strip_id);
-                        if (!list.some(item => String(item.id || item.strip_id) === lsId)) {
-                            list.push(ls);
-                        }
-                    });
-                }
-            }
-        } catch (e) { }
-        return list;
+        return stripConfigData?.loadedStrips || [];
     }, [stripConfigData]);
+
 
     const calculateWirePaths = useCallback(() => {
         if (!containerRef.current) return;
@@ -507,9 +504,184 @@ export default function Monitoring() {
 
 
 
-    const [controllersData, setControllersData] = useState([...CONTROLLERS_CONFIG]);
-    const [wallsData, setWallsData] = useState([...WALLS_CONFIG]);
-    const [cupboardsData, setCupboardsData] = useState([...CUPBOARDS_CONFIG]);
+    const [controllersData, setControllersData] = useState([]);
+    const [wallsData, setWallsData] = useState([]);
+    const [cupboardsData, setCupboardsData] = useState([]);
+    const [liveStripColorsMap, setLiveStripColorsMap] = useState({});
+
+    useEffect(() => {
+        const processWsData = (dataOrArray) => {
+            if (!dataOrArray) return;
+
+            let items = [];
+            if (Array.isArray(dataOrArray)) {
+                items = dataOrArray;
+            } else if (typeof dataOrArray === 'object') {
+                if (dataOrArray.controlport || dataOrArray.channel || dataOrArray.ctl_port || dataOrArray.ctl_ip || dataOrArray.leds || dataOrArray.led_list) {
+                    items = [dataOrArray];
+                } else {
+                    items = Object.values(dataOrArray).filter(val => val && typeof val === 'object');
+                }
+            }
+
+            if (items.length === 0) return;
+
+            setLiveStripColorsMap(prevMap => {
+                let updatedMap = { ...prevMap };
+
+                items.forEach(data => {
+                    if (!data || typeof data !== 'object') return;
+
+                    const controlport = String(data.controlport || data.ctl_port || data.ctl_ip || '').trim();
+                    const channelName = String(data.channel || data.channel_name || '').trim();
+                    const status = String(data.status || 'on').toLowerCase();
+
+                    if (!controlport || !channelName) return;
+
+                    const wsIp = controlport.includes(':') ? controlport.split(':')[0] : controlport;
+                    const wsPort = controlport.includes(':') ? controlport.split(':')[1] : '';
+
+                    const COLOR_NAME_MAP = {
+                        red: '#ef4444',
+                        blue: '#3b82f6',
+                        green: '#22c55e',
+                        yellow: '#facc15',
+                        pink: '#ec4899',
+                        cyan: '#06b6d4',
+                        white: '#ffffff',
+                        orange: '#f97316',
+                        purple: '#a855f7',
+                        amber: '#fbbf24',
+                        lime: '#a3e635',
+                        teal: '#2dd4bf',
+                        sky: '#38bdf8',
+                        indigo: '#818cf8',
+                        rose: '#fb7185',
+                        violet: '#a78bfa'
+                    };
+
+                    const parseColor = (colStr) => {
+                        if (!colStr) return '#475569';
+                        const clean = String(colStr).trim().toLowerCase();
+                        if (clean.startsWith('#')) return clean;
+                        if (COLOR_NAME_MAP[clean]) return COLOR_NAME_MAP[clean];
+                        return clean;
+                    };
+
+                    const ledMap = {};
+                    const ledKeysOrdered = [];
+
+                    if (data.leds && typeof data.leds === 'string') {
+                        data.leds.split('|').forEach(part => {
+                            if (!part || !part.includes(':')) return;
+                            const [numStr, colStr] = part.split(':');
+                            const ledNo = parseInt(numStr, 10);
+                            if (!isNaN(ledNo)) {
+                                ledMap[ledNo] = parseColor(colStr);
+                                if (!ledKeysOrdered.includes(ledNo)) ledKeysOrdered.push(ledNo);
+                            }
+                        });
+                    }
+
+                    if (Array.isArray(data.led_list)) {
+                        data.led_list.forEach(item => {
+                            const ledNo = parseInt(item.led_no, 10);
+                            if (!isNaN(ledNo) && item.ledcolor) {
+                                ledMap[ledNo] = parseColor(item.ledcolor);
+                                if (!ledKeysOrdered.includes(ledNo)) ledKeysOrdered.push(ledNo);
+                            }
+                        });
+                    }
+
+                    ledKeysOrdered.sort((a, b) => a - b);
+
+                    const apiChannelsMap = stripConfigData?.apiChannelsMap || {};
+                    let matchedStripsInOrder = [];
+
+                    const controllers = fetchedControllers || [];
+                    const targetCtrl = controllers.find(c => {
+                        const cIp = String(c.ctl_ip || c.ip || '').trim();
+                        return cIp === wsIp || (wsPort && String(c.ctl_port || c.port || '').trim() === wsPort && cIp === wsIp);
+                    }) || controllers[0];
+
+                    if (targetCtrl) {
+                        const ctrlId = String(targetCtrl.ctl_id || targetCtrl.id || '');
+                        const chList = apiChannelsMap[ctrlId] || [];
+                        const matchedCh = chList.find(ch => {
+                            const cName = String(ch.channel_name || ch.name || '').trim().toLowerCase();
+                            const targetName = channelName.toLowerCase();
+                            return cName === targetName || cName.replace(/\D/g, '') === targetName.replace(/\D/g, '');
+                        });
+
+                        if (matchedCh && Array.isArray(matchedCh.stripinchannel)) {
+                            matchedStripsInOrder = [...matchedCh.stripinchannel].sort((a, b) => parseInt(a.strip_order || 0, 10) - parseInt(b.strip_order || 0, 10));
+                        }
+                    }
+
+                    if (matchedStripsInOrder.length === 0) {
+                        for (const cId in apiChannelsMap) {
+                            const chList = apiChannelsMap[cId] || [];
+                            const matchedCh = chList.find(ch => {
+                                const cName = String(ch.channel_name || ch.name || '').trim().toLowerCase();
+                                const targetName = channelName.toLowerCase();
+                                return cName === targetName || cName.replace(/\D/g, '') === targetName.replace(/\D/g, '');
+                            });
+                            if (matchedCh && Array.isArray(matchedCh.stripinchannel) && matchedCh.stripinchannel.length > 0) {
+                                matchedStripsInOrder = [...matchedCh.stripinchannel].sort((a, b) => parseInt(a.strip_order || 0, 10) - parseInt(b.strip_order || 0, 10));
+                                break;
+                            }
+                        }
+                    }
+
+                    if (matchedStripsInOrder.length > 0) {
+                        let currentGlobalLedIndex = 1;
+
+                        matchedStripsInOrder.forEach(cs => {
+                            const sId = String(cs.strip_id || cs.id || '');
+                            const matchedStripObj = (allSavedStrips || []).find(s => String(s.strip_id || s.id) === sId);
+                            const stripLedCount = parseInt(matchedStripObj?.ledCount || cs.led_count || 6, 10);
+
+                            const colorsForStrip = [];
+                            for (let i = 0; i < stripLedCount; i++) {
+                                const globalLedNo = currentGlobalLedIndex + i;
+                                const relativeLedNo = i + 1;
+                                const orderedLedNo = ledKeysOrdered[i];
+
+                                const hexColor = (status === 'off')
+                                    ? '#475569'
+                                    : (ledMap[globalLedNo] || ledMap[relativeLedNo] || (orderedLedNo ? ledMap[orderedLedNo] : null) || '#475569');
+
+                                colorsForStrip.push(hexColor);
+                            }
+
+                            if (sId) {
+                                updatedMap[sId] = colorsForStrip;
+                            }
+                            currentGlobalLedIndex += stripLedCount;
+                        });
+                    }
+                });
+
+                return updatedMap;
+            });
+        };
+
+        if (window.__LAST_WS_MESSAGES_ARRAY__ && window.__LAST_WS_MESSAGES_ARRAY__.length > 0) {
+            processWsData(window.__LAST_WS_MESSAGES_ARRAY__);
+        } else if (window.__LAST_WS_MESSAGES__ && Object.keys(window.__LAST_WS_MESSAGES__).length > 0) {
+            processWsData(window.__LAST_WS_MESSAGES__);
+        } else if (window.__LAST_WS_MESSAGE__) {
+            processWsData(window.__LAST_WS_MESSAGE__);
+        }
+
+        const handleWsMessage = (event) => {
+            const data = event.detail || event;
+            processWsData(data);
+        };
+
+        window.addEventListener('ws-led-update', handleWsMessage);
+        return () => window.removeEventListener('ws-led-update', handleWsMessage);
+    }, [stripConfigData, fetchedControllers, allSavedStrips]);
 
     useEffect(() => {
         if (fetchedControllers) {
@@ -825,41 +997,6 @@ export default function Monitoring() {
                     ledStrips = [...matchingStrips];
                 }
 
-                // 2. Fallback / Merge with localLedStrips from localStorage if missing or extra strips exist
-                try {
-                    const localStripsStr = localStorage.getItem('localLedStrips');
-                    if (localStripsStr) {
-                        const parsedStrips = JSON.parse(localStripsStr);
-                        if (Array.isArray(parsedStrips)) {
-                            const cId = String(c.cupboard_id || c.id || '').trim();
-                            const cName = String(c.cupboard_name || c.name || '').trim();
-                            const localForCupboard = parsedStrips.filter(s => {
-                                const sCupId = String(s.cupboardId || s.cupboard_id || '').trim();
-                                if (sCupId !== '') {
-                                    return sCupId === cId || sCupId === cName;
-                                }
-                                return true; // fallback if cupboardId not set
-                            });
-
-                            localForCupboard.forEach(ls => {
-                                const lsId = String(ls.id || ls.strip_id);
-                                if (!ledStrips.some(existing => String(existing.id || existing.strip_id) === lsId)) {
-                                    ledStrips.push(ls);
-                                }
-                            });
-                        }
-                    }
-                } catch (e) { }
-
-                if (!ledStrips || ledStrips.length === 0) {
-                    try {
-                        const layouts = JSON.parse(localStorage.getItem('cupboardLayouts') || '{}');
-                        if (layouts[c.cupboard_id] && layouts[c.cupboard_id].ledStrips) {
-                            ledStrips = layouts[c.cupboard_id].ledStrips;
-                        }
-                    } catch (e) { }
-                }
-
                 const cupboardObj = {
                     id: c.cupboard_id,
                     name: c.cupboard_name,
@@ -996,6 +1133,44 @@ export default function Monitoring() {
         firstController ||
         { name: 'None', cupboards: [], walls: [] };
 
+    const currentApiChannels = useMemo(() => {
+        const selectedCtlId = String(selectedController?.ctl_id || selectedController?.id || '');
+        if (selectedCtlId && stripConfigData?.apiChannelsMap?.[selectedCtlId]) {
+            return stripConfigData.apiChannelsMap[selectedCtlId];
+        }
+        return [];
+    }, [selectedController, stripConfigData]);
+
+    const channelsToRender = useMemo(() => {
+        if (!currentApiChannels || !Array.isArray(currentApiChannels) || currentApiChannels.length === 0) {
+            return Array.from({ length: 16 }, (_, i) => ({
+                id: i + 1,
+                channelId: i + 1,
+                chNum: i + 1,
+                name: `CH-${String(i + 1).padStart(2, '0')}`,
+                fullName: `CH-${String(i + 1).padStart(2, '0')}`,
+                stripCount: 0,
+                ledCount: 0
+            }));
+        }
+        return currentApiChannels.map((ch, idx) => {
+            const chNum = idx + 1;
+            const channelId = ch.channel_id || ch.id || chNum;
+            const channelName = ch.channel_name || ch.name || `Channel ${chNum}`;
+            const stripInCh = ch.stripinchannel || [];
+            return {
+                id: channelId,
+                channelId: channelId,
+                chNum,
+                name: channelName,
+                fullName: channelName,
+                stripCount: stripInCh.length || parseInt(ch.channel_stripcount || 0, 10),
+                ledCount: parseInt(ch.channel_ledcount || 0, 10),
+                raw: ch
+            };
+        });
+    }, [currentApiChannels]);
+
     const selectedWall = selectedController.walls?.find(w => w.name === selectedWallName) || selectedController.walls?.[0] || { cupboards: [] };
 
     const toggleWallSelection = useCallback((wallName) => {
@@ -1010,17 +1185,35 @@ export default function Monitoring() {
     const cupboards = useMemo(() => {
         if (!selectedController || !selectedController.cupboards) return [];
 
+        let cbs = selectedController.cupboards;
+
         if (selectedWallNames && selectedWallNames.length > 0) {
             const filtered = selectedController.cupboards.filter(c =>
                 selectedWallNames.includes(c.wall) ||
                 selectedWallNames.includes(c.wall_id) ||
                 selectedWallNames.includes(c.cupboard_wall_id)
             );
-            if (filtered.length > 0) return filtered;
+            if (filtered.length > 0) cbs = filtered;
         }
 
-        return selectedController.cupboards || [];
-    }, [selectedController, selectedWallNames]);
+        if (Object.keys(liveStripColorsMap).length > 0) {
+            return cbs.map(cb => ({
+                ...cb,
+                ledStrips: (cb.ledStrips || []).map(strip => {
+                    const sId = String(strip.id || strip.strip_id || '');
+                    if (sId && liveStripColorsMap[sId]) {
+                        return {
+                            ...strip,
+                            colors: liveStripColorsMap[sId]
+                        };
+                    }
+                    return strip;
+                })
+            }));
+        }
+
+        return cbs;
+    }, [selectedController, selectedWallNames, liveStripColorsMap]);
 
     const selectedCupboard = cupboards[activeCupboardIdx] || null;
 
@@ -1074,7 +1267,7 @@ export default function Monitoring() {
     };
 
     return (
-        <div className="flex flex-col h-[calc(100vh-8rem)] animate-in fade-in">
+        <div className={cn("flex flex-col animate-in fade-in", isExpanded ? "h-[calc(100vh-1.5rem)]" : "h-[calc(100vh-8rem)]")}>
             {/* ── Top bar ────────────────────────────────────────────────── */}
             <div className="flex justify-between items-center mb-6">
                 <div>
@@ -1085,6 +1278,26 @@ export default function Monitoring() {
                 </div>
 
                 <div className="flex items-center gap-3">
+                    {/* Expand toggle — placed left of Horizontal button */}
+                    <Button
+                        variant="ghost"
+                        onClick={() => {
+                            const nextExpanded = !isExpanded;
+                            if (setIsExpanded) setIsExpanded(nextExpanded);
+                            setControlsVisible(!nextExpanded);
+                        }}
+                        className={cn(
+                            "flex items-center gap-2 px-3.5 py-2 rounded-md text-sm font-medium transition-colors h-auto border",
+                            isExpanded
+                                ? "bg-ot-action/20 border-ot-action text-ot-action hover:bg-ot-action/30"
+                                : "bg-ot-surface-top border-ot-border text-muted-foreground hover:text-white"
+                        )}
+                        title={isExpanded ? "Restore Sidebars & Nav Bar" : "Expand View (Hide Sidebars & Nav Bar)"}
+                    >
+                        {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4 text-ot-action" />}
+                        <span>{isExpanded ? 'Restore' : 'Expand'}</span>
+                    </Button>
+
                     {/* Layout toggle */}
                     {viewMode === '2d' && (
                         <Tabs value={layoutMode} onValueChange={setLayoutMode}>
@@ -1180,114 +1393,137 @@ export default function Monitoring() {
                                                     <g key={w.id || w.ch}>
                                                         <path d={w.d} fill="none" stroke={palette.hex} strokeWidth="5" strokeOpacity="0.4" filter="url(#glowMon)" />
                                                         <path d={w.d} fill="none" stroke={palette.hex} strokeWidth="2.5" strokeDasharray="8 4" className="animate-wire-flow-mon" />
-                                                        <circle cx={w.x1} cy={w.y1} r="4.5" fill={palette.hex} stroke="#ffffff" strokeWidth="1.5" />
-                                                        <circle cx={w.x2} cy={w.y2} r="4.5" fill={palette.hex} stroke="#ffffff" strokeWidth="1.5" />
                                                     </g>
                                                 );
                                             })}
                                         </svg>
 
-                                        {/* 16-Channel High-Fidelity PCB Controller Board */}
-                                        <div className={cn(
-                                            "z-30 p-3 shrink-0 flex flex-col justify-between border-2 border-emerald-500/40 bg-gradient-to-b from-[#092e20] via-[#041d13] to-[#010e08] shadow-[inset_0_2px_4px_rgba(255,255,255,0.15),_inset_0_-2px_4px_rgba(0,0,0,0.8),_0_12px_35px_rgba(0,0,0,0.8),_0_0_20px_rgba(16,185,129,0.25)] transition-all duration-300 relative overflow-hidden rounded-2xl my-2 ml-2",
-                                            (controllerPlacement === 'left' || controllerPlacement === 'right') ? "w-56 h-[calc(100%-16px)]" : "w-full h-40 border-b"
-                                        )}>
-                                            {/* 3D Screws */}
-                                            <div className="absolute top-2 left-2 w-3 h-3 rounded-full bg-gradient-to-br from-amber-200 via-amber-400 to-amber-700 border border-amber-500/80 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9),_0_1px_3px_rgba(0,0,0,0.8)] flex items-center justify-center pointer-events-none">
-                                                <div className="w-1.5 h-0.5 bg-amber-950 rounded-full rotate-45" />
-                                            </div>
-                                            <div className="absolute top-2 right-2 w-3 h-3 rounded-full bg-gradient-to-br from-amber-200 via-amber-400 to-amber-700 border border-amber-500/80 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9),_0_1px_3px_rgba(0,0,0,0.8)] flex items-center justify-center pointer-events-none">
-                                                <div className="w-1.5 h-0.5 bg-amber-950 rounded-full -rotate-45" />
-                                            </div>
-                                            <div className="absolute bottom-2 left-2 w-3 h-3 rounded-full bg-gradient-to-br from-amber-200 via-amber-400 to-amber-700 border border-amber-500/80 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9),_0_1px_3px_rgba(0,0,0,0.8)] flex items-center justify-center pointer-events-none">
-                                                <div className="w-1.5 h-0.5 bg-amber-950 rounded-full -rotate-45" />
-                                            </div>
-                                            <div className="absolute bottom-2 right-2 w-3 h-3 rounded-full bg-gradient-to-br from-amber-200 via-amber-400 to-amber-700 border border-amber-500/80 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9),_0_1px_3px_rgba(0,0,0,0.8)] flex items-center justify-center pointer-events-none">
-                                                <div className="w-1.5 h-0.5 bg-amber-950 rounded-full rotate-45" />
-                                            </div>
-
-                                            {/* PCB Etch Background */}
-                                            <div className="absolute inset-0 opacity-15 pointer-events-none bg-[radial-gradient(#10b981_1px,transparent_1px)] [background-size:8px_8px]" />
-
-                                            {/* PCB Header Info */}
-                                            <div className="flex items-center justify-between border-b border-emerald-500/30 pb-2 pt-1 px-3 mb-1.5 relative z-10">
-                                                <div className="flex items-center gap-1.5">
-                                                    <div className="w-6 h-6 rounded-md bg-gradient-to-b from-emerald-500/30 to-emerald-900/40 border border-emerald-400/50 flex items-center justify-center text-emerald-300 shadow-[0_2px_4px_rgba(0,0,0,0.5)]">
-                                                        <Cpu className="w-3.5 h-3.5" />
-                                                    </div>
-                                                    <div>
-                                                        <h4 className="text-[11px] font-black text-emerald-300 tracking-wider uppercase font-mono leading-tight drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">16-CH PCB MODULE</h4>
-                                                        <div className="text-[9px] text-emerald-400/80 font-mono font-medium">
-                                                            {selectedController ? (selectedController.ip || selectedController.name) : '192.168.1.100'}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-1">
-                                                    <div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                                                    <span className="text-[8px] font-mono font-bold text-emerald-400 uppercase tracking-widest">LIVE</span>
-                                                </div>
-                                            </div>
-
-                                            {/* 16 Channel Sockets Grid */}
+                                        {/* 16-Channel PCB Controller Board (Hidden for Viewer Role) */}
+                                        {!isViewer ? (
                                             <div className={cn(
-                                                "grid gap-1.5 overflow-y-auto pr-1 flex-1 relative z-10",
-                                                (controllerPlacement === 'left' || controllerPlacement === 'right') ? "grid-cols-1" : "grid-cols-8"
+                                                "z-30 p-3 shrink-0 flex flex-col justify-between border-2 border-emerald-500/40 bg-gradient-to-b from-[#092e20] via-[#041d13] to-[#010e08] shadow-[inset_0_2px_4px_rgba(255,255,255,0.15),_inset_0_-2px_4px_rgba(0,0,0,0.8),_0_12px_35px_rgba(0,0,0,0.8),_0_0_20px_rgba(16,185,129,0.25)] transition-all duration-300 relative overflow-hidden rounded-2xl my-2 ml-2",
+                                                (controllerPlacement === 'left' || controllerPlacement === 'right') ? "w-56 h-[calc(100%-16px)]" : "w-full h-40 border-b"
                                             )}>
-                                                {Array.from({ length: 16 }, (_, i) => i + 1).map((chNum) => {
-                                                    const assigned = allSavedStrips.find(s => {
-                                                        const sCh = Number(s.channel) || (s.channel ? parseInt(String(s.channel).replace(/\D/g, ''), 10) : null);
-                                                        return sCh === chNum;
-                                                    }) || channelAssignments[chNum];
+                                                {/* 3D Screws */}
+                                                <div className="absolute top-2 left-2 w-3 h-3 rounded-full bg-gradient-to-br from-amber-200 via-amber-400 to-amber-700 border border-amber-500/80 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9),_0_1px_3px_rgba(0,0,0,0.8)] flex items-center justify-center pointer-events-none">
+                                                    <div className="w-1.5 h-0.5 bg-amber-950 rounded-full rotate-45" />
+                                                </div>
+                                                <div className="absolute top-2 right-2 w-3 h-3 rounded-full bg-gradient-to-br from-amber-200 via-amber-400 to-amber-700 border border-amber-500/80 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9),_0_1px_3px_rgba(0,0,0,0.8)] flex items-center justify-center pointer-events-none">
+                                                    <div className="w-1.5 h-0.5 bg-amber-950 rounded-full -rotate-45" />
+                                                </div>
+                                                <div className="absolute bottom-2 left-2 w-3 h-3 rounded-full bg-gradient-to-br from-amber-200 via-amber-400 to-amber-700 border border-amber-500/80 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9),_0_1px_3px_rgba(0,0,0,0.8)] flex items-center justify-center pointer-events-none">
+                                                    <div className="w-1.5 h-0.5 bg-amber-950 rounded-full -rotate-45" />
+                                                </div>
+                                                <div className="absolute bottom-2 right-2 w-3 h-3 rounded-full bg-gradient-to-br from-amber-200 via-amber-400 to-amber-700 border border-amber-500/80 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9),_0_1px_3px_rgba(0,0,0,0.8)] flex items-center justify-center pointer-events-none">
+                                                    <div className="w-1.5 h-0.5 bg-amber-950 rounded-full rotate-45" />
+                                                </div>
 
-                                                    const isConnected = !!assigned;
-                                                    const palette = CHANNEL_PALETTES[(chNum - 1) % CHANNEL_PALETTES.length];
+                                                {/* PCB Etch Background */}
+                                                <div className="absolute inset-0 opacity-15 pointer-events-none bg-[radial-gradient(#10b981_1px,transparent_1px)] [background-size:8px_8px]" />
 
-                                                    return (
-                                                        <div
-                                                            key={chNum}
-                                                            id={`monitoring-port-socket-${chNum}`}
-                                                            className={cn(
-                                                                "group relative flex items-center justify-between px-2 py-1.5 rounded-xl transition-all border select-none",
-                                                                isConnected
-                                                                    ? `bg-gradient-to-r ${palette.bgGrad} ${palette.border} ${palette.glow}`
-                                                                    : "bg-gradient-to-b from-[#0a1017] via-[#04070d] to-[#09111b] border-slate-700/80 text-slate-400"
-                                                            )}
-                                                        >
-                                                            <div className="flex items-center gap-1.5 font-mono text-[10px] font-bold">
-                                                                <span className={cn(
-                                                                    "w-2.5 h-2.5 rounded-full shrink-0 border border-black/40",
-                                                                    isConnected ? `${palette.dot} animate-pulse` : "bg-slate-700"
-                                                                )} />
-                                                                <span className={isConnected ? `${palette.text} font-black drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]` : "text-slate-300"}>
-                                                                    CH-{String(chNum).padStart(2, '0')}
-                                                                </span>
-                                                            </div>
-                                                            <div className={cn(
-                                                                "text-[9px] font-mono opacity-90 truncate max-w-[55px] text-right font-semibold",
-                                                                isConnected ? palette.text : "text-slate-500"
-                                                            )}>
-                                                                {assigned ? (assigned.label || `Strip ${chNum}`) : 'Idle'}
+                                                {/* PCB Header Info */}
+                                                <div className="flex items-center justify-between border-b border-emerald-500/30 pb-2 pt-1 px-3 mb-1.5 relative z-10">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <div className="w-6 h-6 rounded-md bg-gradient-to-b from-emerald-500/30 to-emerald-900/40 border border-emerald-400/50 flex items-center justify-center text-emerald-300 shadow-[0_2px_4px_rgba(0,0,0,0.5)]">
+                                                            <Cpu className="w-3.5 h-3.5" />
+                                                        </div>
+                                                        <div>
+                                                            <h4 className="text-[11px] font-black text-emerald-300 tracking-wider uppercase font-mono leading-tight drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">16-CH PCB MODULE</h4>
+                                                            <div className="text-[9px] text-emerald-400/80 font-mono font-medium">
+                                                                {selectedController ? (selectedController.ip || selectedController.name) : '192.168.1.100'}
                                                             </div>
                                                         </div>
-                                                    );
-                                                })}
-                                            </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-1">
+                                                        <div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                                                        <span className="text-[8px] font-mono font-bold text-emerald-400 uppercase tracking-widest">LIVE</span>
+                                                    </div>
+                                                </div>
 
-                                            {/* Screw Terminal Footer */}
-                                            <div className="pt-2 mt-1 border-t border-emerald-500/30 flex items-center justify-between text-[9px] text-emerald-400/80 font-mono px-2 relative z-10">
-                                                <div className="flex items-center gap-1">
-                                                    <span className="px-1.5 py-0.5 rounded-md bg-gradient-to-b from-emerald-900/80 to-emerald-950 border border-emerald-500/40 text-[8px] font-bold text-emerald-300 shadow-[inset_0_1px_2px_rgba(0,0,0,0.6)]">
-                                                        GND | VCC | DATA
+                                                {/* 16 Channel Sockets Grid */}
+                                                <div className={cn(
+                                                    "grid gap-1.5 overflow-y-auto pr-1 flex-1 relative z-10",
+                                                    (controllerPlacement === 'left' || controllerPlacement === 'right') ? "grid-cols-1" : "grid-cols-8"
+                                                )}>
+                                                    {channelsToRender.map((ch, idx) => {
+                                                        const chNum = ch.chNum;
+                                                        const assigned = channelAssignments[chNum] || allSavedStrips.find(s => {
+                                                            const sCh = Number(s.channel) || (s.channel ? parseInt(String(s.channel).replace(/\D/g, ''), 10) : null);
+                                                            return sCh === chNum;
+                                                        });
+
+                                                        const isConnected = Boolean(assigned || ch.stripCount > 0);
+                                                        const palette = CHANNEL_PALETTES[(idx) % CHANNEL_PALETTES.length];
+
+                                                        return (
+                                                            <div
+                                                                key={ch.id || chNum}
+                                                                id={`monitoring-port-socket-${chNum}`}
+                                                                className={cn(
+                                                                    "group relative flex items-center justify-between px-2 py-1.5 rounded-xl transition-all border select-none",
+                                                                    isConnected
+                                                                        ? `bg-gradient-to-r ${palette.bgGrad} ${palette.border} ${palette.glow}`
+                                                                        : "bg-gradient-to-b from-[#0a1017] via-[#04070d] to-[#09111b] border-slate-700/80 text-slate-400 font-mono text-xs font-bold"
+                                                                )}
+                                                            >
+                                                                <div className="flex items-center gap-1.5 font-mono text-[10px] font-bold">
+                                                                    <span className={cn(
+                                                                        "w-2.5 h-2.5 rounded-full shrink-0 border border-black/40",
+                                                                        isConnected ? `${palette.dot} animate-pulse` : "bg-slate-700"
+                                                                    )} />
+                                                                    <span className={isConnected ? `${palette.text} font-black drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]` : "text-slate-300"}>
+                                                                        {ch.name}
+                                                                    </span>
+                                                                </div>
+                                                                <div className={cn(
+                                                                    "text-[9px] font-mono opacity-90 truncate max-w-[55px] text-right font-semibold",
+                                                                    isConnected ? palette.text : "text-slate-500"
+                                                                )}>
+                                                                    {assigned ? (assigned.label || `Strip ${chNum}`) : (ch.stripCount > 0 ? `${ch.stripCount} Strip${ch.stripCount > 1 ? 's' : ''}` : 'Idle')}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+
+                                                {/* Screw Terminal Footer */}
+                                                <div className="pt-2 mt-1 border-t border-emerald-500/30 flex items-center justify-between text-[9px] text-emerald-400/80 font-mono px-2 relative z-10">
+                                                    <div className="flex items-center gap-1">
+                                                        <span className="px-1.5 py-0.5 rounded-md bg-gradient-to-b from-emerald-900/80 to-emerald-950 border border-emerald-500/40 text-[8px] font-bold text-emerald-300 shadow-[inset_0_1px_2px_rgba(0,0,0,0.6)]">
+                                                            GND | VCC | DATA
+                                                        </span>
+                                                    </div>
+                                                    <span className="text-emerald-300 font-bold text-[9px] drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+                                                        {channelsToRender.filter(ch => channelAssignments[ch.chNum] || ch.stripCount > 0 || allSavedStrips.some(s => Number(s.channel) === ch.chNum)).length}/{channelsToRender.length} Active
                                                     </span>
                                                 </div>
-                                                <span className="text-emerald-300 font-bold text-[9px] drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
-                                                    {allSavedStrips.length}/16 Active
-                                                </span>
                                             </div>
-                                        </div>
+                                        ) : (
+                                            /* Invisible Port Sockets for Viewer Role so lines still render from the edge */
+                                            <div className={cn(
+                                                "z-30 shrink-0 pointer-events-none opacity-0 flex justify-between relative overflow-hidden my-2",
+                                                (controllerPlacement === 'left' || controllerPlacement === 'right') ? "w-0 h-[calc(100%-16px)] flex-col" : "w-full h-0 flex-row"
+                                            )}>
+                                                <div className={cn(
+                                                    "grid gap-1.5 flex-1 relative z-10",
+                                                    (controllerPlacement === 'left' || controllerPlacement === 'right') ? "grid-cols-1" : "grid-cols-8"
+                                                )}>
+                                                    {channelsToRender.map((ch) => {
+                                                        const chNum = ch.chNum;
+                                                        return (
+                                                            <div
+                                                                key={ch.id || chNum}
+                                                                id={`monitoring-port-socket-${chNum}`}
+                                                                className="w-0 h-4"
+                                                            />
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
 
                                         {/* Cupboard 2D Stage */}
-                                        <div className="flex-1 p-4 overflow-auto flex flex-col justify-center items-center relative w-full h-full">
+                                        <div className="flex-1 p-4 overflow-auto flex flex-col justify-center items-center relative z-25 w-full h-full">
                                             <Cupboard2D
                                                 cupboards={cupboards}
                                                 controllerName={selectedController.name}
